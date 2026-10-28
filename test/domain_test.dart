@@ -46,7 +46,7 @@ void main() {
       expect(r.planning!.roundedPalletsPerShift, 1);
       expect(r.planning!.plannedPalletsPerDay, 2);
       expect(r.floor!.withoutGangways, closeTo(11.34, 1e-9));
-      expect(r.floor!.withGangways, closeTo(27.54, 1e-9));
+      expect(r.floor!.withGangways, closeTo(63.6, 1e-9));
       expect(r.rack!.withoutGangways, closeTo(7.98, 1e-9));
       expect(r.rack!.withGangways, closeTo(33.63, 1e-9));
     },
@@ -253,7 +253,7 @@ void main() {
       final a = calculate(), b = calculate({'stacking': 3});
       expect(b.floor!.positions, 4);
       expect(b.floor!.withoutGangways, closeTo(4.5, 1e-9));
-      expect(b.floor!.withGangways, closeTo(12.6, 1e-9));
+      expect(b.floor!.withGangways, closeTo(21.2, 1e-9));
       expect(a.rack!.bays, b.rack!.bays);
       expect(calculate({'stacking': 99}).floor!.effectiveStacking, 5);
     },
@@ -363,8 +363,8 @@ void main() {
   test(
     'negative savings are preserved and zero denominators stay undefined',
     () {
-      final r = calculateProject([part()], settings());
-      expect(r.savingWithGangways, closeTo(-6.09, 1e-9));
+      final r = calculateProject([part({'stacking': 3})], settings());
+      expect(r.savingWithGangways, closeTo(-12.43, 1e-9));
       expect(r.savingWithGangwaysPercent, lessThan(0));
       final zero = calculateProject([
         part({'consumptionPerShift': 0}),
@@ -382,22 +382,54 @@ void main() {
       expect(r.requiredPallets, baseline.requiredPallets);
       expect(r.floor!.withoutGangways, baseline.floor!.withoutGangways);
       expect(r.rack!.withoutGangways, baseline.rack!.withoutGangways);
-      expect(r.floor!.gangwayArea, closeTo(4 * .9 * (width / 1000), 1e-9));
+      expect(r.floor!.gangwayArea, closeTo(10 * 1.2 * (width / 1000), 1e-9));
       expect(r.rack!.gangwayArea, closeTo(5.7 * (width / 1000), 1e-9));
       expect(r.floor!.withGangways,
-          closeTo(baseline.floor!.withoutGangways + r.floor!.gangwayArea, 1e-9));
+          closeTo(baseline.floor!.formulaStorageArea + r.floor!.gangwayArea, 1e-9));
       expect(r.rack!.withGangways,
           closeTo(baseline.rack!.withoutGangways + r.rack!.gangwayArea, 1e-9));
     }
     final r = calculate();
-    expect(r.floor!.gangwayArea, closeTo(16.2, 1e-9));
+    expect(r.floor!.gangwayArea, closeTo(54, 1e-9));
     expect(r.rack!.gangwayArea, closeTo(25.65, 1e-9));
+  });
+  test('floor formula uses unrounded Q/S and excludes row clearances', () {
+    final r = forPallets(7, stacking: 3);
+    expect(r.floor!.positions, 3);
+    expect(r.floor!.formulaPositions, closeTo(7 / 3, 1e-9));
+    expect(r.floor!.formulaStorageArea, closeTo(2.24, 1e-9));
+    expect(r.floor!.gangwayArea, closeTo(12.6, 1e-9));
+    expect(r.floor!.withGangways, closeTo(14.84, 1e-9));
+    final differentRows = calculate(
+      {'consumptionPerShift': 1, 'doh': 7, 'stacking': 3},
+      {'shiftsPerDay': 1, 'maxFloorRowDepth': 2500, 'floorPalletClearance': 50},
+    );
+    expect(differentRows.floor!.withoutGangways, isNot(r.floor!.withoutGangways));
+    expect(differentRows.floor!.withGangways, r.floor!.withGangways);
+    final noAisle = calculate(
+      {'consumptionPerShift': 1, 'doh': 7, 'stacking': 3},
+      {'shiftsPerDay': 1, 'gangwayWidth': 0},
+    );
+    expect(noAisle.floor!.withGangways, closeTo(2.24, 1e-9));
+    expect(noAisle.floor!.gangwayArea, 0);
+    expect(noAisle.floor!.withGangways, isNot(noAisle.floor!.withoutGangways));
+    final heightLimited = calculate(
+      {'consumptionPerShift': 1, 'doh': 7, 'stacking': 3},
+      {'shiftsPerDay': 1, 'maxFloorStackingHeight': 2000},
+    );
+    expect(heightLimited.floor!.effectiveStacking, 2);
+    expect(heightLimited.floor!.withGangways, closeTo(22.26, 1e-9));
+    expect(r.rack!.withGangways, closeTo(16.815, 1e-9));
+    final zero = calculate({'doh': 0});
+    expect(zero.floor!.formulaPositions, 0);
+    expect(zero.floor!.formulaStorageArea, 0);
+    expect(zero.floor!.withGangways, 0);
   });
   test('gangways alter allocated area only', () {
     final a = calculate(), b = calculate({}, {'gangwayWidth': 3000});
     expect(a.floor!.withoutGangways, b.floor!.withoutGangways);
     expect(a.rack!.withoutGangways, b.rack!.withoutGangways);
-    expect(b.floor!.withGangways, closeTo(22.14, 1e-9));
+    expect(b.floor!.withGangways, closeTo(45.6, 1e-9));
   });
   test('invalid settings and empty projects remain safe and explicit', () {
     final r = calculateProject([part()], settings({'maxRackRunLength': 2000}));

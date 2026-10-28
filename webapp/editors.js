@@ -266,7 +266,7 @@
         stock.append($('p', 'muted formula-hint', 'Required pallets = CEILING(CEILING(consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet) × selected DOH × shifts per day). The outer ceiling only affects fractional DOH.'));
         const preview = $('div', 'planning-preview');
         stock.append(preview);
-        const floor = section(body, 'Floor storage & gangways', 'Enter the full physical gangway width. Floor and rack footprints use the complete configured width (100%).');
+        const floor = section(body, 'Floor storage & gangways', 'Floor with gangways uses (Q / S) × L × (W + G) / 1,000,000, with unrounded Q / S and full gangway width G. Racks use actual run frontage × G.');
         const floorGrid = $('div', 'form-grid'); floor.append(floorGrid);
         field(floorGrid, 'maxFloorStackingHeight', 'Maximum floor stacking height', true);
         field(floorGrid, 'maxFloorRowDepth', 'Maximum floor row depth · 0 = unrestricted');
@@ -415,8 +415,11 @@
           formula(floorSection, 'Dedicated floor rows', `CEILING(${n(floor.positions)} ÷ ${n(floor.palletsPerRow)})`, `${n(floor.rows)} rows`);
           formula(floorSection, 'Actual occupied floor row depth', `Sum of occupied row depths = (${n(floor.positions)} positions × ${n(input.length)} mm + (${n(floor.positions)} − ${n(floor.rows)}) gaps × ${n(settings.floorPalletClearance)} mm) / 1000\nDeepest row: ${n(floor.rowDepth)} m · last row: ${n(floor.lastRowPallets)} pallets / ${n(floor.lastRowDepth)} m`, `${n(floor.totalOccupiedDepth)} m total occupied row depth`);
           formula(floorSection, 'A · Pallets without gangways', `(${n(input.width)} + ${n(settings.floorPalletClearance)}) / 1000 m row width × ${n(floor.totalOccupiedDepth)} m total occupied depth`, area(floor.withoutGangways));
-          formula(floorSection, 'Allocated floor gangway', `${n(floor.rows)} rows × ${n(floor.rowWidth)} m × ${n(settings.gangwayWidth)} / 1000 m`, area(floor.gangwayArea));
-          formula(floorSection, 'B · Pallets with allocated gangways', `${n(floor.withoutGangways)} + ${n(floor.gangwayArea)} m²`, area(floor.withGangways));
+          formula(floorSection, 'Unrounded formula positions · Q / S', `Q / S = ${n(result.requiredPallets)} ÷ ${n(floor.effectiveStacking)} (unrounded)`, n(floor.formulaPositions));
+          formula(floorSection, 'Floor formula storage component', `(${n(result.requiredPallets)} ÷ ${n(floor.effectiveStacking)}) × ${n(input.length)} × ${n(input.width)} ÷ 1,000,000`, area(floor.formulaStorageArea));
+          formula(floorSection, 'Allocated floor gangway', `(${n(result.requiredPallets)} ÷ ${n(floor.effectiveStacking)}) × ${n(input.length)} × ${n(settings.gangwayWidth)} ÷ 1,000,000\nAllocated gangway width = ${n(settings.gangwayWidth)} mm`, area(floor.gangwayArea));
+          formula(floorSection, 'B · Pallets with allocated gangways', `SQM = (Q / S) × L × (W + G) / 1,000,000\n= (${n(result.requiredPallets)} ÷ ${n(floor.effectiveStacking)}) × ${n(input.length)} × (${n(input.width)} + ${n(settings.gangwayWidth)}) ÷ 1,000,000`, area(floor.withGangways));
+          floorSection.append(notice('Q is required pallets; S is effective floor stacking limited by loaded height. Q / S stays unrounded in this formula. L and W are loaded pallet dimensions; G is the full gangway width. Floor without gangways separately uses occupied rows and pallet clearances.'));
         }
         const rackSection = section(body, 'C / D · Pallet rack storage');
         if (!rack) rackSection.append(notice('Rack storage cannot be calculated. Review the validation errors above.', true));

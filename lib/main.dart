@@ -818,7 +818,7 @@ class _DashboardState extends State<_Dashboard> {
         ),
         const SizedBox(height: 22),
         const _Notice(
-          'Gangway-inclusive results use the full configured gangway width. Each part uses dedicated floor rows and rack bays. These estimates do not represent an optimized physical layout.',
+          'Floor with gangways = (Q / S) × L × (W + G) / 1,000,000. Q is required pallets; S is effective floor stacking, with Q / S unrounded. L, W and G use millimeters. Floor without gangways uses occupied rows and clearances; rack gangways use actual run frontage. These are planning estimates.',
         ),
         const SizedBox(height: 22),
         LayoutBuilder(

@@ -88,7 +88,7 @@ void main() {
       expect(c.invalidCount, 0);
       expect(c.totalRequiredPallets, 10);
       expect(c.floorWithoutGangways, closeTo(11.34, 1e-9));
-      expect(c.floorWithGangways, closeTo(27.54, 1e-9));
+      expect(c.floorWithGangways, closeTo(63.6, 1e-9));
       expect(c.rackWithoutGangways, closeTo(7.98, 1e-9));
       expect(c.rackWithGangways, closeTo(33.63, 1e-9));
     },
@@ -126,7 +126,6 @@ void main() {
       for (final width in [4500.0, 6000.0, 0.0]) {
         final settings = WarehouseSettings(gangwayWidth: width),
             p = project(input.parts, settings: settings),
-            c = calculateProject(p.parts, settings),
             b = output(p),
             f = b['Floor Pallet Calculations'],
             r = b['Rack Calculations'];
@@ -143,10 +142,7 @@ void main() {
         expect(
           numeric(f, 'Allocated Gangway Area (m²)'),
           closeTo(
-            c.results.single.floor!.rows *
-                c.results.single.floor!.rowWidth *
-                width /
-                1000,
+            10 * 1200 * width / 1000000,
             1e-9,
           ),
         );
@@ -160,7 +156,7 @@ void main() {
         expect(
           numeric(f, 'With Allocated Gangways (m²)'),
           closeTo(
-            numeric(f, 'Without Gangways (m²)') +
+            numeric(f, 'Formula Storage Base (m²)') +
                 numeric(f, 'Allocated Gangway Area (m²)'),
             1e-9,
           ),
@@ -182,6 +178,24 @@ void main() {
       }
     },
   );
+  test('floor export retains fractional Q/S and the independent storage-only base', () {
+    final imported = service.importBytes(service.templateBytes());
+    final part = PartInput.fromJson({
+      ...imported.parts.single.toJson(), 'doh': 7, 'stacking': 3,
+    });
+    final settings = const WarehouseSettings(shiftsPerDay: 1);
+    final book = output(project([part], settings: settings));
+    final floor = book['Floor Pallet Calculations'];
+    expect(numeric(floor, 'Required Pallets'), 7);
+    expect(numeric(floor, 'Floor Positions'), 3);
+    expect(numeric(floor, 'Formula Positions (Q / S, unrounded)'), closeTo(7 / 3, 1e-9));
+    expect(numeric(floor, 'Formula Storage Base (m²)'), closeTo(2.24, 1e-9));
+    expect(numeric(floor, 'Allocated Gangway Area (m²)'), closeTo(12.6, 1e-9));
+    expect(numeric(floor, 'With Allocated Gangways (m²)'), closeTo(14.84, 1e-9));
+    expect(numeric(floor, 'Without Gangways (m²)'), closeTo(3.42, 1e-9));
+    expect(value(floor, 'Floor With Gangways Formula').toString(), contains('(7 / 3)'));
+    expect(numeric(book['Rack Calculations'], 'With Allocated Gangways (m²)'), closeTo(16.815, 1e-9));
+  });
   test('selected1–3 shifts and DOH override appear in result exports', () {
     final input = service.importBytes(service.templateBytes());
     for (final shifts in [1, 2, 3]) {

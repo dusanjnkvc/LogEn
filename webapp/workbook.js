@@ -97,7 +97,8 @@
         'If old data has only direct parts-per-pallet capacity, packaging is inferred as one box containing that capacity. Review inferred packaging before relying on shift rounding.',
         'Use numeric cells or decimal-point text. Formula cells are not evaluated; paste calculated values before importing.',
         'Use one unique part number per row. Invalid and duplicate rows remain visible. Both floor and rack scenarios use the same required pallets.',
-        'Each part has dedicated floor rows and rack bays. Gangway-inclusive figures use the full (100%) configured gangway width for allocated planning estimates, not optimized physical layouts.',
+        'Floor with gangways = (Q / S) × L × (W + G) / 1,000,000; Q = required pallets, S = effective floor stacking, L/W/G in mm. Keep Q / S unrounded and use full gangway width G.',
+        'Floor without gangways retains actual occupied rows and clearances. Rack gangways retain actual rack run frontage × full gangway width. These are allocated planning estimates, not optimized layouts.',
         'All imports, calculations, projects and exports work offline on this device.',
       ].forEach(line => add(notes, [line]));
       notes.getColumn(1).width = 120;
@@ -204,11 +205,11 @@
       }
       for (let column = 1; column <= original.columnCount; column++) original.getColumn(column).width = column === 1 ? 27 : 22;
 
-      const floorHeaders = [...HEADERS, 'Allowed Floor Stacking', 'Status', 'Validation Errors', 'Required Parts', 'Required Pallets', 'Maximum Stacking by Height', 'Effective Floor Stacking', 'Floor Positions', 'Pallets Per Row', 'Required Floor Rows', 'Row Width (m)', 'Deepest Actual Occupied Row Depth (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', 'Full Row Actual Depth (m)', 'Last Row Actual Depth (m)', 'Last Row Pallets', 'Total Occupied Row Depth (m)', ...PLANNING_HEADERS];
+      const floorHeaders = [...HEADERS, 'Allowed Floor Stacking', 'Status', 'Validation Errors', 'Required Parts', 'Required Pallets', 'Maximum Stacking by Height', 'Effective Floor Stacking', 'Floor Positions', 'Pallets Per Row', 'Required Floor Rows', 'Row Width (m)', 'Deepest Actual Occupied Row Depth (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', 'Full Row Actual Depth (m)', 'Last Row Actual Depth (m)', 'Last Row Pallets', 'Total Occupied Row Depth (m)', ...PLANNING_HEADERS, 'Formula Positions (Q / S, unrounded)', 'Formula Storage Base (m²)', 'Floor With Gangways Formula'];
       const floor = table(workbook, 'Floor Pallet Calculations', floorHeaders, floorHeaders.map((header, index) => /\(m²\)|\(days\)|Consumption|Pallets per Day|equivalent/.test(header) ? index : -1).filter(index => index >= 0));
       calculation.results.forEach(result => {
         const value = result.floor;
-        add(floor, [...inputValues(result.input), result.input.stacking, result.isValid ? 'Valid' : 'Invalid — excluded from totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, value?.withoutGangways, value?.gangwayArea, value?.withGangways, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings)]);
+        add(floor, [...inputValues(result.input), result.input.stacking, result.isValid ? 'Valid' : 'Invalid — excluded from totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, value?.withoutGangways, value?.gangwayArea, value?.withGangways, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `SQM = (${result.requiredPallets} / ${value.effectiveStacking}) * ${result.input.length} * (${result.input.width} + ${project.settings.gangwayWidth}) / 1000000` : null]);
       });
       const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Pallets Per Slot', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS];
       const rack = table(workbook, 'Rack Calculations', rackHeaders, [19, 20, 21, 22]);
@@ -254,7 +255,9 @@
       [
         'Both storage scenarios use the same required pallets, with dedicated floor rows and rack bays per part.',
         'Storage-only footprints exclude gangways. Gangway-inclusive values allocate the full (100%) configured gangway width.',
-        'Floor gangway = rows × row width (m) × (configured gangway width (mm) / 1000).',
+        'Floor with gangways: SQM = (Q / S) × L × (W + G) / 1,000,000. Q = required pallets; S = effective height-limited floor stacking; L/W/G are millimeters; Q / S is not rounded.',
+        'Floor formula storage base = (Q / S) × L × W / 1,000,000. Floor gangway component = (Q / S) × L × G / 1,000,000.',
+        'Floor without gangways uses rounded floor positions, clearances and actual occupied row depths. Its independent base differs from the floor with-gangways formula base.',
         'Rack gangway = sum of actual run frontages (m) × (configured gangway width (mm) / 1000).',
         'Allocated footprints are planning estimates, not optimized physical warehouse designs. Count shared gangways once in an actual layout.',
         'Invalid parts remain listed on the floor and rack calculation sheets; partial totals exclude these rows.',
@@ -283,7 +286,7 @@
         ['Legacy import working days per month', s.workingDaysPerMonth ?? 22, 'only needed to migrate older monthly data; canonical per-shift consumption stays fixed'],
         ['Packaging warnings', calculation.results.filter(result => result.input.packagingInferred).map(result => result.input.partNumber).join(', ') || 'None', 'Inferred packaging should be checked against actual boxes per pallet'],
         ['Optional stock warnings', calculation.results.filter(result => result.planning?.stockQty == null).length, 'part numbers with no provided current stock quantity; actual coverage is unavailable'],
-        ['Maximum floor stacking height', s.maxFloorStackingHeight, 'mm'], ['Maximum floor row depth LIMIT', s.maxFloorRowDepth, 'mm; 0 = unlimited. Footprint uses actual occupied depth.'],
+        ['Maximum floor stacking height', s.maxFloorStackingHeight, 'mm'], ['Maximum floor row depth LIMIT', s.maxFloorRowDepth, 'mm; 0 = unlimited. Storage-only footprint uses actual occupied depth.'],
         ['Gangway width', s.gangwayWidth, 'mm; full configured width'],
         ['Gangway allocation factor', 1, '100% for both floor and rack footprints'],
         ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
@@ -306,7 +309,8 @@
         'Floor stacking defaults to 1 when no optional Stacking column is provided. Any manual stacking value is recorded in Floor Pallet Calculations.',
         'Floor stacking = MIN(Stacking, FLOOR(maximum floor stacking height / loaded pallet H)). Floor positions = CEILING(required pallets / effective stacking).',
         'Pallets per row = FLOOR((maximum row depth LIMIT + clearance) / (pallet L + clearance)). Limit 0 means one unrestricted row per part. Rows = CEILING(floor positions / pallets per row).',
-        'Actual row depth = positions in that row × pallet L + (positions in that row - 1) × clearance. Floor area = row width × sum of actual occupied row depths. The row-depth limit does not reserve unused depth.',
+        'Actual row depth = positions in that row × pallet L + (positions in that row - 1) × clearance. Floor without gangways = row width × sum of actual occupied row depths. The row-depth limit does not reserve unused depth.',
+        'Floor with gangways = (required pallets / effective floor stacking) × pallet L × (pallet W + full gangway width) / 1,000,000. Do not round Q / S or add floor pallet clearances to this formula.',
         'Rack pallets per slot = FLOOR((slot length - frontage clearance) / (pallet frontage + frontage clearance)).',
         'Rack fit: pallet depth + total depth clearance <= usable slot depth; loaded H + vertical clearance <= usable slot height.',
         'Capacity per bay = pallets per slot × rack levels. Rack bays = CEILING(required pallets / capacity per bay). Floor stacking never applies to racks.',

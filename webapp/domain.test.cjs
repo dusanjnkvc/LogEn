@@ -15,14 +15,14 @@ test('eight-column sample defaults stacking to one and calculates all four footp
  assert.equal(r.planning.partsPerPallet,800); assert.equal(r.planning.palletsPerShift,.625);
  assert.equal(r.planning.roundedPalletsPerShift,1); assert.equal(r.planning.plannedPalletsPerDay,2);
  assert.equal(r.planning.requiredPallets,10); assert.equal(r.planning.dailyConsumption,1000);
- near(r.floor.withoutGangways,11.34); near(r.floor.withGangways,27.54);
+ near(r.floor.withoutGangways,11.34); near(r.floor.withGangways,63.6);
  near(r.rack.withoutGangways,7.98); near(r.rack.withGangways,33.63);
 });
 
 test('manually permitted stacking changes floor occupancy but never rack capacity',()=>{
  const a=calculate(), b=calculate({stacking:3});
  assert.equal(b.floor.positions,4); assert.equal(b.floor.rows,2);
- near(b.floor.withoutGangways,4.5); near(b.floor.withGangways,12.6);
+ near(b.floor.withoutGangways,4.5); near(b.floor.withGangways,21.2);
  assert.equal(a.rack.bays,b.rack.bays); assert.equal(a.rack.withGangways,b.rack.withGangways);
  const capped=calculate({stacking:99}); assert.equal(capped.floor.effectiveStacking,5);
 });
@@ -171,13 +171,13 @@ test('floor actual occupancy handles full and partial rows without unused reserv
  const r=forPallets(19,{stacking:3});
  assert.equal(r.floor.positions,7); assert.equal(r.floor.rows,3); assert.equal(r.floor.lastRowPallets,1);
  near(r.floor.fullRowDepth,3.8); near(r.floor.lastRowDepth,1.2); near(r.floor.totalOccupiedDepth,8.8);
- near(r.floor.withoutGangways,7.92); near(r.floor.gangwayArea,12.15); near(r.floor.withGangways,20.07);
+ near(r.floor.withoutGangways,7.92); near(r.floor.gangwayArea,34.2); near(r.floor.withGangways,40.28);
 });
 
 test('zero floor depth means one unrestricted occupied row while rack depth still validates',()=>{
  const r=forPallets(19,{stacking:3},{maxFloorRowDepth:0});
  assert.equal(r.isValid,true); assert.equal(r.floor.rows,1); assert.equal(r.floor.palletsPerRow,7);
- near(r.floor.totalOccupiedDepth,9); near(r.floor.withoutGangways,8.1); near(r.floor.gangwayArea,4.05);
+ near(r.floor.totalOccupiedDepth,9); near(r.floor.withoutGangways,8.1); near(r.floor.gangwayArea,34.2);
  const one=forPallets(1); near(one.floor.rowDepth,1.2); near(one.floor.withoutGangways,1.08);
  assert.ok(D.validateSettings(settings({rackSlotDepth:0})).length);
 });
@@ -208,7 +208,7 @@ test('each part has dedicated floor rows and rack bays',()=>{
  const r=D.calculateProject([part({partNumber:'A'}),part({partNumber:'B'})],settings());
  assert.equal(r.invalidCount,0); assert.equal(r.totalRequiredPallets,20);
  assert.equal(r.totalFloorRows,8); assert.equal(r.totalRackBays,4); assert.equal(r.totalRackRuns,2);
- near(r.floorWithoutGangways,22.68); near(r.floorWithGangways,55.08);
+ near(r.floorWithoutGangways,22.68); near(r.floorWithGangways,127.2);
  near(r.rackWithoutGangways,15.96); near(r.rackWithGangways,67.26);
 });
 
@@ -228,7 +228,9 @@ test('duplicate identifiers are case-insensitive and errors clear after correcti
 
 test('savings may be negative and zero floor denominators remain undefined',()=>{
  const r=D.calculateProject([part()],settings());near(r.savingWithoutGangways,3.36);
- near(r.savingWithGangways,-6.09);assert.ok(r.savingWithGangwaysPercent<0);
+ near(r.savingWithGangways,29.97);
+ const stacked=D.calculateProject([part({stacking:3})],settings());
+ near(stacked.savingWithGangways,-12.43);assert.ok(stacked.savingWithGangwaysPercent<0);
  const zero=D.calculateProject([part({consumptionPerShift:0})],settings());
  assert.equal(zero.savingWithoutGangwaysPercent,null);assert.equal(zero.savingWithGangwaysPercent,null);
 });
@@ -242,19 +244,39 @@ test('gangway allocation uses the full saved physical width for both scenarios',
   assert.equal(r.requiredPallets,baseline.requiredPallets);
   near(r.floor.withoutGangways,baseline.floor.withoutGangways);
   near(r.rack.withoutGangways,baseline.rack.withoutGangways);
-  near(r.floor.gangwayArea,4*.9*(width/1000));
+  near(r.floor.gangwayArea,10*1.2*(width/1000));
   near(r.rack.gangwayArea,5.7*(width/1000));
-  near(r.floor.withGangways,baseline.floor.withoutGangways+r.floor.gangwayArea);
+  near(r.floor.withGangways,baseline.floor.formulaStorageArea+r.floor.gangwayArea);
   near(r.rack.withGangways,baseline.rack.withoutGangways+r.rack.gangwayArea);
  }
- const r=calculate();near(r.floor.gangwayArea,16.2);near(r.rack.gangwayArea,25.65);
+ const r=calculate();near(r.floor.gangwayArea,54);near(r.rack.gangwayArea,25.65);
+});
+
+test('floor with gangways uses the exact unrounded Q/S formula and actual pallet dimensions',()=>{
+ const r=forPallets(7,{stacking:3});
+ assert.equal(r.requiredPallets,7);assert.equal(r.floor.effectiveStacking,3);
+ assert.equal(r.floor.positions,3);near(r.floor.formulaPositions,7/3);
+ near(r.floor.formulaStorageArea,2.24);near(r.floor.gangwayArea,12.6);
+ near(r.floor.withGangways,14.84);
+ assert.notEqual(r.floor.withGangways,3*1200*(800+4500)/1000000);
+ const differentRows=forPallets(7,{stacking:3},{maxFloorRowDepth:2500,floorPalletClearance:50});
+ assert.notEqual(r.floor.withoutGangways,differentRows.floor.withoutGangways);
+ near(r.floor.withGangways,differentRows.floor.withGangways);
+ const noAisle=forPallets(7,{stacking:3},{gangwayWidth:0});
+ near(noAisle.floor.withGangways,2.24);assert.equal(noAisle.floor.gangwayArea,0);
+ assert.notEqual(noAisle.floor.withGangways,noAisle.floor.withoutGangways);
+ const heightLimited=forPallets(7,{stacking:3},{maxFloorStackingHeight:2000});
+ assert.equal(heightLimited.floor.effectiveStacking,2);near(heightLimited.floor.withGangways,22.26);
+ near(r.rack.withGangways,16.815);
+ const zero=calculate({doh:0});assert.equal(zero.floor.formulaPositions,0);
+ assert.equal(zero.floor.formulaStorageArea,0);assert.equal(zero.floor.withGangways,0);
 });
 
 test('gangway edits affect only allocated areas',()=>{
  const a=calculate(),b=calculate({}, {gangwayWidth:3000});
  assert.equal(a.floor.withoutGangways,b.floor.withoutGangways);
  assert.equal(a.rack.withoutGangways,b.rack.withoutGangways);
- near(b.floor.withGangways,22.14);near(b.rack.withGangways,25.08);
+ near(b.floor.withGangways,45.6);near(b.rack.withGangways,25.08);
 });
 
 test('invalid settings retain rows and prevent misleading calculated totals',()=>{

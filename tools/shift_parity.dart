@@ -71,6 +71,8 @@ Map<String, Object?> snapshot(PartCalculation result) {
       'lastRowDepth': floor.lastRowDepth,
       'lastRowPallets': floor.lastRowPallets,
       'withoutGangways': floor.withoutGangways,
+      'formulaPositions': floor.formulaPositions,
+      'formulaStorageArea': floor.formulaStorageArea,
       'gangwayArea': floor.gangwayArea,
       'withGangways': floor.withGangways,
     },

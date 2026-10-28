@@ -421,6 +421,8 @@ class FloorCalculation {
     required this.lastRowDepth,
     required this.lastRowPallets,
     required this.withoutGangways,
+    required this.formulaPositions,
+    required this.formulaStorageArea,
     required this.gangwayArea,
     required this.withGangways,
   });
@@ -437,6 +439,9 @@ class FloorCalculation {
   final double lastRowDepth;
   final int lastRowPallets;
   final double withoutGangways;
+  /// Unrounded Q/S used only for the independent with-gangways formula.
+  final double formulaPositions;
+  final double formulaStorageArea;
   final double gangwayArea;
   final double withGangways;
 }
@@ -769,8 +774,16 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
               math.max(0, positions - rows) * settings.floorPalletClearance) /
           1000;
       final without = rowWidth * totalOccupiedDepth;
-      final gangway = rows * rowWidth * settings.allocatedGangwayWidth / 1000;
-      if (![without, gangway, without + gangway].every((v) => v.isFinite)) {
+      // The with-gangways formula keeps Q/S fractional. Rounded floor positions
+      // and row clearances continue to apply to the storage-only calculation.
+      final formulaPositions = requiredPallets / effectiveStacking;
+      final formulaStorageArea =
+          formulaPositions * input.length * input.width / 1000000;
+      final gangway =
+          formulaPositions * input.length * settings.allocatedGangwayWidth / 1000000;
+      final withGangways = formulaPositions * input.length *
+          (input.width + settings.allocatedGangwayWidth) / 1000000;
+      if (![without, formulaPositions, formulaStorageArea, gangway, withGangways].every((v) => v.isFinite)) {
         throw const FormatException(
           'Floor area exceeds supported numeric precision.',
         );
@@ -788,8 +801,10 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
         lastRowDepth: lastRowDepth,
         lastRowPallets: lastRowPallets,
         withoutGangways: without,
+        formulaPositions: formulaPositions,
+        formulaStorageArea: formulaStorageArea,
         gangwayArea: gangway,
-        withGangways: without + gangway,
+        withGangways: withGangways,
       );
     }
 

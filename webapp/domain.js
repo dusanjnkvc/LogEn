@@ -220,13 +220,19 @@
         const rowDepth = fullRowDepth;
         const totalOccupiedDepth = (positions * input.length + Math.max(0, positions - rows) * s.floorPalletClearance) / 1000;
         const withoutGangways = rowWidth * totalOccupiedDepth;
-        const gangwayArea = rows * rowWidth * allocatedGangwayWidth(s) / 1000;
-        const withGangways = withoutGangways + gangwayArea;
-        if (![withoutGangways, gangwayArea, withGangways].every(Number.isFinite))
+        // Floor area with gangways uses the user's independent Q/S formula.
+        // Q/S stays fractional; rounded positions/rows apply to storage-only area.
+        const formulaPositions = requiredPallets / effectiveStacking;
+        const formulaStorageArea = formulaPositions * input.length * input.width / 1000000;
+        const gangwayArea = formulaPositions * input.length * allocatedGangwayWidth(s) / 1000000;
+        const withGangways = formulaPositions * input.length *
+          (input.width + allocatedGangwayWidth(s)) / 1000000;
+        if (![withoutGangways, formulaPositions, formulaStorageArea, gangwayArea, withGangways].every(Number.isFinite))
           throw new Error('Floor area exceeds supported numeric precision.');
         floorResult = { maximumStacking, effectiveStacking, positions,
           palletsPerRow, rows, rowWidth, rowDepth, totalOccupiedDepth, fullRowDepth,
-          lastRowDepth, lastRowPallets, withoutGangways, gangwayArea, withGangways };
+          lastRowDepth, lastRowPallets, withoutGangways, formulaPositions,
+          formulaStorageArea, gangwayArea, withGangways };
       }
 
       function orientationCapacity(frontage, depth) {

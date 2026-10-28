@@ -20,7 +20,7 @@ async function main() {
   assert.deepEqual(workbook.worksheets.map(s=>s.name), ['Original Input Data','Floor Pallet Calculations','Rack Calculations','Warehouse Comparison','Warehouse Settings']);
   const comparison = workbook.getWorksheet('Warehouse Comparison');
   const values = [2,3,4,5].map(row=>comparison.getCell(`B${row}`).value);
-  [11.34,27.54,7.98,33.63].forEach((expected,i)=>assert.ok(Math.abs(values[i]-expected)<1e-9));
+  [11.34,63.6,7.98,33.63].forEach((expected,i)=>assert.ok(Math.abs(values[i]-expected)<1e-9));
   const settings=workbook.getWorksheet('Warehouse Settings');
   const setting=name=>settings.getRows(1,settings.rowCount).find(row=>row.getCell(1).value===name).getCell(2).value;
   assert.equal(setting('Gangway width'),4500);
@@ -33,6 +33,10 @@ async function main() {
   const headers=floor.getRow(1).values.slice(1);
   const cell=name=>floor.getRow(2).getCell(headers.indexOf(name)+1).value;
   assert.equal(cell('Rounded Pallets per Shift'),1);assert.equal(cell('Required Pallets'),10);
-  console.log('Chrome downloads verified: exact eight-column shift template; five result sheets; per-shift rounding; 10 pallets; footprints 11.34, 27.54, 7.98, 33.63 m².');
+  assert.equal(cell('Formula Positions (Q / S, unrounded)'),10);
+  assert.ok(Math.abs(cell('Formula Storage Base (m²)')-9.6)<1e-9);
+  assert.equal(cell('Allocated Gangway Area (m²)'),54);
+  assert.match(cell('Floor With Gangways Formula'),/SQM/);
+  console.log('Chrome downloads verified: exact eight-column shift template; five result sheets; per-shift rounding; 10 pallets; footprints 11.34, 63.60, 7.98, 33.63 m².');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

@@ -50,7 +50,7 @@ function snapshot(r) {
     input:pick(r.input,['partNumber','qtyBox','qtyOnPallet','partsPerPallet','consumptionPerShift','doh','stacking','stockQty','packagingInferred']),
     isValid:r.isValid,errorCount:r.errors.length,requiredParts:r.requiredParts,requiredPallets:r.requiredPallets,
     planning:r.planning?pick(r.planning,['qtyBox','qtyOnPallet','partsPerPallet','consumptionPerShift','palletsPerShift','roundedPalletsPerShift','plannedPalletsPerDay','requiredPallets','dailyConsumption','shiftConsumption','palletsPerDay','targetCoverageDays','currentPallets','currentPalletPositions','actualCoverageDays','coverageDifferenceDays','palletDurationDays','stockQty','noConsumption','pallets24h','pallets48h','palletsCustom']):null,
-    floor:r.floor?pick(r.floor,['maximumStacking','effectiveStacking','positions','palletsPerRow','rows','rowWidth','rowDepth','totalOccupiedDepth','fullRowDepth','lastRowDepth','lastRowPallets','withoutGangways','gangwayArea','withGangways']):null,
+    floor:r.floor?pick(r.floor,['maximumStacking','effectiveStacking','positions','palletsPerRow','rows','rowWidth','rowDepth','totalOccupiedDepth','fullRowDepth','lastRowDepth','lastRowPallets','withoutGangways','formulaPositions','formulaStorageArea','gangwayArea','withGangways']):null,
     rack:r.rack?pick(r.rack,['palletsPerSlot','levels','capacityPerBay','bays','maxBaysPerRun','runs','rotated','effectiveBayLength','effectiveBayDepth','effectiveBayHeight','withoutGangways','gangwayArea','withGangways','baysPerRun']):null,
   };
 }

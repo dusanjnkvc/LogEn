@@ -423,7 +423,7 @@ class _SettingsEditorState extends State<_SettingsEditor> {
           const _SectionHeading(
             'FLOOR STORAGE & GANGWAYS',
             description:
-                'Enter the full physical gangway width. Floor and rack footprints use the complete configured width (100%).',
+                'Floor with gangways uses (Q / S) × L × (W + G) / 1,000,000, with unrounded Q / S and full gangway width G. Racks use actual run frontage × G.',
           ),
           _FieldGrid([
             _field('maxFloorStackingHeight'),
@@ -1018,15 +1018,30 @@ class _PartDetails extends StatelessWidget {
               result: _area(floor.withoutGangways),
             ),
             _DetailLine(
+              'Unrounded formula positions · Q / S',
+              'Q / S = ${result.requiredPallets} ÷ ${floor.effectiveStacking} (unrounded)',
+              result: n(floor.formulaPositions),
+            ),
+            _DetailLine(
+              'Floor formula storage component',
+              '(${result.requiredPallets} ÷ ${floor.effectiveStacking}) × ${n(part.length)} × ${n(part.width)} ÷ 1,000,000',
+              result: _area(floor.formulaStorageArea),
+            ),
+            _DetailLine(
               'Allocated floor gangway area',
-              '${floor.rows} rows × ${n(floor.rowWidth)} m × ${n(settings.gangwayWidth)} / 1000 m\n'
-                  'Allocated gangway width = ${n(settings.allocatedGangwayWidth)} mm',
+              '(${result.requiredPallets} ÷ ${floor.effectiveStacking}) × ${n(part.length)} × ${n(settings.gangwayWidth)} ÷ 1,000,000\n'
+                  'Allocated gangway width = ${n(settings.gangwayWidth)} mm',
               result: _area(floor.gangwayArea),
             ),
             _DetailLine(
               'B · Pallets with allocated gangways',
-              '${floor.withoutGangways.toStringAsFixed(4)} + ${floor.gangwayArea.toStringAsFixed(4)} m²',
+              'SQM = (Q / S) × L × (W + G) / 1,000,000\n'
+                  '= (${result.requiredPallets} ÷ ${floor.effectiveStacking}) × ${n(part.length)} × (${n(part.width)} + ${n(settings.gangwayWidth)}) ÷ 1,000,000',
               result: _area(floor.withGangways),
+            ),
+            const _Notice(
+              'Q is required pallets; S is effective floor stacking limited by loaded height. Q / S stays unrounded in this formula. '
+              'L and W are loaded pallet dimensions; G is the full gangway width. Floor without gangways separately uses occupied rows and pallet clearances.',
             ),
           ],
           const SizedBox(height: 28),

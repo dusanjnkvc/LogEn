@@ -38,7 +38,7 @@ The rounding order is intentional: round one shift first, then multiply by DOH a
 
 Choose **1, 2 or 3 shifts per day** (default 2). Use **DOH from each part** or a project DOH override. Editing the override immediately applies it to all parts; choose the per-part source to return to the Excel values. Changing shifts multiplies daily usage while the entered consumption per shift remains fixed. All four space results update automatically.
 
-The default template sample (20 parts/box, 40 boxes/pallet, 500 parts/shift, 5 DOH, two shifts) requires **10 pallets**. At 1200 × 800 × 1000 mm, one-high floor storage and the default warehouse settings, the four footprints are **11.34 / 27.54 / 7.98 / 33.63 m²**.
+The default template sample (20 parts/box, 40 boxes/pallet, 500 parts/shift, 5 DOH, two shifts) requires **10 pallets**. At 1200 × 800 × 1000 mm, one-high floor storage and the default warehouse settings, the four footprints are **11.34 / 63.60 / 7.98 / 33.63 m²**.
 
 ## Space planning
 
@@ -46,7 +46,11 @@ Both storage methods use the same required whole-pallet count. Each part receive
 
 Ground storage-only area uses actual occupied depths of full and partial rows, including between-pallet clearances. The configured ground depth is a row-capacity limit; **0 means unrestricted**. Rack depth and fit rules are independent.
 
-Both gangway-inclusive calculations use **the full configured Gangway width**. A setting of **4500 mm** stays saved as 4500 mm and contributes **4500 mm** to each allocation. Floor gangway area = floor rows × row width × (gangway width / 1000). Rack gangway area = actual rack run frontage × (gangway width / 1000). Storage-only footprints and pallet capacity are unaffected. Gangway-inclusive results are allocated planning estimates rather than an optimized physical layout. Shared gangways count once in a physical design.
+Floor area with gangways uses **SQM = (Q / S) × L × (W + G) / 1,000,000**. Q is required pallets, S is effective floor stacking (allowed stacking capped by the loaded-pallet height limit), and L/W/G are pallet length, pallet width and full gangway width in mm. **Q / S is not rounded**; the formula excludes pallet clearances and row-depth reservations. For Q=7, S=3, L=1200, W=800 and G=4500, it gives **14.84 m²**.
+
+The floor formula base is (Q/S) × L × W / 1,000,000 and its gangway component is (Q/S) × L × G / 1,000,000. The independent storage-only floor result still uses rounded floor positions and occupied-row clearances, so adding that result to the formula gangway component does not reproduce the with-gangways value.
+
+Racks retain the existing bay dimensions, rack levels and run-frontage calculation. Rack gangway area = actual rack run frontage × (gangway width / 1000). Both scenarios use the full configured gangway width: **4500 mm uses 4500 mm**. These are allocated planning estimates rather than optimized physical layouts; shared gangways count once in a physical design.
 
 Use **Shift consumption** for raw and rounded per-shift demand, input and used DOH, daily demand, required pallets and space. Click a part number for substituted formulas. **Export results** creates Original Input Data, Floor Pallet Calculations, Rack Calculations, Warehouse Comparison and Warehouse Settings. Original legacy source cells are retained in a separate source-data section of the input sheet.
 

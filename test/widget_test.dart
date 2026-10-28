@@ -62,7 +62,7 @@ void main() {
     (tester) async {
       await launch(tester);
       expect(kpi(tester, 'kpi-floor-without'), '11.34 m²');
-      expect(kpi(tester, 'kpi-floor-with'), '27.54 m²');
+      expect(kpi(tester, 'kpi-floor-with'), '63.60 m²');
       expect(kpi(tester, 'kpi-rack-without'), '7.98 m²');
       expect(kpi(tester, 'kpi-rack-with'), '33.63 m²');
       expect(textValue(tester, 'raw-pallets-SAMPLE-001'), '0.625');
@@ -76,14 +76,45 @@ void main() {
       );
       await saveSettings(tester);
       expect((await ProjectStore().load()).single.settings.gangwayWidth, 4500);
-      expect(kpi(tester, 'kpi-floor-with'), '27.54 m²');
+      expect(kpi(tester, 'kpi-floor-with'), '63.60 m²');
       await openSettings(tester);
       await tester.ensureVisible(field('Gangway width'));
       await tester.enterText(field('Gangway width'), '0');
       await saveSettings(tester);
-      expect(kpi(tester, 'kpi-floor-with'), '11.34 m²');
+      expect(kpi(tester, 'kpi-floor-with'), '9.60 m²');
+      expect(kpi(tester, 'kpi-floor-without'), '11.34 m²');
       expect(kpi(tester, 'kpi-rack-with'), '7.98 m²');
       expect((await ProjectStore().load()).single.settings.gangwayWidth, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'floor gangway formula keeps Q over S unrounded and leaves rack capacity independent',
+    (tester) async {
+      await ProjectStore().save([
+        WarehouseProject(
+          id: 'formula-stacking',
+          name: 'Formula stacking',
+          parts: [
+            PartInput.fromJson({...sample.toJson(), 'stacking': 3}),
+          ],
+        ),
+      ]);
+      await launch(tester);
+      expect(kpi(tester, 'kpi-floor-without'), '4.50 m²');
+      expect(kpi(tester, 'kpi-floor-with'), '21.20 m²');
+      expect(kpi(tester, 'kpi-rack-without'), '7.98 m²');
+      expect(kpi(tester, 'kpi-rack-with'), '33.63 m²');
+      await tester.ensureVisible(find.text('SAMPLE-001').last);
+      await tester.tap(find.text('SAMPLE-001').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Q / S = 10 ÷ 3 (unrounded)'), findsOneWidget);
+      expect(find.text('Floor formula storage component'), findsOneWidget);
+      expect(
+        find.textContaining('SQM = (Q / S) × L × (W + G) / 1,000,000'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -177,7 +208,7 @@ void main() {
       expect(textValue(tester, 'required-SAMPLE-001'), '11');
       expect(textValue(tester, 'used-doh-SAMPLE-001'), '3.5');
       expect(kpi(tester, 'kpi-floor-without'), '12.78 m²');
-      expect(kpi(tester, 'kpi-floor-with'), '16.83 m²');
+      expect(kpi(tester, 'kpi-floor-with'), '69.96 m²');
       expect(kpi(tester, 'kpi-rack-without'), '7.98 m²');
       final saved = (await ProjectStore().load()).single.settings;
       expect(saved.shiftsPerDay, 3);
