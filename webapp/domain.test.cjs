@@ -1,0 +1,255 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+require('./domain.js');
+const D = globalThis.LogEnDomain;
+const settings = overrides => ({...D.createDefaultSettings(), ...overrides});
+const part = overrides => ({partNumber:'SHIFT-001',qtyBox:20,qtyOnPallet:40,
+  consumptionPerShift:500,doh:5,length:1200,width:800,height:1000,...overrides});
+const calculate = (p={},s={}) => D.calculatePart(part(p), settings(s));
+const forPallets = (n,p={},s={}) => calculate({consumptionPerShift:1,doh:n,...p},{shiftsPerDay:1,...s});
+const near = (actual,expected) => assert.ok(Math.abs(actual-expected)<1e-9,`${actual} should equal ${expected}`);
+
+test('eight-column sample defaults stacking to one and calculates all four footprints',()=>{
+ const r=calculate(); assert.equal(r.isValid,true); assert.equal(r.input.stacking,1);
+ assert.equal(r.requiredParts,5000); assert.equal(r.requiredPallets,10);
+ assert.equal(r.planning.partsPerPallet,800); assert.equal(r.planning.palletsPerShift,.625);
+ assert.equal(r.planning.roundedPalletsPerShift,1); assert.equal(r.planning.plannedPalletsPerDay,2);
+ assert.equal(r.planning.requiredPallets,10); assert.equal(r.planning.dailyConsumption,1000);
+ near(r.floor.withoutGangways,11.34); near(r.floor.withGangways,27.54);
+ near(r.rack.withoutGangways,7.98); near(r.rack.withGangways,33.63);
+});
+
+test('manually permitted stacking changes floor occupancy but never rack capacity',()=>{
+ const a=calculate(), b=calculate({stacking:3});
+ assert.equal(b.floor.positions,4); assert.equal(b.floor.rows,2);
+ near(b.floor.withoutGangways,4.5); near(b.floor.withGangways,12.6);
+ assert.equal(a.rack.bays,b.rack.bays); assert.equal(a.rack.withGangways,b.rack.withGangways);
+ const capped=calculate({stacking:99}); assert.equal(capped.floor.effectiveStacking,5);
+});
+
+test('literal inner shift rounding is not replaced by ceiling total parts',()=>{
+ const r=calculate({consumptionPerShift:1000});
+ assert.equal(r.planning.palletsPerShift,1.25); assert.equal(r.planning.roundedPalletsPerShift,2);
+ assert.equal(r.requiredParts,10000); assert.equal(r.requiredPallets,20);
+ assert.equal(Math.ceil(r.requiredParts/800),13); assert.notEqual(r.requiredPallets,13);
+});
+
+test('one through three shifts multiply daily consumption and rounded storage demand',()=>{
+ for(const shifts of [1,2,3]){ const r=calculate({}, {shiftsPerDay:shifts});
+  assert.equal(r.planning.consumptionPerShift,500); assert.equal(r.planning.shiftConsumption,500);
+  assert.equal(r.planning.dailyConsumption,500*shifts); assert.equal(r.requiredPallets,5*shifts);
+ }
+ for(const shifts of [0,4,1.5,NaN]) assert.ok(D.validateSettings(settings({shiftsPerDay:shifts})).length);
+});
+
+test('DOH is per part by default and project override recalculates both scenarios',()=>{
+ const a=calculate({doh:2}), b=calculate({doh:2},{coverageMode:'custom',customCoverageDays:5});
+ assert.equal(a.requiredPallets,4); assert.equal(b.requiredPallets,10);
+ assert.equal(b.planning.providedCoverageDays,2); assert.equal(b.planning.targetCoverageDays,5);
+ assert.equal(b.rack.bays,2); assert.equal(b.floor.positions,10);
+ assert.equal(D.createDefaultSettings().customCoverageDays,5);
+});
+
+test('fractional DOH receives an outer pallet ceiling and zero DOH allocates no storage',()=>{
+ for(const [days,expected] of [[0,0],[.1,1],[.5,1],[1.25,3],[2.25,5]]){
+  const r=calculate({doh:days}); assert.equal(r.requiredPallets,expected);
+  near(r.requiredParts,1000*days);
+ }
+ const r=calculate({doh:0}); assert.equal(r.floor.rows,0); assert.equal(r.rack.bays,0);
+ const override=calculate({}, {coverageMode:'custom',customCoverageDays:2.25}); assert.equal(override.requiredPallets,5);
+});
+
+test('24h and 48h compatibility presets use one and two production days after shift rounding',()=>{
+ assert.equal(calculate({}, {coverageMode:'24h'}).requiredPallets,2);
+ assert.equal(calculate({}, {coverageMode:'48h'}).requiredPallets,4);
+ assert.equal(calculate().planning.pallets24h,2); assert.equal(calculate().planning.pallets48h,4);
+});
+
+test('old entered stock mode cannot override the new formula',()=>{
+ const r=calculate({stockQty:801},{stockMode:'entered'});
+ assert.equal(r.requiredParts,5000); assert.equal(r.requiredPallets,10);
+ assert.equal(r.planning.currentPalletPositions,2);
+ assert.equal(calculate({}, {stockMode:'obsolete'}).isValid,true);
+});
+
+test('new packaging and shift inputs override stale historical capacity and monthly totals',()=>{
+ const r=calculate({partsPerPallet:1,monthlyConsumption:1,consumption:9999,providedCoverageDays:100,doh:2});
+ assert.equal(r.input.partsPerPallet,800); assert.equal(r.planning.consumptionPerShift,500);
+ assert.equal(r.planning.providedCoverageDays,2); assert.equal(r.requiredPallets,4);
+});
+
+test('new eight-column input never invents current stock or monthly inventory',()=>{
+ const r=calculate(); assert.equal(r.input.stockQty,null); assert.equal(r.planning.stockQty,null);
+ assert.equal(r.planning.currentPallets,null); assert.equal(r.planning.currentPalletPositions,null);
+ assert.equal(r.planning.actualCoverageDays,null); assert.equal(r.planning.coverageDifferenceDays,null);
+ assert.equal(r.planning.coverageMismatch,false); assert.equal(r.input.monthlyConsumption,null);
+ assert.equal(r.planning.monthlyConsumption,null); assert.equal(r.planning.palletDurationDays,.8);
+});
+
+test('known historical stock may be reported without controlling required pallets',()=>{
+ const r=calculate({stockQty:5600,monthlyConsumption:22000});
+ assert.equal(r.planning.currentPallets,7); assert.equal(r.planning.actualCoverageDays,5.6);
+ near(r.planning.coverageDifferenceDays,.6); assert.equal(r.planning.coverageMismatch,true);
+ assert.equal(r.requiredPallets,10); assert.equal(r.input.monthlyConsumption,22000);
+ const zero=calculate({stockQty:0}); assert.equal(zero.planning.currentPallets,0);
+ assert.equal(zero.planning.actualCoverageDays,0);
+});
+
+test('zero per-shift demand yields zero pallets with explicit no-consumption durations',()=>{
+ const r=calculate({consumptionPerShift:0,stockQty:5600});
+ assert.equal(r.isValid,true); assert.equal(r.requiredPallets,0); assert.equal(r.requiredParts,0);
+ assert.equal(r.planning.noConsumption,true); assert.equal(r.planning.roundedPalletsPerShift,0);
+ assert.equal(r.planning.palletDurationDays,null); assert.equal(r.planning.actualCoverageDays,null);
+ assert.equal(r.planning.pallets24h,0); assert.equal(r.planning.pallets48h,0);
+ assert.equal(r.floor.withoutGangways,0); assert.deepEqual(r.rack.baysPerRun,[]);
+});
+
+test('legacy daily data migrates once to a fixed per-shift rate',()=>{
+ const old={partNumber:'OLD',qtyBox:20,qtyOnPallet:40,qtyPallet:7,consumption:1000,doh:5,
+ length:1200,width:800,height:1000,stacking:3};
+ const p=D.normalizePart(old,settings()); assert.equal(p.consumptionPerShift,500);
+ assert.equal(p.stockQty,5600); assert.equal(p.partsPerPallet,800); assert.equal(p.packagingInferred,false);
+ const r=D.calculatePart(p,settings({shiftsPerDay:3}));
+ assert.equal(r.planning.consumptionPerShift,500); assert.equal(r.planning.dailyConsumption,1500);
+ assert.equal(r.requiredPallets,15); assert.equal(old.consumptionPerShift,undefined);
+});
+
+test('old monthly direct-capacity data migrates with an explicit packaging inference flag',()=>{
+ const old={partNumber:'MONTHLY',partsPerPallet:800,monthlyConsumption:22000,
+ providedCoverageDays:5,stockQty:5600,length:1200,width:800,height:1000,stacking:3};
+ const p=D.normalizePart(old,settings()); assert.equal(p.qtyBox,800); assert.equal(p.qtyOnPallet,1);
+ assert.equal(p.packagingInferred,true); assert.equal(p.consumptionPerShift,500); assert.equal(p.doh,5);
+ assert.equal(p.monthlyConsumption,22000); assert.equal(p.stockQty,5600);
+ const r=D.calculatePart(p,settings({workingDaysPerMonth:20,shiftsPerDay:3}));
+ assert.equal(r.planning.consumptionPerShift,500); assert.equal(r.requiredPallets,15);
+});
+
+test('legacy monthly missing stock stays unknown',()=>{
+ const old={partNumber:'MONTHLY',partsPerPallet:800,monthlyConsumption:22000,
+ providedCoverageDays:5,length:1200,width:800,height:1000};
+ assert.equal(D.normalizePart(old,settings()).stockQty,null);
+ assert.equal(D.calculatePart(old,settings()).planning.currentPallets,null);
+});
+
+test('obsolete workday or stock metadata does not invalidate explicit per-shift data',()=>{
+ assert.equal(calculate({}, {workingDaysPerMonth:0}).isValid,true);
+ assert.equal(calculate({}, {workingDaysPerMonth:NaN}).isValid,true);
+ const r=calculate({monthlyConsumption:NaN,stockQty:-1});
+ assert.equal(r.isValid,true); assert.equal(r.planning.currentPallets,null);
+ const old={partNumber:'OLD',partsPerPallet:800,monthlyConsumption:22000,providedCoverageDays:5,
+ length:1200,width:800,height:1000};
+ assert.equal(D.calculatePart(old,settings({workingDaysPerMonth:0})).isValid,false);
+});
+
+test('invalid or missing primary numeric fields remain visible errors',()=>{
+ for(const p of [{qtyBox:0},{qtyBox:1.5},{qtyOnPallet:0},{qtyOnPallet:.5},
+ {consumptionPerShift:-1},{consumptionPerShift:NaN},{doh:-1},{height:NaN},{stacking:0},
+ {inputErrors:['Invalid Excel cell']},{qtyBox:0,partsPerPallet:800}])
+ assert.equal(calculate(p).isValid,false);
+ const missing=part();delete missing.consumptionPerShift;
+ assert.equal(D.calculatePart(missing,settings()).isValid,false);
+ const missingDoh=part();delete missingDoh.doh;assert.equal(D.calculatePart(missingDoh,settings()).isValid,false);
+});
+
+test('whole-pallet boundary precision does not erase meaningful fractional consumption',()=>{
+ assert.equal(calculate({consumptionPerShift:800}).planning.roundedPalletsPerShift,1);
+ assert.equal(calculate({consumptionPerShift:800.00001}).planning.roundedPalletsPerShift,2);
+ assert.equal(calculate({consumptionPerShift:800.0000000000002}).planning.roundedPalletsPerShift,2);
+ assert.equal(calculate({consumptionPerShift:1e-20}).requiredPallets,10);
+ assert.equal(calculate({consumptionPerShift:1e300}).isValid,false);
+});
+
+test('floor fit failures preserve independent planning and rack results',()=>{
+ const r=calculate({}, {maxFloorRowDepth:1000});
+ assert.equal(r.isValid,false); assert.equal(r.floor,null); assert.ok(r.rack);
+ assert.equal(r.planning.roundedPalletsPerShift,1); assert.equal(r.requiredPallets,10);
+ assert.match(r.errors.join(' '),/row depth/);
+ assert.match(calculate({}, {maxFloorStackingHeight:999}).errors.join(' '),/stacking height/);
+});
+
+test('floor actual occupancy handles full and partial rows without unused reserved depth',()=>{
+ const r=forPallets(19,{stacking:3});
+ assert.equal(r.floor.positions,7); assert.equal(r.floor.rows,3); assert.equal(r.floor.lastRowPallets,1);
+ near(r.floor.fullRowDepth,3.8); near(r.floor.lastRowDepth,1.2); near(r.floor.totalOccupiedDepth,8.8);
+ near(r.floor.withoutGangways,7.92); near(r.floor.gangwayArea,12.15); near(r.floor.withGangways,20.07);
+});
+
+test('zero floor depth means one unrestricted occupied row while rack depth still validates',()=>{
+ const r=forPallets(19,{stacking:3},{maxFloorRowDepth:0});
+ assert.equal(r.isValid,true); assert.equal(r.floor.rows,1); assert.equal(r.floor.palletsPerRow,7);
+ near(r.floor.totalOccupiedDepth,9); near(r.floor.withoutGangways,8.1); near(r.floor.gangwayArea,4.05);
+ const one=forPallets(1); near(one.floor.rowDepth,1.2); near(one.floor.withoutGangways,1.08);
+ assert.ok(D.validateSettings(settings({rackSlotDepth:0})).length);
+});
+
+test('rack final run uses actual bay allocation with no footprint level multiplier',()=>{
+ const r=forPallets(41); assert.equal(r.rack.bays,6); assert.equal(r.rack.runs,2);
+ assert.equal(r.rack.maxBaysPerRun,5); assert.deepEqual(r.rack.baysPerRun,[5,1]);
+ near(r.rack.withoutGangways,23.94); near(r.rack.gangwayArea,76.95);
+});
+
+test('rack height/depth clearances independently enforce fit boundaries',()=>{
+ assert.equal(calculate({height:1000,width:1100}).isValid,true);
+ const h=calculate({height:1001}); assert.equal(h.rack,null); assert.ok(h.floor);
+ assert.ok(h.planning); assert.match(h.errors.join(' '),/vertical clearance/);
+ assert.equal(calculate({width:1101}).rack,null);
+ assert.ok(calculate({width:1101},{rackDepthClearance:99}).rack);
+});
+
+test('rack rotation is opt-in and chooses highest valid capacity',()=>{
+ const a=calculate({length:1000,width:600}), b=calculate({length:1000,width:600},{allowRotation:true});
+ assert.equal(a.rack.palletsPerSlot,2); assert.equal(a.rack.rotated,false);
+ assert.equal(b.rack.palletsPerSlot,3); assert.equal(b.rack.rotated,true);
+ assert.equal(calculate({length:800,width:1300}).rack,null);
+ assert.equal(calculate({length:800,width:1300},{allowRotation:true}).rack.rotated,true);
+});
+
+test('each part has dedicated floor rows and rack bays',()=>{
+ const r=D.calculateProject([part({partNumber:'A'}),part({partNumber:'B'})],settings());
+ assert.equal(r.invalidCount,0); assert.equal(r.totalRequiredPallets,20);
+ assert.equal(r.totalFloorRows,8); assert.equal(r.totalRackBays,4); assert.equal(r.totalRackRuns,2);
+ near(r.floorWithoutGangways,22.68); near(r.floorWithGangways,55.08);
+ near(r.rackWithoutGangways,15.96); near(r.rackWithGangways,67.26);
+});
+
+test('invalid rows remain listed while four totals include only complete valid comparisons',()=>{
+ const r=D.calculateProject([part({partNumber:'A'}),part({partNumber:'BAD',qtyBox:0})],settings());
+ assert.equal(r.results.length,2); assert.equal(r.invalidCount,1); assert.equal(r.validCount,1);
+ assert.equal(r.totalRequiredPallets,10); near(r.floorWithoutGangways,11.34);
+ assert.ok(r.results[1].errors.length);
+});
+
+test('duplicate identifiers are case-insensitive and errors clear after correction',()=>{
+ const rows=[part({partNumber:'Same'}),part({partNumber:' same '})];
+ const r=D.calculateProject(rows,settings());assert.equal(r.invalidCount,2);
+ assert.equal(r.totalRequiredPallets,0); assert.match(r.results[0].errors.join(),/Duplicate/);
+ assert.equal(D.calculateProject([rows[0]],settings()).invalidCount,0);
+});
+
+test('savings may be negative and zero floor denominators remain undefined',()=>{
+ const r=D.calculateProject([part()],settings());near(r.savingWithoutGangways,3.36);
+ near(r.savingWithGangways,-6.09);assert.ok(r.savingWithGangwaysPercent<0);
+ const zero=D.calculateProject([part({consumptionPerShift:0})],settings());
+ assert.equal(zero.savingWithoutGangwaysPercent,null);assert.equal(zero.savingWithGangwaysPercent,null);
+});
+
+test('gangway edits affect only allocated areas',()=>{
+ const a=calculate(),b=calculate({}, {gangwayWidth:3000});
+ assert.equal(a.floor.withoutGangways,b.floor.withoutGangways);
+ assert.equal(a.rack.withoutGangways,b.rack.withoutGangways);
+ near(b.floor.withGangways,22.14);near(b.rack.withGangways,25.08);
+});
+
+test('invalid settings retain rows and prevent misleading calculated totals',()=>{
+ const r=D.calculateProject([part()],settings({maxRackRunLength:2000}));
+ assert.ok(r.settingsErrors.length);assert.equal(r.results.length,1);assert.equal(r.invalidCount,1);
+ assert.equal(r.totalRequiredPallets,0);
+ for(const s of [{rackLevels:0},{gangwayWidth:-1},{customCoverageDays:-1},{coverageMode:'unknown'}])
+  assert.ok(D.validateSettings(settings(s)).length);
+});
+
+test('empty project and independently created defaults are safe',()=>{
+ const r=D.calculateProject([],settings());assert.equal(r.invalidCount,0);
+ assert.equal(r.totalRackRuns,0);assert.equal(r.savingWithGangwaysPercent,null);
+ const a=D.createDefaultSettings();a.shiftsPerDay=3;assert.equal(D.createDefaultSettings().shiftsPerDay,2);
+});

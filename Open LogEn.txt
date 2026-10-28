@@ -1,0 +1,21 @@
+LOGEN — OFFLINE CHROME APP
+
+Open LogEn.html with Google Chrome. Refresh the tab after an update.
+No launcher, server, installation, account or internet is required.
+
+Download the eight-column template or use LogEn_Shift_Inventory_Template.xlsx.
+Part Number | QTY in Box | QTY boxes per Pallet | Consumption per shift
+DOH (Days on hand) | L(mm) | W(mm) | H(mm)
+
+Required pallets = ROUNDUP(consumption per shift / QTY in Box /
+QTY boxes per Pallet, 0) x DOH x shifts per day.
+Round pallets per shift FIRST. Choose 1, 2 or 3 shifts per day and a DOH override,
+or use each part's DOH. All footprint results update automatically.
+
+Dimensions are loaded pallet dimensions. Floor stacking defaults to one high.
+Ground-depth limit 0 means unrestricted; floor m² uses actual occupied depth.
+Click a part number for formulas. Export results creates five Excel sheets.
+
+Projects → Delete project asks for confirmation.
+Deleted projects → Restore project recovers inventory and settings.
+Projects → Download backup before moving the file or clearing browser data.
