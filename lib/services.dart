@@ -311,7 +311,7 @@ class WorkbookService {
       'Older monthly and daily templates remain supported. Their rates are converted once to consumption per shift using production settings selected at import.',
       'Legacy direct pallet capacity without box quantities uses inferred packaging: one box containing that pallet capacity. Review inferred box quantities before relying on per-shift rounding.',
       'Use numeric cells or decimal-point text. Formula cells are not evaluated; paste values before importing.',
-      'Each part has dedicated floor rows and rack bays. Both scenarios use the same required pallets. Gangway values are allocated planning estimates.',
+      'Each part has dedicated floor rows and rack bays. Both scenarios use the same required pallets. Gangway values allocate half (50%) of the configured width as planning estimates.',
       'All imports, calculations, project storage and exports run locally and work offline.',
     ]) {
       _append(instructions, [line]);
@@ -760,7 +760,9 @@ class WorkbookService {
     _append(comparison, []);
     for (final line in [
       'Both storage scenarios use the same required pallets, with dedicated floor rows and rack bays per part.',
-      'Gangway-inclusive values allocate planning strips, not an optimized physical warehouse design. Count shared gangways once in an actual layout.',
+      'Gangway-inclusive values allocate half (50%) of the configured gangway width, not an optimized physical warehouse design. Count shared gangways once in an actual layout.',
+      'Floor gangway = rows × row width (m) × (configured gangway width (mm) / 2 / 1000).',
+      'Rack gangway = sum of actual run frontages (m) × (configured gangway width (mm) / 2 / 1000).',
       'Invalid parts remain visible in calculations and are excluded from partial totals.',
       'Negative savings mean racks require more ground area. Numeric footprints retain precision and display two decimals.',
     ]) {
@@ -835,7 +837,17 @@ class WorkbookService {
         s.maxFloorRowDepth,
         'mm; 0 = unlimited. Footprint uses actual occupied depth.',
       ],
-      ['Gangway width', s.gangwayWidth, 'mm'],
+      ['Gangway width', s.gangwayWidth, 'mm; full configured width'],
+      [
+        'Gangway allocation factor',
+        0.5,
+        '50% for both floor and rack footprints',
+      ],
+      [
+        'Allocated gangway width (50%)',
+        s.allocatedGangwayWidth,
+        'mm; configured gangway width / 2',
+      ],
       ['Floor pallet clearance', s.floorPalletClearance, 'mm'],
       ['Rack levels', s.rackLevels, 'levels'],
       ['Rack usable slot length', s.rackSlotLength, 'mm'],
@@ -871,7 +883,7 @@ class WorkbookService {
       'Floor storage area = row width × total actual occupied row depth, including clearances between pallets. Unused row depth is not reserved.',
       'Rack pallets per slot = FLOOR((slot length - frontage clearance) / (pallet frontage + frontage clearance)); pallet depth and height must fit separate clearances.',
       'Capacity per bay = pallets per slot × rack levels. Rack footprint = required bays × effective bay length × effective bay depth / 1000000; levels never multiply ground area.',
-      'Rack gangways use actual run frontage and configured gangway width. These are allocated estimates, not optimized layouts.',
+      'Allocated gangway width = configured gangway width / 2. Floor gangway area = rows × row width × allocated width / 1000; rack gangway area = actual run frontage × allocated width / 1000. These are allocated estimates, not optimized layouts.',
     ]) {
       _append(settings, [line]);
     }

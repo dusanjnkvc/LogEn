@@ -329,6 +329,15 @@ class _SettingsEditorState extends State<_SettingsEditor> {
     );
   }
 
+  String _gangwayAllocationHint() {
+    final width = double.tryParse(_fields['gangwayWidth']!.text.trim());
+    if (width == null || !width.isFinite || width < 0) {
+      return 'Enter a valid full gangway width to preview the 50% allocation.';
+    }
+    return 'Allocated gangway width = ${_number(width)} ÷ 2 = '
+        '${_number(_draftSettings().allocatedGangwayWidth)} mm for both floor and rack calculations.';
+  }
+
   void _save() {
     if (!_form.currentState!.validate()) return;
     final settings = _draftSettings();
@@ -411,13 +420,23 @@ class _SettingsEditorState extends State<_SettingsEditor> {
             shiftsPerDay: _shifts,
           ),
           const SizedBox(height: 28),
-          const _SectionHeading('FLOOR STORAGE & GANGWAYS'),
+          const _SectionHeading(
+            'FLOOR STORAGE & GANGWAYS',
+            description:
+                'Enter the full physical gangway width. Floor and rack footprints allocate half of that width (50%).',
+          ),
           _FieldGrid([
             _field('maxFloorStackingHeight'),
             _field('maxFloorRowDepth'),
             _field('gangwayWidth'),
             _field('floorPalletClearance'),
           ]),
+          const SizedBox(height: 12),
+          Text(
+            _gangwayAllocationHint(),
+            key: const Key('allocated-gangway-width'),
+            style: const TextStyle(color: _muted, fontSize: 12, height: 1.6),
+          ),
           const SizedBox(height: 28),
           const _SectionHeading(
             'PALLET RACKS',
@@ -450,7 +469,7 @@ class _SettingsEditorState extends State<_SettingsEditor> {
           ),
           const SizedBox(height: 10),
           const _Notice(
-            'Gangway-inclusive results are allocated planning estimates. '
+            'Gangway-inclusive results allocate 50% of the configured gangway width. '
             'They do not represent an optimized physical warehouse layout.',
           ),
           if (_errors.isNotEmpty) ...[
@@ -1000,7 +1019,8 @@ class _PartDetails extends StatelessWidget {
             ),
             _DetailLine(
               'Allocated floor gangway area',
-              '${floor.rows} rows × ${n(floor.rowWidth)} m × ${n(settings.gangwayWidth)} / 1000 m',
+              '${floor.rows} rows × ${n(floor.rowWidth)} m × (${n(settings.gangwayWidth)} ÷ 2) / 1000 m\n'
+                  'Allocated gangway width = ${n(settings.allocatedGangwayWidth)} mm',
               result: _area(floor.gangwayArea),
             ),
             _DetailLine(
@@ -1070,8 +1090,9 @@ class _PartDetails extends StatelessWidget {
             ),
             _DetailLine(
               'Allocated rack gangway area',
-              'Total run frontage × gangway width = '
-                  '(${rack.bays} × ${n(rack.effectiveBayLength)} / 1000 m) × ${n(settings.gangwayWidth)} / 1000 m',
+              'Total run frontage × half gangway width = '
+                  '(${rack.bays} × ${n(rack.effectiveBayLength)} / 1000 m) × (${n(settings.gangwayWidth)} ÷ 2) / 1000 m\n'
+                  'Allocated gangway width = ${n(settings.allocatedGangwayWidth)} mm',
               result: _area(rack.gangwayArea),
             ),
             _DetailLine(
@@ -1083,7 +1104,7 @@ class _PartDetails extends StatelessWidget {
           const SizedBox(height: 22),
           const _Notice(
             'Each part uses dedicated floor rows and rack bays. Floor stacking does not apply to racks. '
-            'Gangway allocations are conservative planning estimates; a physical layout must count shared gangways once.',
+            'Both scenarios allocate 50% of the configured gangway width. These are planning estimates; a physical layout must count shared gangways once.',
           ),
         ],
       ),

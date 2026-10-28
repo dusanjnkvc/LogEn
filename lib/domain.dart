@@ -159,6 +159,8 @@ class WarehouseSettings {
   final double maxFloorStackingHeight;
   final double maxFloorRowDepth;
   final double gangwayWidth;
+  /// The allocated footprint uses half of the configured physical aisle width.
+  double get allocatedGangwayWidth => gangwayWidth / 2;
   final double floorPalletClearance;
   final int rackLevels;
   final double rackSlotLength;
@@ -767,7 +769,7 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
               math.max(0, positions - rows) * settings.floorPalletClearance) /
           1000;
       final without = rowWidth * totalOccupiedDepth;
-      final gangway = rows * rowWidth * settings.gangwayWidth / 1000;
+      final gangway = rows * rowWidth * settings.allocatedGangwayWidth / 1000;
       if (![without, gangway, without + gangway].every((v) => v.isFinite)) {
         throw const FormatException(
           'Floor area exceeds supported numeric precision.',
@@ -852,11 +854,10 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
         0,
         (sum, count) => sum + count * bayLength / 1000,
       );
-      final gangway = frontageMetres * settings.gangwayWidth / 1000;
-      // Algebraically equivalent to storage + allocated aisle area, calculated
-      // in mm² before conversion. Avoids binary cancellation at 16.815 -> 16.82.
+      final gangway = frontageMetres * settings.allocatedGangwayWidth / 1000;
+      // Combine storage and the half-width allocation before unit conversion.
       final withGangways =
-          bays * bayLength * (bayDepth + settings.gangwayWidth) / 1000000;
+          bays * bayLength * (bayDepth + settings.allocatedGangwayWidth) / 1000000;
       if (![
         without,
         gangway,

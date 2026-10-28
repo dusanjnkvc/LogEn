@@ -37,6 +37,9 @@
     customCoverageDays: 'Custom target coverage'
   };
 
+  // Each storage allocation is charged half of the configured physical aisle.
+  const allocatedGangwayWidth = settings => settings.gangwayWidth / 2;
+
   function validateSettings(s) {
     const errors = [];
     for (const [key, label] of Object.entries(positiveSettings)) {
@@ -217,7 +220,7 @@
         const rowDepth = fullRowDepth;
         const totalOccupiedDepth = (positions * input.length + Math.max(0, positions - rows) * s.floorPalletClearance) / 1000;
         const withoutGangways = rowWidth * totalOccupiedDepth;
-        const gangwayArea = rows * rowWidth * s.gangwayWidth / 1000;
+        const gangwayArea = rows * rowWidth * allocatedGangwayWidth(s) / 1000;
         const withGangways = withoutGangways + gangwayArea;
         if (![withoutGangways, gangwayArea, withGangways].every(Number.isFinite))
           throw new Error('Floor area exceeds supported numeric precision.');
@@ -258,10 +261,10 @@
         const withoutGangways = bays * effectiveBayLength * effectiveBayDepth / 1000000;
         const totalFrontageMetres = baysPerRun.reduce((total, count) =>
           total + count * effectiveBayLength / 1000, 0);
-        const gangwayArea = totalFrontageMetres * s.gangwayWidth / 1000;
-        // Combined mm² expression avoids 16.814999999999998 -> 16.81 display.
+        const gangwayArea = totalFrontageMetres * allocatedGangwayWidth(s) / 1000;
+        // Combine storage and the half-width allocation before unit conversion.
         const withGangways = bays * effectiveBayLength *
-          (effectiveBayDepth + s.gangwayWidth) / 1000000;
+          (effectiveBayDepth + allocatedGangwayWidth(s)) / 1000000;
         if (![withoutGangways, gangwayArea, withGangways, effectiveBayHeight].every(Number.isFinite))
           throw new Error('Rack area exceeds supported numeric precision.');
         rack = { palletsPerSlot, levels: s.rackLevels, capacityPerBay, bays,
@@ -314,5 +317,5 @@
     return project;
   }
 
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, normalizePart, validateSettings, calculatePart, calculateProject });
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
 })(globalThis);

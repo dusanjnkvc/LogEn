@@ -20,7 +20,12 @@ async function main() {
   assert.deepEqual(workbook.worksheets.map(s=>s.name), ['Original Input Data','Floor Pallet Calculations','Rack Calculations','Warehouse Comparison','Warehouse Settings']);
   const comparison = workbook.getWorksheet('Warehouse Comparison');
   const values = [2,3,4,5].map(row=>comparison.getCell(`B${row}`).value);
-  [11.34,27.54,7.98,33.63].forEach((expected,i)=>assert.ok(Math.abs(values[i]-expected)<1e-9));
+  [11.34,19.44,7.98,20.805].forEach((expected,i)=>assert.ok(Math.abs(values[i]-expected)<1e-9));
+  const settings=workbook.getWorksheet('Warehouse Settings');
+  const setting=name=>settings.getRows(1,settings.rowCount).find(row=>row.getCell(1).value===name).getCell(2).value;
+  assert.equal(setting('Gangway width'),4500);
+  assert.equal(setting('Gangway allocation factor'),.5);
+  assert.equal(setting('Allocated gangway width (50%)'),2250);
   assert.equal(input.parts[0].qtyBox,20);assert.equal(input.parts[0].qtyOnPallet,40);
   assert.equal(input.parts[0].consumptionPerShift,500);assert.equal(input.parts[0].doh,5);
   assert.equal(input.parts[0].stockQty,null);assert.equal(input.parts[0].stacking,1);
@@ -28,6 +33,6 @@ async function main() {
   const headers=floor.getRow(1).values.slice(1);
   const cell=name=>floor.getRow(2).getCell(headers.indexOf(name)+1).value;
   assert.equal(cell('Rounded Pallets per Shift'),1);assert.equal(cell('Required Pallets'),10);
-  console.log('Chrome downloads verified: exact eight-column shift template; five result sheets; per-shift rounding; 10 pallets; footprints 11.34, 27.54, 7.98, 33.63 m².');
+  console.log('Chrome downloads verified: exact eight-column shift template; five result sheets; per-shift rounding; 10 pallets; footprints 11.34, 19.44, 7.98, 20.805 m².');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

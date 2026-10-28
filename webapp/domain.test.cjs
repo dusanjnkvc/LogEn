@@ -15,14 +15,14 @@ test('eight-column sample defaults stacking to one and calculates all four footp
  assert.equal(r.planning.partsPerPallet,800); assert.equal(r.planning.palletsPerShift,.625);
  assert.equal(r.planning.roundedPalletsPerShift,1); assert.equal(r.planning.plannedPalletsPerDay,2);
  assert.equal(r.planning.requiredPallets,10); assert.equal(r.planning.dailyConsumption,1000);
- near(r.floor.withoutGangways,11.34); near(r.floor.withGangways,27.54);
- near(r.rack.withoutGangways,7.98); near(r.rack.withGangways,33.63);
+ near(r.floor.withoutGangways,11.34); near(r.floor.withGangways,19.44);
+ near(r.rack.withoutGangways,7.98); near(r.rack.withGangways,20.805);
 });
 
 test('manually permitted stacking changes floor occupancy but never rack capacity',()=>{
  const a=calculate(), b=calculate({stacking:3});
  assert.equal(b.floor.positions,4); assert.equal(b.floor.rows,2);
- near(b.floor.withoutGangways,4.5); near(b.floor.withGangways,12.6);
+ near(b.floor.withoutGangways,4.5); near(b.floor.withGangways,8.55);
  assert.equal(a.rack.bays,b.rack.bays); assert.equal(a.rack.withGangways,b.rack.withGangways);
  const capped=calculate({stacking:99}); assert.equal(capped.floor.effectiveStacking,5);
 });
@@ -171,13 +171,13 @@ test('floor actual occupancy handles full and partial rows without unused reserv
  const r=forPallets(19,{stacking:3});
  assert.equal(r.floor.positions,7); assert.equal(r.floor.rows,3); assert.equal(r.floor.lastRowPallets,1);
  near(r.floor.fullRowDepth,3.8); near(r.floor.lastRowDepth,1.2); near(r.floor.totalOccupiedDepth,8.8);
- near(r.floor.withoutGangways,7.92); near(r.floor.gangwayArea,12.15); near(r.floor.withGangways,20.07);
+ near(r.floor.withoutGangways,7.92); near(r.floor.gangwayArea,6.075); near(r.floor.withGangways,13.995);
 });
 
 test('zero floor depth means one unrestricted occupied row while rack depth still validates',()=>{
  const r=forPallets(19,{stacking:3},{maxFloorRowDepth:0});
  assert.equal(r.isValid,true); assert.equal(r.floor.rows,1); assert.equal(r.floor.palletsPerRow,7);
- near(r.floor.totalOccupiedDepth,9); near(r.floor.withoutGangways,8.1); near(r.floor.gangwayArea,4.05);
+ near(r.floor.totalOccupiedDepth,9); near(r.floor.withoutGangways,8.1); near(r.floor.gangwayArea,2.025);
  const one=forPallets(1); near(one.floor.rowDepth,1.2); near(one.floor.withoutGangways,1.08);
  assert.ok(D.validateSettings(settings({rackSlotDepth:0})).length);
 });
@@ -185,7 +185,7 @@ test('zero floor depth means one unrestricted occupied row while rack depth stil
 test('rack final run uses actual bay allocation with no footprint level multiplier',()=>{
  const r=forPallets(41); assert.equal(r.rack.bays,6); assert.equal(r.rack.runs,2);
  assert.equal(r.rack.maxBaysPerRun,5); assert.deepEqual(r.rack.baysPerRun,[5,1]);
- near(r.rack.withoutGangways,23.94); near(r.rack.gangwayArea,76.95);
+ near(r.rack.withoutGangways,23.94); near(r.rack.gangwayArea,38.475);
 });
 
 test('rack height/depth clearances independently enforce fit boundaries',()=>{
@@ -208,8 +208,8 @@ test('each part has dedicated floor rows and rack bays',()=>{
  const r=D.calculateProject([part({partNumber:'A'}),part({partNumber:'B'})],settings());
  assert.equal(r.invalidCount,0); assert.equal(r.totalRequiredPallets,20);
  assert.equal(r.totalFloorRows,8); assert.equal(r.totalRackBays,4); assert.equal(r.totalRackRuns,2);
- near(r.floorWithoutGangways,22.68); near(r.floorWithGangways,55.08);
- near(r.rackWithoutGangways,15.96); near(r.rackWithGangways,67.26);
+ near(r.floorWithoutGangways,22.68); near(r.floorWithGangways,38.88);
+ near(r.rackWithoutGangways,15.96); near(r.rackWithGangways,41.61);
 });
 
 test('invalid rows remain listed while four totals include only complete valid comparisons',()=>{
@@ -228,16 +228,33 @@ test('duplicate identifiers are case-insensitive and errors clear after correcti
 
 test('savings may be negative and zero floor denominators remain undefined',()=>{
  const r=D.calculateProject([part()],settings());near(r.savingWithoutGangways,3.36);
- near(r.savingWithGangways,-6.09);assert.ok(r.savingWithGangwaysPercent<0);
+ near(r.savingWithGangways,-1.365);assert.ok(r.savingWithGangwaysPercent<0);
  const zero=D.calculateProject([part({consumptionPerShift:0})],settings());
  assert.equal(zero.savingWithoutGangwaysPercent,null);assert.equal(zero.savingWithGangwaysPercent,null);
+});
+
+test('gangway allocation uses exactly half the saved physical width for both scenarios',()=>{
+ const baseline=calculate({}, {gangwayWidth:0});
+ for(const width of [0,3000,4500,4501]) {
+  const s=settings({gangwayWidth:width}), r=D.calculatePart(part(),s);
+  assert.equal(s.gangwayWidth,width);
+  assert.equal(D.allocatedGangwayWidth(s),width/2);
+  assert.equal(r.requiredPallets,baseline.requiredPallets);
+  near(r.floor.withoutGangways,baseline.floor.withoutGangways);
+  near(r.rack.withoutGangways,baseline.rack.withoutGangways);
+  near(r.floor.gangwayArea,4*.9*(width/2/1000));
+  near(r.rack.gangwayArea,5.7*(width/2/1000));
+  near(r.floor.withGangways,baseline.floor.withoutGangways+r.floor.gangwayArea);
+  near(r.rack.withGangways,baseline.rack.withoutGangways+r.rack.gangwayArea);
+ }
+ const r=calculate();near(r.floor.gangwayArea,8.1);near(r.rack.gangwayArea,12.825);
 });
 
 test('gangway edits affect only allocated areas',()=>{
  const a=calculate(),b=calculate({}, {gangwayWidth:3000});
  assert.equal(a.floor.withoutGangways,b.floor.withoutGangways);
  assert.equal(a.rack.withoutGangways,b.rack.withoutGangways);
- near(b.floor.withGangways,22.14);near(b.rack.withGangways,25.08);
+ near(b.floor.withGangways,16.74);near(b.rack.withGangways,16.53);
 });
 
 test('invalid settings retain rows and prevent misleading calculated totals',()=>{

@@ -62,13 +62,21 @@ void main() {
     (tester) async {
       await launch(tester);
       expect(kpi(tester, 'kpi-floor-without'), '11.34 m²');
-      expect(kpi(tester, 'kpi-floor-with'), '27.54 m²');
+      expect(kpi(tester, 'kpi-floor-with'), '19.44 m²');
       expect(kpi(tester, 'kpi-rack-without'), '7.98 m²');
-      expect(kpi(tester, 'kpi-rack-with'), '33.63 m²');
+      expect(kpi(tester, 'kpi-rack-with'), '20.81 m²');
       expect(textValue(tester, 'raw-pallets-SAMPLE-001'), '0.625');
       expect(textValue(tester, 'rounded-pallets-SAMPLE-001'), '1');
       expect(textValue(tester, 'required-SAMPLE-001'), '10');
       expect(find.text('MONTHLY\nCONSUMPTION'), findsNothing);
+      await openSettings(tester);
+      expect(
+        textValue(tester, 'allocated-gangway-width'),
+        'Allocated gangway width = 4500 ÷ 2 = 2250 mm for both floor and rack calculations.',
+      );
+      await saveSettings(tester);
+      expect((await ProjectStore().load()).single.settings.gangwayWidth, 4500);
+      expect(kpi(tester, 'kpi-floor-with'), '19.44 m²');
       await openSettings(tester);
       await tester.ensureVisible(field('Gangway width'));
       await tester.enterText(field('Gangway width'), '0');
@@ -117,6 +125,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Round up for one shift first'), findsOneWidget);
       expect(find.text('D · Racks with allocated gangways'), findsOneWidget);
+      expect(
+        find.textContaining('Allocated gangway width = 2250 mm'),
+        findsNWidgets(2),
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -165,7 +177,7 @@ void main() {
       expect(textValue(tester, 'required-SAMPLE-001'), '11');
       expect(textValue(tester, 'used-doh-SAMPLE-001'), '3.5');
       expect(kpi(tester, 'kpi-floor-without'), '12.78 m²');
-      expect(kpi(tester, 'kpi-floor-with'), '16.83 m²');
+      expect(kpi(tester, 'kpi-floor-with'), '14.81 m²');
       expect(kpi(tester, 'kpi-rack-without'), '7.98 m²');
       final saved = (await ProjectStore().load()).single.settings;
       expect(saved.shiftsPerDay, 3);

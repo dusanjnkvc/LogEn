@@ -95,7 +95,7 @@ function formulaText(ui, label) {
 
 test('shift inventory renders the same ten required pallets in both warehouse scenarios', t=>{
   const ui=boot(t);
-  assert.deepEqual(ui.kpis(),['11.34','27.54','7.98','33.63']);
+  assert.deepEqual(ui.kpis(),['11.34','19.44','7.98','20.81']);
   assert.equal(ui.metric('Consumption per shift'),'500.00');
   assert.equal(ui.metric('Daily consumption'),'1,000.00');
   assert.equal(ui.metric('Rounded planning demand'),'2');
@@ -163,12 +163,12 @@ test('one, two and three shifts multiply daily usage and required pallets withou
   select(ui,'#production-shiftsPerDay',1);
   assert.equal(ui.metric('Daily consumption'),'500.00');
   assert.equal(ui.metric('Required storage pallets'),'5');
-  assert.deepEqual(ui.kpis(),['5.67','13.77','3.99','16.82']);
+  assert.deepEqual(ui.kpis(),['5.67','9.72','3.99','10.40']);
   select(ui,'#production-shiftsPerDay',3);
   assert.equal(ui.metric('Consumption per shift'),'500.00');
   assert.equal(ui.metric('Daily consumption'),'1,500.00');
   assert.equal(ui.metric('Required storage pallets'),'15');
-  assert.deepEqual(ui.kpis(),['17.10','37.35','7.98','33.63']);
+  assert.deepEqual(ui.kpis(),['17.10','27.23','7.98','20.81']);
   ui.click('[data-view="consumption"]');
   assert.equal(ui.cell('Consumption / shift'),'500.00');
   assert.equal(ui.cell('Shifts / day'),'3');
@@ -224,7 +224,7 @@ test('fractional DOH rounds the final storage count up and zero DOH requires zer
   const ui=boot(t,workspace({settings:{shiftsPerDay:3}}));
   ui.input('#production-customCoverageDays',0.25);
   assert.equal(ui.metric('Required storage pallets'),'1');
-  assert.deepEqual(ui.kpis(),['1.08','5.13','3.99','16.82']);
+  assert.deepEqual(ui.kpis(),['1.08','3.11','3.99','10.40']);
   ui.input('#production-customCoverageDays',0);
   assert.deepEqual(ui.kpis(),['0.00','0.00','0.00','0.00']);
   assert.doesNotMatch(ui.$('#main').textContent,/Infinity|NaN/);
@@ -321,14 +321,30 @@ test('reviewing inferred packaging clears the migration warning without losing o
   assert.deepEqual(ui.errors,[]);
 });
 
+test('full gangway setting persists while both KPI allocations use half its width',async t=>{
+  const ui=boot(t);
+  assert.deepEqual(ui.kpis(),['11.34','19.44','7.98','20.81']);
+  assert.match(ui.$('.allocation-note').textContent,/4,500 ÷ 2 = 2,250 mm/);
+  ui.click('#settings-nav');
+  assert.equal(ui.$('dialog input[name="gangwayWidth"]').value,'4500');
+  ui.input('dialog input[name="gangwayWidth"]',5000);
+  ui.submit();
+  await until(()=>ui.state().projects[0].settings.gangwayWidth===5000,'full physical gangway saved');
+  assert.deepEqual(ui.kpis(),['11.34','20.34','7.98','22.23']);
+  const reopened=boot(t,ui.state());
+  assert.equal(reopened.state().projects[0].settings.gangwayWidth,5000);
+  assert.deepEqual(reopened.kpis(),ui.kpis());
+  assert.deepEqual(ui.errors,[]);
+});
+
 test('unrestricted floor depth changes occupied rows without changing rack footprints',async t=>{
   const ui=boot(t);
-  assert.deepEqual(ui.kpis(),['11.34','27.54','7.98','33.63']);
+  assert.deepEqual(ui.kpis(),['11.34','19.44','7.98','20.81']);
   ui.click('#settings-nav');
   ui.input('dialog input[name="maxFloorRowDepth"]',0);
   ui.submit();
   await until(()=>ui.state().projects[0].settings.maxFloorRowDepth===0,'unrestricted floor save');
-  assert.deepEqual(ui.kpis(),['11.61','15.66','7.98','33.63']);
+  assert.deepEqual(ui.kpis(),['11.61','13.64','7.98','20.81']);
   assert.deepEqual(ui.errors,[]);
 });
 
@@ -363,7 +379,7 @@ test('the exact eight-column workbook imports through confirmation and uses defa
   assert.equal(ui.state().projects[0].rawInputRows[1][3],1000);
   assert.equal(ui.metric('Required storage pallets'),'20');
   assert.equal(ui.metric('Daily consumption'),'2,000.00');
-  assert.deepEqual(ui.kpis(),['22.77','51.12','11.97','50.45']);
+  assert.deepEqual(ui.kpis(),['22.77','36.95','11.97','31.21']);
   assert.deepEqual(ui.errors,[]);
 });
 
@@ -387,7 +403,7 @@ test('corrupt saved data remains intact until a confirmed valid backup restores 
   await until(()=>ui.w.document.querySelector('dialog [data-confirm]'),'recovery confirmation');
   ui.click('dialog [data-confirm]');
   await until(()=>ui.w.document.querySelectorAll('.kpi-card').length===4,'recovered shift dashboard');
-  assert.deepEqual(ui.kpis(),['11.34','27.54','7.98','33.63']);
+  assert.deepEqual(ui.kpis(),['11.34','19.44','7.98','20.81']);
   assert.equal(ui.w.localStorage.getItem(KEY+'.previous'),'{not valid json');
   assert.deepEqual(ui.errors,[]);
 });
@@ -486,7 +502,7 @@ test('downloaded backups keep deleted shift projects and full restore behavior a
   recovered.click('[data-view="projects"]');
   recovered.click('[data-restore-project="qa-warehouse"]');
   assert.equal(recovered.state().activeId,'qa-warehouse');
-  assert.deepEqual(recovered.kpis(),['11.34','27.54','7.98','33.63']);
+  assert.deepEqual(recovered.kpis(),['11.34','19.44','7.98','20.81']);
   assert.deepEqual(ui.errors,[]);
   assert.deepEqual(recovered.errors,[]);
 });

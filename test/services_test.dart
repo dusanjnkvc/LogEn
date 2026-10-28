@@ -88,9 +88,9 @@ void main() {
       expect(c.invalidCount, 0);
       expect(c.totalRequiredPallets, 10);
       expect(c.floorWithoutGangways, closeTo(11.34, 1e-9));
-      expect(c.floorWithGangways, closeTo(27.54, 1e-9));
+      expect(c.floorWithGangways, closeTo(19.44, 1e-9));
       expect(c.rackWithoutGangways, closeTo(7.98, 1e-9));
-      expect(c.rackWithGangways, closeTo(33.63, 1e-9));
+      expect(c.rackWithGangways, closeTo(20.805, 1e-9));
     },
   );
   test(
@@ -117,6 +117,70 @@ void main() {
         value(f, 'Required Pallets Formula'),
         contains('CEILING(CEILING(1000.0 / 20.0 / 40.0)'),
       );
+    },
+  );
+  test(
+    'exports preserve full gangway width and apply half-width allocation',
+    () {
+      final input = service.importBytes(service.templateBytes());
+      for (final width in [4500.0, 6000.0, 0.0]) {
+        final settings = WarehouseSettings(gangwayWidth: width),
+            p = project(input.parts, settings: settings),
+            c = calculateProject(p.parts, settings),
+            b = output(p),
+            f = b['Floor Pallet Calculations'],
+            r = b['Rack Calculations'];
+        double setting(String label) => double.parse(
+          b['Warehouse Settings'].rows
+              .firstWhere((row) => row.first?.value.toString() == label)[1]!
+              .value
+              .toString(),
+        );
+        expect(settings.gangwayWidth, width);
+        expect(setting('Gangway width'), width);
+        expect(setting('Gangway allocation factor'), .5);
+        expect(setting('Allocated gangway width (50%)'), width / 2);
+        expect(
+          numeric(f, 'Allocated Gangway Area (m²)'),
+          closeTo(
+            c.results.single.floor!.rows *
+                c.results.single.floor!.rowWidth *
+                width /
+                2 /
+                1000,
+            1e-9,
+          ),
+        );
+        expect(
+          numeric(r, 'Allocated Gangway Area (m²)'),
+          closeTo(
+            numeric(r, 'Total Run Frontage (m)') * width / 2 / 1000,
+            1e-9,
+          ),
+        );
+        expect(
+          numeric(f, 'With Allocated Gangways (m²)'),
+          closeTo(
+            numeric(f, 'Without Gangways (m²)') +
+                numeric(f, 'Allocated Gangway Area (m²)'),
+            1e-9,
+          ),
+        );
+        expect(
+          numeric(r, 'With Allocated Gangways (m²)'),
+          closeTo(
+            numeric(r, 'Without Gangways (m²)') +
+                numeric(r, 'Allocated Gangway Area (m²)'),
+            1e-9,
+          ),
+        );
+        expect(
+          b['Warehouse Comparison'].rows
+              .map((row) => row.first?.value.toString())
+              .join(' '),
+          contains('configured gangway width (mm) / 2 / 1000'),
+        );
+      }
     },
   );
   test('selected1–3 shifts and DOH override appear in result exports', () {

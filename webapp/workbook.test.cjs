@@ -17,10 +17,10 @@ test('exact eight-column shift template drives required pallets and all four foo
  const input=await S.importBytes(template),p=input.parts[0],c=calc(input.parts);
  assert.equal(p.qtyBox,20);assert.equal(p.qtyOnPallet,40);assert.equal(p.consumptionPerShift,500);assert.equal(p.doh,5);assert.equal(p.stacking,1);assert.equal(p.stockQty,null);
  assert.equal(c.invalidCount,0);assert.equal(c.totalRequiredPallets,10);
- [11.34,27.54,7.98,33.63].forEach((n,i)=>close([c.floorWithoutGangways,c.floorWithGangways,c.rackWithoutGangways,c.rackWithGangways][i],n));
+ [11.34,19.44,7.98,20.805].forEach((n,i)=>close([c.floorWithoutGangways,c.floorWithGangways,c.rackWithoutGangways,c.rackWithGangways][i],n));
  const output=await exported(input.parts,defaults,input.rawInputRows);
  assert.deepEqual(output.worksheets.map(s=>s.name),['Original Input Data','Floor Pallet Calculations','Rack Calculations','Warehouse Comparison','Warehouse Settings']);
- [11.34,27.54,7.98,33.63].forEach((n,i)=>close(output.getWorksheet('Warehouse Comparison').getCell(`B${i+2}`).value,n));
+ [11.34,19.44,7.98,20.805].forEach((n,i)=>close(output.getWorksheet('Warehouse Comparison').getCell(`B${i+2}`).value,n));
  assert.equal(output.getWorksheet('Warehouse Comparison').getCell('B5').numFmt,'#,##0.00');
 });
 
@@ -28,6 +28,22 @@ test('rounding occurs per shift before DOH and shifts; formula and intermediate 
  const row=sample();row[3]=1000;const input=await S.importBytes(await bytes([H,row])),c=calc(input.parts),p=c.results[0].planning;
  close(p.palletsPerShift,1.25);assert.equal(p.roundedPalletsPerShift,2);assert.equal(p.plannedPalletsPerDay,4);assert.equal(c.totalRequiredPallets,20);
  const sheet=(await exported(input.parts)).getWorksheet('Floor Pallet Calculations');close(cell(sheet,'Raw Pallets per Shift'),1.25);assert.equal(cell(sheet,'Rounded Pallets per Shift'),2);assert.equal(cell(sheet,'Required Pallets (nested rounding)'),20);assert.match(cell(sheet,'Required Pallets Formula'),/CEILING\(CEILING\(1000 \/ 20 \/ 40\).*5.*2/);
+});
+
+test('export records full gangway setting and half-width allocation for both storage methods',async()=>{
+ const input=await S.importBytes(await S.templateBytes());
+ for(const gangwayWidth of [4500,6000,0]){
+  const s={...defaults,gangwayWidth},book=await exported(input.parts,s),c=calc(input.parts,s);
+  const settings=book.getWorksheet('Warehouse Settings'),setting=name=>settings.getRows(1,settings.rowCount).find(row=>row.getCell(1).value===name).getCell(2).value;
+  assert.equal(s.gangwayWidth,gangwayWidth);assert.equal(setting('Gangway width'),gangwayWidth);
+  assert.equal(setting('Gangway allocation factor'),.5);assert.equal(setting('Allocated gangway width (50%)'),gangwayWidth/2);
+  const floor=book.getWorksheet('Floor Pallet Calculations'),rack=book.getWorksheet('Rack Calculations');
+  close(cell(floor,'Allocated Gangway Area (m²)'),c.results[0].floor.rows*c.results[0].floor.rowWidth*gangwayWidth/2/1000);
+  close(cell(rack,'Allocated Gangway Area (m²)'),cell(rack,'Total Run Frontage (m)')*gangwayWidth/2/1000);
+  close(cell(floor,'With Allocated Gangways (m²)'),cell(floor,'Without Gangways (m²)')+cell(floor,'Allocated Gangway Area (m²)'));
+  close(cell(rack,'With Allocated Gangways (m²)'),cell(rack,'Without Gangways (m²)')+cell(rack,'Allocated Gangway Area (m²)'));
+  assert.match(book.getWorksheet('Warehouse Comparison').getRows(1,40).map(row=>row.getCell(1).value).join(' '),/configured gangway width \(mm\) \/ 2 \/ 1000/);
+ }
 });
 
 test('selected shifts1–3 and DOH override drive counts while4 is invalid',async()=>{
@@ -43,7 +59,7 @@ test('heading aliases, ordering, case and leading blanks are supported',async()=
 });
 
 test('optional stacking and stock survive export/re-import while template remains eight columns',async()=>{
- const input=await S.importBytes(await bytes([[...H,'Stacking','Current Stock'],[...sample(),3,5600]]));const c=calc(input.parts);close(c.floorWithoutGangways,4.5);close(c.floorWithGangways,12.6);
+ const input=await S.importBytes(await bytes([[...H,'Stacking','Current Stock'],[...sample(),3,5600]]));const c=calc(input.parts);close(c.floorWithoutGangways,4.5);close(c.floorWithGangways,8.55);
  const book=await exported(input.parts),again=await S.importBytes(new Uint8Array(await book.xlsx.writeBuffer()));assert.equal(again.parts.length,1);assert.equal(again.parts[0].stacking,3);assert.equal(again.parts[0].stockQty,5600);assert.deepEqual(WorkbookService.headers,H);
 });
 
