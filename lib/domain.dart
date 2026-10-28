@@ -439,6 +439,7 @@ class FloorCalculation {
   final double lastRowDepth;
   final int lastRowPallets;
   final double withoutGangways;
+  double get storageArea => _storageAreaCents(withoutGangways) / 100;
   /// Unrounded Q/S used only for the independent with-gangways formula.
   final double formulaPositions;
   final double formulaStorageArea;
@@ -546,6 +547,7 @@ class PartCalculation {
     this.rack,
     this.planning,
     this.errors = const [],
+    this.excludedFromTotals = false,
   });
 
   final PartInput input;
@@ -555,7 +557,19 @@ class PartCalculation {
   final RackCalculation? rack;
   final PlanningCalculation? planning;
   final List<String> errors;
-  bool get isValid => errors.isEmpty && floor != null && rack != null;
+  final bool excludedFromTotals;
+  bool get isFloorValid => !excludedFromTotals && floor != null;
+  bool get isRackValid => !excludedFromTotals && rack != null;
+  bool get isPlanningValid => !excludedFromTotals && planning != null;
+  bool get isValid => !excludedFromTotals && errors.isEmpty && floor != null && rack != null;
+}
+
+int _storageAreaCents(double value) {
+  final scaled = value * 100;
+  if (!scaled.isFinite || scaled.abs() > _maxExactInteger) {
+    throw const FormatException('Floor storage area exceeds supported numeric precision.');
+  }
+  return (scaled + 2.220446049250313e-16 * math.max(1, scaled.abs()) * 4).round();
 }
 
 // Keep integer calculations exact on both Android and Flutter Web.
@@ -774,6 +788,7 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
               math.max(0, positions - rows) * settings.floorPalletClearance) /
           1000;
       final without = rowWidth * totalOccupiedDepth;
+      _storageAreaCents(without); // Validate the displayed storage contribution.
       // The with-gangways formula keeps Q/S fractional. Rounded floor positions
       // and row clearances continue to apply to the storage-only calculation.
       final formulaPositions = requiredPallets / effectiveStacking;
@@ -914,36 +929,40 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
   );
 }
 
-/// Aggregates complete comparisons only. The UI/export must label totals as
-/// partial whenever [invalidCount] is nonzero, and keep every invalid result.
+/// Aggregate floor and rack scenarios independently and retain validation errors.
+/// Floor storage totals add the exact two-decimal contributions shown per part.
 class ProjectCalculation {
   ProjectCalculation({required this.results, this.settingsErrors = const []});
 
   final List<PartCalculation> results;
   final List<String> settingsErrors;
 
-  Iterable<PartCalculation> get _valid => results.where((r) => r.isValid);
+  Iterable<PartCalculation> get _floor => results.where((r) => r.isFloorValid);
+  Iterable<PartCalculation> get _rack => results.where((r) => r.isRackValid);
+  Iterable<PartCalculation> get _planned => results.where((r) => r.isPlanningValid);
   int get invalidCount => results.where((r) => !r.isValid).length;
   int get validCount => results.length - invalidCount;
+  int get floorValidCount => _floor.length;
+  int get rackValidCount => _rack.length;
   int get totalRequiredPallets =>
-      _valid.fold(0, (sum, r) => sum + r.requiredPallets!);
+      _planned.fold(0, (sum, r) => sum + r.requiredPallets!);
   int get totalFloorPositions =>
-      _valid.fold(0, (sum, r) => sum + r.floor!.positions);
-  int get totalFloorRows => _valid.fold(0, (sum, r) => sum + r.floor!.rows);
-  int get totalRackBays => _valid.fold(0, (sum, r) => sum + r.rack!.bays);
-  int get totalRackRuns => _valid.fold(0, (sum, r) => sum + r.rack!.runs);
+      _floor.fold(0, (sum, r) => sum + r.floor!.positions);
+  int get totalFloorRows => _floor.fold(0, (sum, r) => sum + r.floor!.rows);
+  int get totalRackBays => _rack.fold(0, (sum, r) => sum + r.rack!.bays);
+  int get totalRackRuns => _rack.fold(0, (sum, r) => sum + r.rack!.runs);
   double get floorWithoutGangways =>
-      _valid.fold(0, (sum, r) => sum + r.floor!.withoutGangways);
+      _floor.fold<int>(0, (sum, r) => sum + _storageAreaCents(r.floor!.withoutGangways)) / 100;
   double get floorWithGangways =>
-      _valid.fold(0, (sum, r) => sum + r.floor!.withGangways);
+      _floor.fold(0, (sum, r) => sum + r.floor!.withGangways);
   double get rackWithoutGangways =>
-      _valid.fold(0, (sum, r) => sum + r.rack!.withoutGangways);
+      _rack.fold(0, (sum, r) => sum + r.rack!.withoutGangways);
   double get rackWithGangways =>
-      _valid.fold(0, (sum, r) => sum + r.rack!.withGangways);
+      _rack.fold(0, (sum, r) => sum + r.rack!.withGangways);
   double get floorGangwayArea =>
-      _valid.fold(0, (sum, r) => sum + r.floor!.gangwayArea);
+      _floor.fold(0, (sum, r) => sum + r.floor!.gangwayArea);
   double get rackGangwayArea =>
-      _valid.fold(0, (sum, r) => sum + r.rack!.gangwayArea);
+      _rack.fold(0, (sum, r) => sum + r.rack!.gangwayArea);
   double get savingWithoutGangways =>
       floorWithoutGangways - rackWithoutGangways;
   double get savingWithGangways => floorWithGangways - rackWithGangways;
@@ -991,6 +1010,7 @@ ProjectCalculation calculateProject(
           floor: result.floor,
           rack: result.rack,
           planning: result.planning,
+          excludedFromTotals: true,
           errors: [
             ...result.errors,
             'Duplicate Part Number. Consolidate this part into one input row.',

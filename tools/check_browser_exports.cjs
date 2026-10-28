@@ -36,6 +36,10 @@ async function main() {
   assert.equal(cell('Formula Positions (Q / S, unrounded)'),10);
   assert.ok(Math.abs(cell('Formula Storage Base (m²)')-9.6)<1e-9);
   assert.equal(cell('Allocated Gangway Area (m²)'),54);
+  const floorStorageColumn=headers.indexOf('Without Gangways (m²)')+1;
+  let floorStorageCents=0;
+  floor.eachRow((row,index)=>{const value=row.getCell(floorStorageColumn).value;if(index>1&&typeof value==='number')floorStorageCents+=Math.round(value*100);});
+  assert.ok(Math.abs(floorStorageCents/100-comparison.getCell('B2').value)<1e-9,'Floor storage column must sum to the without-gangways KPI');
   assert.match(cell('Floor With Gangways Formula'),/SQM/);
   console.log('Chrome downloads verified: exact eight-column shift template; five result sheets; per-shift rounding; 10 pallets; footprints 11.34, 63.60, 7.98, 33.63 m².');
 }

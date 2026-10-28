@@ -212,17 +212,35 @@ test('each part has dedicated floor rows and rack bays',()=>{
  near(r.rackWithoutGangways,15.96); near(r.rackWithGangways,67.26);
 });
 
-test('invalid rows remain listed while four totals include only complete valid comparisons',()=>{
+test('input-invalid rows remain listed and excluded from the affected totals',()=>{
  const r=D.calculateProject([part({partNumber:'A'}),part({partNumber:'BAD',qtyBox:0})],settings());
  assert.equal(r.results.length,2); assert.equal(r.invalidCount,1); assert.equal(r.validCount,1);
  assert.equal(r.totalRequiredPallets,10); near(r.floorWithoutGangways,11.34);
  assert.ok(r.results[1].errors.length);
 });
 
+test('floor totals include floor-valid parts with rack errors and sum displayed cents',()=>{
+ const parts=[part({partNumber:'OK'}),part({partNumber:'RACK-TOO-TALL',height:1100})];
+ const r=D.calculateProject(parts,settings());
+ assert.equal(r.invalidCount,1);assert.equal(r.floorValidCount,2);assert.equal(r.rackValidCount,1);
+ assert.equal(r.results[1].isFloorValid,true);assert.equal(r.results[1].isRackValid,false);
+ assert.equal(r.totalRequiredPallets,20);assert.equal(r.totalFloorPositions,20);
+ near(r.floorWithoutGangways,22.68);near(r.floorWithGangways,127.2);near(r.rackWithoutGangways,7.98);
+ const cents=D.calculateProject([part({partNumber:'C1',width:801}),part({partNumber:'C2',width:801})],settings());
+ assert.deepEqual(cents.results.map(row=>row.floor.storageArea),[11.35,11.35]);
+ near(cents.floorWithoutGangways,22.70);
+ assert.notEqual(cents.floorWithoutGangways,Number(cents.results.reduce((sum,row)=>sum+row.floor.withoutGangways,0).toFixed(2)));
+ const floorBad=D.calculateProject([part()],settings({maxFloorRowDepth:1000}));
+ assert.equal(floorBad.floorValidCount,0);assert.equal(floorBad.rackValidCount,1);
+ near(floorBad.floorWithoutGangways,0);near(floorBad.rackWithoutGangways,7.98);
+});
+
 test('duplicate identifiers are case-insensitive and errors clear after correction',()=>{
  const rows=[part({partNumber:'Same'}),part({partNumber:' same '})];
  const r=D.calculateProject(rows,settings());assert.equal(r.invalidCount,2);
  assert.equal(r.totalRequiredPallets,0); assert.match(r.results[0].errors.join(),/Duplicate/);
+ assert.equal(r.floorValidCount,0);assert.equal(r.rackValidCount,0);assert.equal(r.floorWithoutGangways,0);
+ assert.equal(r.results[0].isFloorValid,false);
  assert.equal(D.calculateProject([rows[0]],settings()).invalidCount,0);
 });
 

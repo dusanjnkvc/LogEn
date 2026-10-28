@@ -761,7 +761,7 @@ class _DashboardState extends State<_Dashboard> {
         const SizedBox(height: 22),
         if (partial) ...[
           _Notice(
-            '${result.invalidCount} invalid part numbers. Totals are partial and include ${result.validCount} valid rows only. Invalid rows remain visible in details and exports.${result.settingsErrors.isEmpty ? '' : '\n${result.settingsErrors.join('\n')}'}',
+            '${result.invalidCount} invalid part numbers. Floor totals include ${result.floorValidCount} calculable parts; rack totals include ${result.rackValidCount}. A rack-fit error does not exclude valid floor storage. Invalid rows remain visible in details and exports.${result.settingsErrors.isEmpty ? '' : '\n${result.settingsErrors.join('\n')}'}',
             error: true,
           ),
           const SizedBox(height: 18),
@@ -783,6 +783,7 @@ class _DashboardState extends State<_Dashboard> {
                   title: 'PALLETS — WITHOUT GANGWAYS',
                   value: result.floorWithoutGangways,
                   id: 'kpi-floor-without',
+                  description: 'Sum of Floor storage m²',
                   icon: Icons.inventory_2_outlined,
                   partial: partial,
                 ),
@@ -924,7 +925,7 @@ class _DashboardState extends State<_Dashboard> {
                       ),
                       DataColumn(label: Text('FLOOR\nROWS'), numeric: true),
                       DataColumn(
-                        label: Text('FLOOR WITHOUT\nGANGWAYS'),
+                        label: Text('FLOOR STORAGE\nm²'),
                         numeric: true,
                       ),
                       DataColumn(
@@ -985,18 +986,32 @@ class _DashboardState extends State<_Dashboard> {
                               ),
                             ),
                           ),
-                          count(row.requiredPallets),
-                          count(row.floor?.effectiveStacking),
-                          count(row.floor?.positions),
-                          count(row.floor?.rows),
-                          size(row.floor?.withoutGangways),
-                          size(row.floor?.withGangways),
-                          count(row.rack?.palletsPerSlot),
-                          count(row.rack?.levels),
-                          count(row.rack?.bays),
-                          count(row.rack?.runs),
-                          size(row.rack?.withoutGangways),
-                          size(row.rack?.withGangways),
+                          count(
+                            row.isPlanningValid ? row.requiredPallets : null,
+                          ),
+                          count(
+                            row.isFloorValid
+                                ? row.floor?.effectiveStacking
+                                : null,
+                          ),
+                          count(row.isFloorValid ? row.floor?.positions : null),
+                          count(row.isFloorValid ? row.floor?.rows : null),
+                          size(
+                            row.isFloorValid ? row.floor?.storageArea : null,
+                          ),
+                          size(
+                            row.isFloorValid ? row.floor?.withGangways : null,
+                          ),
+                          count(
+                            row.isRackValid ? row.rack?.palletsPerSlot : null,
+                          ),
+                          count(row.isRackValid ? row.rack?.levels : null),
+                          count(row.isRackValid ? row.rack?.bays : null),
+                          count(row.isRackValid ? row.rack?.runs : null),
+                          size(
+                            row.isRackValid ? row.rack?.withoutGangways : null,
+                          ),
+                          size(row.isRackValid ? row.rack?.withGangways : null),
                           DataCell(
                             Row(
                               children: [
@@ -1030,7 +1045,8 @@ class _DashboardState extends State<_Dashboard> {
                 ),
               const SizedBox(height: 14),
               Text(
-                '${entries.length} of ${project.parts.length} part numbers shown · ${result.invalidCount} invalid · all footprint values in m²',
+                '${entries.length} of ${project.parts.length} part numbers shown · ${result.invalidCount} invalid · all footprint values in m²\nWhole project Floor storage m²: ${_area(result.floorWithoutGangways)}',
+                key: const Key('floor-storage-project-total'),
                 style: const TextStyle(color: _muted, fontSize: 12),
               ),
             ],
@@ -1088,7 +1104,7 @@ class _DashboardState extends State<_Dashboard> {
             DataColumn(label: Text('REQUIRED PALLETS'), numeric: true),
           ],
           rows: rows.map((row) {
-            final p = row.planning;
+            final p = row.isPlanningValid ? row.planning : null;
             final number = row.input.partNumber;
             DataCell metric(num? value, [String? key]) => DataCell(
               Text(_quantity(value), key: key == null ? null : ValueKey(key)),
@@ -1107,7 +1123,10 @@ class _DashboardState extends State<_Dashboard> {
                 metric(p?.targetCoverageDays, 'used-doh-$number'),
                 metric(p?.dailyConsumption, 'daily-$number'),
                 metric(p?.plannedPalletsPerDay),
-                metric(row.requiredPallets, 'required-$number'),
+                metric(
+                  row.isPlanningValid ? row.requiredPallets : null,
+                  'required-$number',
+                ),
               ],
             );
           }).toList(),
@@ -1195,6 +1214,14 @@ class _DashboardState extends State<_Dashboard> {
           'Floor footprint − rack footprint',
           style: TextStyle(color: _muted, fontSize: 12),
         ),
+        if (result.results.any(
+          (row) => row.isFloorValid != row.isRackValid,
+        )) ...[
+          const SizedBox(height: 12),
+          const _Notice(
+            'Floor and rack totals cover different parts; savings compare partial inventories.',
+          ),
+        ],
         const SizedBox(height: 23),
         _savingLine(
           'Without gangways',
@@ -1320,6 +1347,7 @@ class _Kpi extends StatelessWidget {
     required this.icon,
     this.allocated = false,
     this.partial = false,
+    this.description,
   });
   final double width;
   final String title;
@@ -1328,6 +1356,7 @@ class _Kpi extends StatelessWidget {
   final IconData icon;
   final bool allocated;
   final bool partial;
+  final String? description;
   @override
   Widget build(BuildContext context) => SizedBox(
     width: width,
@@ -1365,11 +1394,12 @@ class _Kpi extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            partial
-                ? 'Partial · valid rows only'
-                : allocated
-                ? 'Allocated planning footprint'
-                : 'Storage-only footprint',
+            description ??
+                (partial
+                    ? 'Partial · calculable scenario rows'
+                    : allocated
+                    ? 'Allocated planning footprint'
+                    : 'Storage-only footprint'),
             style: TextStyle(
               color: partial ? const Color(0xFFEFAC8E) : _muted,
               fontSize: 11,

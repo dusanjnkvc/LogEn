@@ -66,6 +66,30 @@ test('floor export keeps Q/S fractional and records its independent formula base
  assert.notEqual(cell(noAisle,'With Allocated Gangways (m²)'),cell(noAisle,'Without Gangways (m²)'));
 });
 
+test('floor storage export includes rack-invalid rows and sums the displayed area cents',async()=>{
+ const input=await S.importBytes(await S.templateBytes());
+ const rackInvalid={...input.parts[0],partNumber:'FLOOR-ONLY',height:1100};
+ const single=await exported([rackInvalid]),floor=single.getWorksheet('Floor Pallet Calculations'),rack=single.getWorksheet('Rack Calculations');
+ close(cell(floor,'Without Gangways (m²)'),11.34);
+ assert.match(cell(floor,'Status'),/Included in floor totals/);
+ assert.equal(cell(rack,'Without Gangways (m²)'),null);
+ assert.match(cell(rack,'Status'),/excluded from rack totals/);
+ close(single.getWorksheet('Warehouse Comparison').getCell('B2').value,11.34);
+ close(single.getWorksheet('Warehouse Comparison').getCell('B4').value,0);
+ const parts=['A','B'].map(partNumber=>({...input.parts[0],partNumber,width:801}));
+ const book=await exported(parts),rows=book.getWorksheet('Floor Pallet Calculations');
+ close(cell(rows,'Without Gangways (m²)',2),11.35);
+ close(cell(rows,'Without Gangways (m²)',3),11.35);
+ close(book.getWorksheet('Warehouse Comparison').getCell('B2').value,22.70);
+ close(cell(rows,'Row Width (m)')*cell(rows,'Total Occupied Row Depth (m)'),11.3526);
+ const duplicates=await exported([parts[0],{...parts[1],partNumber:'A'}]);
+ for(const sheet of ['Floor Pallet Calculations','Rack Calculations']){
+  assert.equal(cell(duplicates.getWorksheet(sheet),'Without Gangways (m²)',2),null);
+  assert.equal(cell(duplicates.getWorksheet(sheet),'Without Gangways (m²)',3),null);
+ }
+ close(duplicates.getWorksheet('Warehouse Comparison').getCell('B2').value,0);
+});
+
 test('selected shifts1–3 and DOH override drive counts while4 is invalid',async()=>{
  const input=await S.importBytes(await S.templateBytes());
  for(const shiftsPerDay of [1,2,3]){const s={...defaults,shiftsPerDay,coverageMode:'custom',customCoverageDays:7},c=calc(input.parts,s);assert.equal(c.totalRequiredPallets,7*shiftsPerDay);close(c.results[0].planning.dailyConsumption,500*shiftsPerDay);const f=(await exported(input.parts,s)).getWorksheet('Floor Pallet Calculations');assert.equal(cell(f,'Shifts per Day'),shiftsPerDay);assert.equal(cell(f,'Selected DOH (days)'),7);}
@@ -99,7 +123,7 @@ test('legacy monthly conversion warns about inferred packaging and preserves its
 test('invalid, blank and formula input rows stay visible in partial exports',async()=>{
  const bad=sample('BAD');bad[5]='bad length';const formula=sample('FORMULA');formula[5]={formula:'600*2',result:1200};const blank=sample('BLANK');blank[3]=null;
  const input=await S.importBytes(await bytes([H,bad,formula,blank,sample(''),sample('GOOD')])),c=calc(input.parts);assert.equal(input.parts.length,5);assert.equal(c.invalidCount,4);assert.match(input.parts[0].inputErrors.join(),/L\(mm\)/);assert.match(input.parts[1].inputErrors.join(),/Formula/);assert.match(input.parts[2].inputErrors.join(),/is required/);
- const book=await exported(input.parts,defaults,input.rawInputRows);assert.match(book.getWorksheet('Warehouse Comparison').getCell('B7').value,/PARTIAL TOTALS.*4 invalid/);assert.match(cell(book.getWorksheet('Floor Pallet Calculations'),'Status'),/Invalid/);assert.ok(book.getWorksheet('Original Input Data').getRows(1,25).some(r=>r.values.includes('bad length')));
+ const book=await exported(input.parts,defaults,input.rawInputRows);assert.match(book.getWorksheet('Warehouse Comparison').getCell('B7').value,/PARTIAL TOTALS.*4 part rows need review/);assert.match(cell(book.getWorksheet('Floor Pallet Calculations'),'Status'),/Invalid/);assert.ok(book.getWorksheet('Original Input Data').getRows(1,25).some(r=>r.values.includes('bad length')));
 });
 
 test('duplicate part errors are dynamic and clear when rows are consolidated',async()=>{

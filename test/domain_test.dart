@@ -351,6 +351,30 @@ void main() {
       expect(r.floorWithoutGangways, closeTo(11.34, 1e-9));
     },
   );
+  test('floor total sums displayed storage cents independently of rack fit', () {
+    final r = calculateProject([
+      part({'partNumber': 'OK'}), part({'partNumber': 'TALL', 'height': 1100}),
+    ], settings());
+    expect(r.invalidCount, 1);
+    expect(r.floorValidCount, 2); expect(r.rackValidCount, 1);
+    expect(r.results.last.isFloorValid, isTrue); expect(r.results.last.isRackValid, isFalse);
+    expect(r.totalRequiredPallets, 20); expect(r.totalFloorPositions, 20);
+    expect(r.floorWithoutGangways, closeTo(22.68, 1e-9));
+    expect(r.floorWithGangways, closeTo(127.2, 1e-9));
+    expect(r.rackWithoutGangways, closeTo(7.98, 1e-9));
+    final cents = calculateProject([
+      part({'partNumber': 'C1', 'width': 801}), part({'partNumber': 'C2', 'width': 801}),
+    ], settings());
+    expect(cents.results.map((row) => row.floor!.storageArea), [11.35, 11.35]);
+    expect(cents.floorWithoutGangways, 22.70);
+    final floorBad = calculateProject([part()], settings({'maxFloorRowDepth': 1000}));
+    expect(floorBad.floorValidCount, 0); expect(floorBad.rackValidCount, 1);
+    expect(floorBad.floorWithoutGangways, 0);
+    expect(floorBad.rackWithoutGangways, closeTo(7.98, 1e-9));
+    final duplicates = calculateProject([part(), part()], settings());
+    expect(duplicates.floorValidCount, 0); expect(duplicates.rackValidCount, 0);
+    expect(duplicates.floorWithoutGangways, 0);
+  });
   test(
     'duplicate part numbers are case-insensitive and revalidation clears them',
     () {

@@ -267,9 +267,18 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const quotient = Math.floor(numerator / denominator);
     return quotient + (numerator % denominator === 0 ? 0 : 1);
   }
+  function storageAreaCents(value) {
+    const scaled = value * 100;
+    if (!Number.isFinite(scaled) || Math.abs(scaled) > Number.MAX_SAFE_INTEGER)
+      throw new Error('Floor storage area exceeds supported numeric precision.');
+    return Math.round(scaled + Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4);
+  }
   function resultFor(input, errors, requiredParts = null, requiredPallets = null, floorResult = null, rack = null, planning = null) {
     return {
       input, requiredParts, requiredPallets, floor: floorResult, rack, planning, errors,
+      isFloorValid: floorResult !== null,
+      isRackValid: rack !== null,
+      isPlanningValid: planning !== null,
       isValid: errors.length === 0 && floorResult !== null && rack !== null
     };
   }
@@ -338,6 +347,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const rowDepth = fullRowDepth;
         const totalOccupiedDepth = (positions * input.length + Math.max(0, positions - rows) * s.floorPalletClearance) / 1000;
         const withoutGangways = rowWidth * totalOccupiedDepth;
+        const storageArea = storageAreaCents(withoutGangways) / 100;
         // Floor area with gangways uses the user's independent Q/S formula.
         // Q/S stays fractional; rounded positions/rows apply to storage-only area.
         const formulaPositions = requiredPallets / effectiveStacking;
@@ -349,7 +359,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           throw new Error('Floor area exceeds supported numeric precision.');
         floorResult = { maximumStacking, effectiveStacking, positions,
           palletsPerRow, rows, rowWidth, rowDepth, totalOccupiedDepth, fullRowDepth,
-          lastRowDepth, lastRowPallets, withoutGangways, formulaPositions,
+          lastRowDepth, lastRowPallets, withoutGangways,
+          storageArea, formulaPositions,
           formulaStorageArea, gangwayArea, withGangways };
       }
 
@@ -412,25 +423,31 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if (counts.get(keyFor(input)) > 1) {
         result.errors.push('Duplicate Part Number. Consolidate this part into one input row.');
         result.isValid = false;
+        result.isFloorValid = result.isRackValid = result.isPlanningValid = false;
       }
       return result;
     });
     const valid = results.filter(r => r.isValid);
-    const total = fn => valid.reduce((sum, row) => sum + fn(row), 0);
+    const floors = results.filter(r => r.isFloorValid);
+    const racks = results.filter(r => r.isRackValid);
+    const planned = results.filter(r => r.isPlanningValid);
+    const total = (rows, fn) => rows.reduce((sum, row) => sum + fn(row), 0);
     const project = {
       results, settingsErrors, invalidCount: results.length - valid.length,
       validCount: valid.length,
-      totalRequiredPallets: total(r => r.requiredPallets),
-      totalFloorPositions: total(r => r.floor.positions),
-      totalFloorRows: total(r => r.floor.rows),
-      totalRackBays: total(r => r.rack.bays),
-      totalRackRuns: total(r => r.rack.runs),
-      floorWithoutGangways: total(r => r.floor.withoutGangways),
-      floorWithGangways: total(r => r.floor.withGangways),
-      rackWithoutGangways: total(r => r.rack.withoutGangways),
-      rackWithGangways: total(r => r.rack.withGangways),
-      floorGangwayArea: total(r => r.floor.gangwayArea),
-      rackGangwayArea: total(r => r.rack.gangwayArea)
+      floorValidCount: floors.length, rackValidCount: racks.length,
+      totalRequiredPallets: total(planned, r => r.requiredPallets),
+      totalFloorPositions: total(floors, r => r.floor.positions),
+      totalFloorRows: total(floors, r => r.floor.rows),
+      totalRackBays: total(racks, r => r.rack.bays),
+      totalRackRuns: total(racks, r => r.rack.runs),
+      // Sum the exact two-decimal contributions displayed in Floor storage m².
+      floorWithoutGangways: total(floors, r => storageAreaCents(r.floor.withoutGangways)) / 100,
+      floorWithGangways: total(floors, r => r.floor.withGangways),
+      rackWithoutGangways: total(racks, r => r.rack.withoutGangways),
+      rackWithGangways: total(racks, r => r.rack.withGangways),
+      floorGangwayArea: total(floors, r => r.floor.gangwayArea),
+      rackGangwayArea: total(racks, r => r.rack.gangwayArea)
     };
     project.savingWithoutGangways = project.floorWithoutGangways - project.rackWithoutGangways;
     project.savingWithGangways = project.floorWithGangways - project.rackWithGangways;
@@ -545,7 +562,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         'Use numeric cells or decimal-point text. Formula cells are not evaluated; paste calculated values before importing.',
         'Use one unique part number per row. Invalid and duplicate rows remain visible. Both floor and rack scenarios use the same required pallets.',
         'Floor with gangways = (Q / S) × L × (W + G) / 1,000,000; Q = required pallets, S = effective floor stacking, L/W/G in mm. Keep Q / S unrounded and use full gangway width G.',
-        'Floor without gangways retains actual occupied rows and clearances. Rack gangways retain actual rack run frontage × full gangway width. These are allocated planning estimates, not optimized layouts.',
+        'Floor without gangways retains actual occupied rows and clearances. Its project total sums each independently valid floor storage result rounded to two decimals; rack fit errors do not remove valid floor areas. Rack gangways retain actual rack run frontage × full gangway width. These are allocated planning estimates, not optimized layouts.',
         'All imports, calculations, projects and exports work offline on this device.',
       ].forEach(line => add(notes, [line]));
       notes.getColumn(1).width = 120;
@@ -656,13 +673,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const floor = table(workbook, 'Floor Pallet Calculations', floorHeaders, floorHeaders.map((header, index) => /\(m²\)|\(days\)|Consumption|Pallets per Day|equivalent/.test(header) ? index : -1).filter(index => index >= 0));
       calculation.results.forEach(result => {
         const value = result.floor;
-        add(floor, [...inputValues(result.input), result.input.stacking, result.isValid ? 'Valid' : 'Invalid — excluded from totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, value?.withoutGangways, value?.gangwayArea, value?.withGangways, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `SQM = (${result.requiredPallets} / ${value.effectiveStacking}) * ${result.input.length} * (${result.input.width} + ${project.settings.gangwayWidth}) / 1000000` : null]);
+        add(floor, [...inputValues(result.input), result.input.stacking, result.isFloorValid ? (result.isValid ? 'Valid' : 'Included in floor totals — rack validation warning') : 'Invalid floor — excluded from floor totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, result.isFloorValid ? value?.storageArea : null, result.isFloorValid ? value?.gangwayArea : null, result.isFloorValid ? value?.withGangways : null, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `SQM = (${result.requiredPallets} / ${value.effectiveStacking}) * ${result.input.length} * (${result.input.width} + ${project.settings.gangwayWidth}) / 1000000` : null]);
       });
       const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Pallets Per Slot', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS];
       const rack = table(workbook, 'Rack Calculations', rackHeaders, [19, 20, 21, 22]);
       calculation.results.forEach(result => {
         const value = result.rack;
-        add(rack, [result.input.partNumber, result.isValid ? 'Valid' : 'Invalid — excluded from totals', (result.errors || []).join(' | '), result.requiredPallets, result.input.length, result.input.width, result.input.height, value?.rotated, value?.palletsPerSlot, value?.levels, value?.capacityPerBay, value?.bays, value?.effectiveBayLength, value?.effectiveBayDepth, value?.effectiveBayHeight, value?.maxBaysPerRun, value?.runs, value?.baysPerRun.join(', '), value?.baysPerRun.map(bays => (bays * value.effectiveBayLength / 1000).toFixed(3)).join(', '), value ? value.bays * value.effectiveBayLength / 1000 : null, value?.withoutGangways, value?.gangwayArea, value?.withGangways, ...planningValues(result.planning, result.input, project.settings)]);
+        add(rack, [result.input.partNumber, result.isRackValid ? (result.isValid ? 'Valid' : 'Included in rack totals — floor validation warning') : 'Invalid rack — excluded from rack totals', (result.errors || []).join(' | '), result.requiredPallets, result.input.length, result.input.width, result.input.height, value?.rotated, value?.palletsPerSlot, value?.levels, value?.capacityPerBay, value?.bays, value?.effectiveBayLength, value?.effectiveBayDepth, value?.effectiveBayHeight, value?.maxBaysPerRun, value?.runs, value?.baysPerRun.join(', '), value?.baysPerRun.map(bays => (bays * value.effectiveBayLength / 1000).toFixed(3)).join(', '), value ? value.bays * value.effectiveBayLength / 1000 : null, result.isRackValid ? value?.withoutGangways : null, result.isRackValid ? value?.gangwayArea : null, result.isRackValid ? value?.withGangways : null, ...planningValues(result.planning, result.input, project.settings)]);
       });
 
       const comparison = workbook.addWorksheet('Warehouse Comparison');
@@ -676,12 +693,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       ].forEach(([label, value]) => add(comparison, [label, available ? value : 'Unavailable — invalid settings'], 'kpi'));
       add(comparison, []);
       [
-        ['Totals status', !available ? 'INVALID SETTINGS — totals unavailable' : calculation.invalidCount ? 'PARTIAL TOTALS — ' + calculation.invalidCount + ' invalid part rows excluded' : 'Complete — all imported part rows are valid'],
+        ['Totals status', !available ? 'INVALID SETTINGS — totals unavailable' : calculation.invalidCount ? 'PARTIAL TOTALS — ' + calculation.invalidCount + ' part rows need review; each storage scenario includes its calculable rows' : 'Complete — all imported part rows are valid'],
         ['Settings validation', (calculation.settingsErrors || []).join(' | ')],
         ['Total imported part rows', project.parts.length],
-        ['Valid part rows included in totals', calculation.validCount],
+        ['Fully valid comparison rows', calculation.validCount],
+        ['Floor part rows included in totals', calculation.floorValidCount],
+        ['Rack part rows included in totals', calculation.rackValidCount],
         ['Invalid part rows', calculation.invalidCount],
-        ['Total required pallets (valid rows)', calculation.totalRequiredPallets],
+        ['Total required pallets (valid planning rows)', calculation.totalRequiredPallets],
         ['Total floor positions', calculation.totalFloorPositions],
         ['Total floor rows', calculation.totalFloorRows],
         ['Total rack bays', calculation.totalRackBays],
@@ -707,14 +726,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         'Floor without gangways uses rounded floor positions, clearances and actual occupied row depths. Its independent base differs from the floor with-gangways formula base.',
         'Rack gangway = sum of actual run frontages (m) × (configured gangway width (mm) / 1000).',
         'Allocated footprints are planning estimates, not optimized physical warehouse designs. Count shared gangways once in an actual layout.',
-        'Invalid parts remain listed on the floor and rack calculation sheets; partial totals exclude these rows.',
+        'Floor and rack totals include independently calculable rows. A rack fit error does not exclude a valid floor result, and a floor fit error does not exclude a valid rack result. Duplicate and invalid input rows remain listed but do not contribute.',
         'Negative savings mean racks require more floor area. N/A percentages have a zero floor denominator.',
-        'Footprints display two decimals while exported numeric values retain full precision.',
+        'Pallets without gangways equals the sum of the two-decimal Floor storage m² contributions exported as Without Gangways (m²). This sums integer area cents; raw dimensions and formula intermediates retain precision.',
       ].forEach(line => add(comparison, [line]));
       add(comparison, []);
       add(comparison, ['Part shift rounding and DOH planning'], 'header');
       add(comparison, ['Part Number', 'Status', 'Validation Errors', ...PLANNING_HEADERS], 'header');
-      calculation.results.forEach(result => add(comparison, [result.input.partNumber, result.isValid ? 'Valid' : 'Invalid', (result.errors || []).join(' | '), ...planningValues(result.planning, result.input, project.settings)]));
+      calculation.results.forEach(result => add(comparison, [result.input.partNumber, result.isPlanningValid ? (result.isValid ? 'Valid' : 'Valid planning — storage scenario needs review') : 'Invalid planning — excluded', (result.errors || []).join(' | '), ...planningValues(result.planning, result.input, project.settings)]));
       add(comparison, []);
       add(comparison, ['Required-pallet formula', 'CEILING(CEILING(consumption per shift / parts per box / boxes per pallet) × selected DOH × shifts per day). Round one-shift pallets up first, then multiply DOH and shifts and apply the final CEILING.']);
       add(comparison, ['Optional stock interpretation', 'The eight-column input has no current stock quantity. Actual stock coverage is unavailable unless older or optional stock data is provided. Unknown stock is never treated as zero.']);
@@ -738,6 +757,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         ['Gangway allocation factor', 1, '100% for both floor and rack footprints'],
         ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
         ['Floor pallet clearance', s.floorPalletClearance, 'mm'],
+        ['Floor storage total rounding', 'Sum of row areas rounded to two decimals', 'm²; independently valid floor rows, including rows with rack fit errors'],
         ['Rack levels', s.rackLevels, 'levels'], ['Rack usable slot length', s.rackSlotLength, 'mm'],
         ['Rack usable slot depth', s.rackSlotDepth, 'mm'], ['Rack usable slot height', s.rackSlotHeight, 'mm'],
         ['Rack structural length allowance', s.rackStructuralLength, 'mm'], ['Rack structural depth allowance', s.rackStructuralDepth, 'mm'],
@@ -1376,11 +1396,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   function validationBanner(c) {
     if (c.settingsErrors?.length) return `<div class="notice error"><strong>Warehouse settings need attention.</strong> Results are unavailable until these are corrected.<ul class="validation-list">${c.settingsErrors.map(e => `<li>${escape(e)}</li>`).join('')}</ul><button class="btn btn-secondary small" data-action="settings">Review settings</button></div>`;
-    if (c.invalidCount) return `<div class="notice error"><strong>Partial totals · ${count(c.invalidCount)} invalid part ${c.invalidCount === 1 ? 'number' : 'numbers'}.</strong> Only ${count(c.validCount)} fully valid rows are included in all four totals. Invalid rows remain in the project and Excel export. <button class="btn btn-ghost small" data-action="invalid">Review invalid rows ${icon('arrow')}</button></div>`;
+    if (c.invalidCount) return `<div class="notice error"><strong>Partial totals · ${count(c.invalidCount)} invalid part ${c.invalidCount === 1 ? 'number' : 'numbers'}.</strong> Floor totals include ${count(c.floorValidCount)} calculable parts; rack totals include ${count(c.rackValidCount)}. A rack-fit error does not exclude valid floor storage. Invalid rows remain visible for correction. <button class="btn btn-ghost small" data-action="invalid">Review invalid rows ${icon('arrow')}</button></div>`;
     return '';
   }
   function kpi(title, value, rack, allocated, unavailable) {
-    return `<article class="kpi-card ${!rack ? 'accent' : ''}"><div class="kpi-top"><span class="kpi-icon ${rack ? 'rack' : ''}">${icon(rack ? 'rack' : 'box')}</span><span class="kpi-tag">${allocated ? 'ALLOCATED FOOTPRINT' : 'STORAGE ONLY'}</span></div><h2>${title}</h2><div class="kpi-value">${unavailable ? '—' : area(value)}<small>m²</small></div><div class="kpi-description">${allocated ? (rack ? 'Storage + full-width gangway allocation' : '(Q ÷ S) × L × (W + G) ÷ 1,000,000') : rack ? 'Ground area · all rack levels included' : 'Dedicated floor rows · stacking applied'}</div></article>`;
+    return `<article class="kpi-card ${!rack ? 'accent' : ''}"><div class="kpi-top"><span class="kpi-icon ${rack ? 'rack' : ''}">${icon(rack ? 'rack' : 'box')}</span><span class="kpi-tag">${allocated ? 'ALLOCATED FOOTPRINT' : 'STORAGE ONLY'}</span></div><h2>${title}</h2><div class="kpi-value">${unavailable ? '—' : area(value)}<small>m²</small></div><div class="kpi-description">${allocated ? (rack ? 'Storage + full-width gangway allocation' : '(Q ÷ S) × L × (W + G) ÷ 1,000,000') : rack ? 'Ground area · all rack levels included' : 'Sum of Floor storage m²'}</div></article>`;
   }
   function savingsItem(label, value, percent) {
     const unavailable = typeof value !== 'number' || !Number.isFinite(value);
@@ -1397,7 +1417,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   function productionPanel(c) {
     const s=project().settings;
-    const valid=c.results.map(r=>r.planning).filter(Boolean);
+    const valid=c.results.filter(r=>r.isPlanningValid).map(r=>r.planning);
     const sum=key=>valid.reduce((total,p)=>total+(Number.isFinite(p[key])?p[key]:0),0);
     const field=(key,label,unit)=>`<label class="field"><span>${label}</span><div class="input-unit"><input type="text" inputmode="decimal" id="production-${key}" data-production="${key}" aria-label="${label}" value="${escape(productionDrafts[key] ?? (Number.isFinite(s[key])?String(s[key]):''))}" autocomplete="off"><span class="field-unit muted">${unit}</span></div></label>`;
     const totals=[['Consumption per shift',sum('shiftConsumption'),'parts / shift'],['Daily consumption',sum('dailyConsumption'),'parts / day'],['Rounded planning demand',sum('plannedPalletsPerDay'),'pallets / day'],['Required storage pallets',c.totalRequiredPallets,'whole pallets']];
@@ -1420,10 +1440,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const pages=Math.max(1,Math.ceil(indexed.length/PAGE_SIZE));page=Math.min(page,pages-1);
     const headers=['Part number','QTY in Box','QTY boxes per Pallet','Parts / pallet','Consumption / shift','Pallets / shift (decimal)','Rounded pallets / shift','Shifts / day','Input DOH','Used DOH','Parts / day','Consumption pallets / day','Planning pallets / day','Required pallets','Floor storage m²','Rack storage m²','Actions'];
     $('consumption-table').innerHTML=`<div class="table-scroll"><table class="data-table consumption-table"><thead><tr>${headers.map((h,i)=>`<th class="${i>0&&i<16?'numeric':''}">${h}</th>`).join('')}</tr></thead><tbody>${indexed.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE).map(({r,index})=>{
-      const p=r.planning;
-      const values=[count(r.input.qtyBox),count(r.input.qtyOnPallet),count(p?.partsPerPallet),decimal(r.input.consumptionPerShift),decimal(p?.palletsPerShift),count(p?.roundedPalletsPerShift),count(project().settings.shiftsPerDay),decimal(r.input.doh),decimal(p?.targetCoverageDays),decimal(p?.dailyConsumption),decimal(p?.palletsPerDay),count(p?.plannedPalletsPerDay),count(r.requiredPallets),area(r.floor?.withoutGangways),area(r.rack?.withoutGangways)];
+      const p=r.isPlanningValid?r.planning:null;
+      const values=[count(r.input.qtyBox),count(r.input.qtyOnPallet),count(p?.partsPerPallet),decimal(r.input.consumptionPerShift),decimal(p?.palletsPerShift),count(p?.roundedPalletsPerShift),count(project().settings.shiftsPerDay),decimal(r.input.doh),decimal(p?.targetCoverageDays),decimal(p?.dailyConsumption),decimal(p?.palletsPerDay),count(p?.plannedPalletsPerDay),count(r.isPlanningValid?r.requiredPallets:null),area(r.isFloorValid?r.floor?.storageArea:null),area(r.isRackValid?r.rack?.withoutGangways:null)];
       return `<tr><td><button class="part-link" data-detail="${index}">${icon('box')}${escape(r.input.partNumber||'(blank part number)')}</button>${!r.isValid?'<small class="difference-caption error">Review validation</small>':''}</td>${values.map(v=>`<td class="numeric">${v}</td>`).join('')}<td><button class="icon-btn" data-edit="${index}" aria-label="Edit ${escape(r.input.partNumber)}" title="Edit part">${icon('edit')}</button></td></tr>`;
-    }).join('')||'<tr><td colspan="17" style="text-align:center;padding:35px">No matching part numbers.</td></tr>'}</tbody></table></div><div class="table-footer"><span>${count(indexed.length)} matching parts · ROUNDUP per shift → multiply by DOH and shifts → space calculation</span><div class="pagination"><button data-consumption-page="-1" ${page===0?'disabled':''}>Previous</button><span>${page+1} / ${pages}</span><button data-consumption-page="1" ${page===pages-1?'disabled':''}>Next</button></div></div>`;
+    }).join('')||'<tr><td colspan="17" style="text-align:center;padding:35px">No matching part numbers.</td></tr>'}</tbody></table></div><div class="table-footer"><span>${count(indexed.length)} matching parts · ROUNDUP per shift → multiply by DOH and shifts → space calculation</span><span class="project-floor-total">Whole project Floor storage m²: ${c.settingsErrors?.length?'—':area(c.floorWithoutGangways)} m²</span><div class="pagination"><button data-consumption-page="-1" ${page===0?'disabled':''}>Previous</button><span>${page+1} / ${pages}</span><button data-consumption-page="1" ${page===pages-1?'disabled':''}>Next</button></div></div>`;
   }
   function renderDashboard(c) {
     const p = project(), unavailable = c.settingsErrors?.length;
@@ -1439,14 +1459,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       coverageBanner(c)+
       `<div class="mode-toolbar"><div class="section-label">Footprint comparison<span>Same required pallets for floor and racks</span></div><span class="badge">${count(p.settings.shiftsPerDay)} shifts/day · ${escape(coverageTargetLabel(p.settings))}</span></div>` +
       `<div class="kpi-grid">${kpi('PALLETS — WITHOUT GANGWAYS',values[0],false,false,unavailable)}${kpi('PALLETS — WITH GANGWAYS',values[1],false,true,unavailable)}${kpi('RACKS — WITHOUT GANGWAYS',values[2],true,false,unavailable)}${kpi('RACKS — WITH GANGWAYS',values[3],true,true,unavailable)}</div>` +productionPanel(c)+
-      `<div class="two-col"><section class="panel"><div class="panel-head"><div><h2>Floor vs. rack storage</h2><p>Compare the four footprint scenarios</p></div><span class="unit-tag">m²</span></div><div class="chart" role="img" aria-label="Footprint comparison: ${values.map(area).join(', ')} square meters"><div style="display:${unavailable ? 'block' : 'none'}" class="notice error">Correct warehouse settings to calculate footprints.</div>${chartLabels.map((r,i) => `<div class="chart-row"><div class="chart-label">${r[0]}<small>${r[1]}</small></div><div class="chart-track"><div class="chart-bar ${r[2]}" style="width:${unavailable ? 0 : values[i]/max*100}%"></div></div><span class="chart-number">${unavailable ? '—' : area(values[i])}</span></div>`).join('')}</div><div class="chart-legend"><span><i class="legend-dot"></i>Floor pallets</span><span><i class="legend-dot rack"></i>Pallet racks</span><span>Striped = allocated gangways included</span></div></section><section class="panel savings-panel"><div class="panel-head"><div><h2>Space savings with racks</h2><p>Floor footprint minus rack footprint</p></div>${icon('chart')}</div><div class="saving-items">${savingsItem('WITHOUT GANGWAYS',unavailable ? null : c.savingWithoutGangways,unavailable ? null : c.savingWithoutGangwaysPercent)}${savingsItem('WITH ALLOCATED GANGWAYS',unavailable ? null : c.savingWithGangways,unavailable ? null : c.savingWithGangwaysPercent)}</div></section></div>` +
+      `<div class="two-col"><section class="panel"><div class="panel-head"><div><h2>Floor vs. rack storage</h2><p>Compare the four footprint scenarios</p></div><span class="unit-tag">m²</span></div><div class="chart" role="img" aria-label="Footprint comparison: ${values.map(area).join(', ')} square meters"><div style="display:${unavailable ? 'block' : 'none'}" class="notice error">Correct warehouse settings to calculate footprints.</div>${chartLabels.map((r,i) => `<div class="chart-row"><div class="chart-label">${r[0]}<small>${r[1]}</small></div><div class="chart-track"><div class="chart-bar ${r[2]}" style="width:${unavailable ? 0 : values[i]/max*100}%"></div></div><span class="chart-number">${unavailable ? '—' : area(values[i])}</span></div>`).join('')}</div><div class="chart-legend"><span><i class="legend-dot"></i>Floor pallets</span><span><i class="legend-dot rack"></i>Pallet racks</span><span>Striped = allocated gangways included</span></div></section><section class="panel savings-panel"><div class="panel-head"><div><h2>Space savings with racks</h2><p>Floor footprint minus rack footprint</p></div>${icon('chart')}</div>${c.results.some(r=>r.isFloorValid!==r.isRackValid)?'<div class="notice">Floor and rack totals cover different parts; savings compare partial inventories.</div>':''}<div class="saving-items">${savingsItem('WITHOUT GANGWAYS',unavailable ? null : c.savingWithoutGangways,unavailable ? null : c.savingWithoutGangwaysPercent)}${savingsItem('WITH ALLOCATED GANGWAYS',unavailable ? null : c.savingWithGangways,unavailable ? null : c.savingWithGangwaysPercent)}</div></section></div>` +
       `<section class="panel stats-panel"><div class="panel-head"><h2>Warehouse at a glance</h2><button class="text-link" data-action="settings">Configure warehouse ${icon('settings')}</button></div><div class="stats-grid">${stats.map(([label,value,unit],i) => `<div class="stat"><span class="stat-label">${label}</span><span class="stat-value">${unavailable && i > 0 ? '—' : unit ? area(value) : count(value)}${unit ? `<small>${unit}</small>` : ''}</span>${i===0 && c.invalidCount ? `<span class="badge error">${c.invalidCount} invalid</span>` : ''}</div>`).join('')}</div></section>` +
       `<div class="allocation-note">${icon('info')}<span>Ground storage uses actual occupied pallet-row depth, including pallet clearances. The row-depth setting limits row capacity; 0 removes that limit. Gangway-inclusive values use the full configured width: ${count(D.allocatedGangwayWidth(p.settings))} mm. Floor with gangways = (Q ÷ S) × L × (W + G) ÷ 1,000,000. Q/S is unrounded and this formula excludes pallet clearances. Storage-only floor area uses rounded positions and occupied rows. Racks use actual run frontage. These are planning estimates. Each part has dedicated rows and rack bays; shared gangways count once in a physical design.</span></div>` +
       `<section class="panel table-panel"><div class="panel-head"><div><h2>Part number overview</h2><p>Tap any part number to see the formulas behind it</p></div><button class="text-link" data-action="parts">View all parts ${icon('arrow')}</button></div>${previewTable(c)}<div class="table-footer"><span>Showing ${Math.min(p.parts.length,4)} of ${p.parts.length} part numbers</span><span>Same required pallets in both scenarios</span></div></section>`;
   }
   function previewTable(c) {
     if (!c.results.length) return emptyInventory();
-    return `<div class="table-scroll"><table class="data-table"><thead><tr><th>Part number</th><th class="numeric">Required pallets</th><th class="numeric">Floor · storage m²</th><th class="numeric">Rack · storage m²</th><th>Status</th></tr></thead><tbody>${c.results.slice(0,4).map((r,i) => `<tr><td><button class="part-link" data-detail="${i}">${icon('box')}${escape(r.input.partNumber || '(blank part number)')}</button></td><td class="numeric">${count(r.requiredPallets)}</td><td class="numeric">${area(r.floor?.withoutGangways)}</td><td class="numeric">${area(r.rack?.withoutGangways)}</td><td><span class="badge ${r.isValid ? 'good' : 'error'}">${r.isValid ? 'Validated' : 'Needs attention'}</span></td></tr>`).join('')}</tbody></table></div>`;
+    return `<div class="table-scroll"><table class="data-table"><thead><tr><th>Part number</th><th class="numeric">Required pallets</th><th class="numeric">Floor · storage m²</th><th class="numeric">Rack · storage m²</th><th>Status</th></tr></thead><tbody>${c.results.slice(0,4).map((r,i) => `<tr><td><button class="part-link" data-detail="${i}">${icon('box')}${escape(r.input.partNumber || '(blank part number)')}</button></td><td class="numeric">${count(r.isPlanningValid?r.requiredPallets:null)}</td><td class="numeric">${area(r.isFloorValid?r.floor?.storageArea:null)}</td><td class="numeric">${area(r.isRackValid?r.rack?.withoutGangways:null)}</td><td><span class="badge ${r.isValid ? 'good' : 'error'}">${r.isValid ? 'Validated' : 'Needs attention'}</span></td></tr>`).join('')}</tbody></table></div>`;
   }
   function emptyInventory() {
     return `<div class="empty-state">${icon('box')}<h2>Your inventory starts here</h2><p>Import an Excel workbook or add parts manually. LogEn calculates floor and rack storage for every part automatically.</p><div class="actions"><button class="btn btn-primary" data-action="import">${icon('upload')}Import Excel</button><button class="btn btn-secondary" data-action="add">${icon('plus')}Add a part</button></div></div>`;
@@ -1465,9 +1485,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if (!c.results.length) { $('parts-table').innerHTML=emptyInventory(); return; }
     const headers = ['Part number','Required pallets','Floor stacking','Floor positions','Floor rows','Floor storage m²','Floor allocated m²','Rack pallets / slot','Rack levels','Rack bays','Rack runs','Rack storage m²','Rack allocated m²','Input details','Validation','Actions'];
     $('parts-table').innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>${headers.map((h,i)=>`<th class="${i>0&&i<13?'numeric':''}">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(({r,index}) => {
-      const numbers = [count(r.requiredPallets),count(r.floor?.effectiveStacking),count(r.floor?.positions),count(r.floor?.rows),area(r.floor?.withoutGangways),area(r.floor?.withGangways),count(r.rack?.palletsPerSlot),count(r.rack?.levels),count(r.rack?.bays),count(r.rack?.runs),area(r.rack?.withoutGangways),area(r.rack?.withGangways)];
+      const numbers = [count(r.isPlanningValid?r.requiredPallets:null),count(r.isFloorValid?r.floor?.effectiveStacking:null),count(r.isFloorValid?r.floor?.positions:null),count(r.isFloorValid?r.floor?.rows:null),area(r.isFloorValid?r.floor?.storageArea:null),area(r.isFloorValid?r.floor?.withGangways:null),count(r.isRackValid?r.rack?.palletsPerSlot:null),count(r.isRackValid?r.rack?.levels:null),count(r.isRackValid?r.rack?.bays:null),count(r.isRackValid?r.rack?.runs:null),area(r.isRackValid?r.rack?.withoutGangways:null),area(r.isRackValid?r.rack?.withGangways:null)];
       return `<tr><td><button class="part-link" data-detail="${index}">${icon('box')}${escape(r.input.partNumber || '(blank part number)')}</button></td>${numbers.map(n=>`<td class="numeric">${n}</td>`).join('')}<td><span>${count(r.input.qtyBox)} parts/box × ${count(r.input.qtyOnPallet)} boxes/pallet</span><br><small class="muted">${decimal(r.input.consumptionPerShift)} parts/shift · ${decimal(r.input.doh)} input DOH<br>${count(r.input.length)} × ${count(r.input.width)} × ${count(r.input.height)} mm</small></td><td class="${r.isValid?'':'invalid-cell'}">${r.isValid ? '<span class="badge good">Validated</span>' : escape(r.errors.join(' '))}</td><td><button class="icon-btn" data-edit="${index}" title="Edit ${escape(r.input.partNumber)}" aria-label="Edit ${escape(r.input.partNumber)}">${icon('edit')}</button><button class="icon-btn" data-delete="${index}" title="Delete ${escape(r.input.partNumber)}" aria-label="Delete ${escape(r.input.partNumber)}">${icon('trash')}</button></td></tr>`;
-    }).join('') || '<tr><td colspan="16" style="text-align:center;padding:35px">No matching part numbers.</td></tr>'}</tbody></table></div><div class="table-footer"><span>${count(indexed.length)} matching part numbers · All areas in m², shown to two decimals</span><div class="pagination"><button data-page="-1" ${page===0?'disabled':''}>Previous</button><span>${page+1} / ${pages}</span><button data-page="1" ${page===pages-1?'disabled':''}>Next</button></div></div>`;
+    }).join('') || '<tr><td colspan="16" style="text-align:center;padding:35px">No matching part numbers.</td></tr>'}</tbody></table></div><div class="table-footer"><span>${count(indexed.length)} matching part numbers · All areas in m², shown to two decimals</span><span class="project-floor-total">Whole project Floor storage m²: ${c.settingsErrors?.length?'—':area(c.floorWithoutGangways)} m²</span><div class="pagination"><button data-page="-1" ${page===0?'disabled':''}>Previous</button><span>${page+1} / ${pages}</span><button data-page="1" ${page===pages-1?'disabled':''}>Next</button></div></div>`;
   }
   function renderProjects() {
     const deleted=state.deletedProjects||[];
@@ -1529,7 +1549,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if(!imported)return;
     const preview=D.calculateProject(imported.parts,project().settings);
     const warnings=imported.warnings||[];
-    const approved=await modal({title:'Import this inventory?',eyebrow:'EXCEL IMPORT',body:`<p><strong>${escape(file.name)}</strong> contains ${count(imported.parts.length)} part numbers.</p><p class="muted">This replaces the ${count(project().parts.length)} current parts in ${escape(project().name)}. Warehouse settings stay with the project.</p>${preview.invalidCount?`<div class="notice error">${preview.invalidCount} invalid rows will remain visible for correction. Totals include fully valid rows only.</div>`:'<div class="notice">All imported parts are valid under the current warehouse settings.</div>'}${warnings.length?`<h3>Import notes</h3><ul>${warnings.slice(0,20).map(w=>`<li>${escape(w)}</li>`).join('')}</ul>${warnings.length>20?`<p class="muted">And ${warnings.length-20} more notes. Review invalid rows after import.</p>`:''}`:''}`,confirm:'Import & calculate'});
+    const approved=await modal({title:'Import this inventory?',eyebrow:'EXCEL IMPORT',body:`<p><strong>${escape(file.name)}</strong> contains ${count(imported.parts.length)} part numbers.</p><p class="muted">This replaces the ${count(project().parts.length)} current parts in ${escape(project().name)}. Warehouse settings stay with the project.</p>${preview.invalidCount?`<div class="notice error">${preview.invalidCount} invalid rows will remain visible for correction. Floor and rack totals include their own calculable rows; rack-fit errors do not remove valid floor areas.</div>`:'<div class="notice">All imported parts are valid under the current warehouse settings.</div>'}${warnings.length?`<h3>Import notes</h3><ul>${warnings.slice(0,20).map(w=>`<li>${escape(w)}</li>`).join('')}</ul>${warnings.length>20?`<p class="muted">And ${warnings.length-20} more notes. Review invalid rows after import.</p>`:''}`:''}`,confirm:'Import & calculate'});
     if(!approved)return;
     query='';invalidOnly=false;page=0;
     update({parts:imported.parts,rawInputRows:imported.rawInputRows,sourceName:file.name});go('dashboard');toast(`${imported.parts.length} part numbers imported. Four footprints calculated.`);

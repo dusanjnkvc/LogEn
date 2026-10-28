@@ -46,6 +46,8 @@ Both storage methods use the same required whole-pallet count. Each part receive
 
 Ground storage-only area uses actual occupied depths of full and partial rows, including between-pallet clearances. The configured ground depth is a row-capacity limit; **0 means unrestricted**. Rack depth and fit rules are independent.
 
+**PALLETS — WITHOUT GANGWAYS** is the sum of the two-decimal **Floor storage m²** values across the whole project, before searching or pagination. Floor totals include every calculable floor row even when that part does not fit the racks. Rack totals independently include calculable rack rows. Input errors and duplicate part numbers remain visible and are excluded from affected totals; a validation notice reports the floor and rack contribution counts. Raw occupied-depth calculations are retained for formula details, while the floor storage column and its total use the same rounded area contributions.
+
 Floor area with gangways uses **SQM = (Q / S) × L × (W + G) / 1,000,000**. Q is required pallets, S is effective floor stacking (allowed stacking capped by the loaded-pallet height limit), and L/W/G are pallet length, pallet width and full gangway width in mm. **Q / S is not rounded**; the formula excludes pallet clearances and row-depth reservations. For Q=7, S=3, L=1200, W=800 and G=4500, it gives **14.84 m²**.
 
 The floor formula base is (Q/S) × L × W / 1,000,000 and its gangway component is (Q/S) × L × G / 1,000,000. The independent storage-only floor result still uses rounded floor positions and occupied-row clearances, so adding that result to the formula gangway component does not reproduce the with-gangways value.

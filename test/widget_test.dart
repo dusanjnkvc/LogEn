@@ -90,6 +90,90 @@ void main() {
   );
 
   testWidgets(
+    'valid floor storage remains in the KPI when the part does not fit racks',
+    (tester) async {
+      await ProjectStore().save([
+        WarehouseProject(
+          id: 'floor-valid-rack-invalid',
+          name: 'Floor valid',
+          parts: [
+            PartInput.fromJson({...sample.toJson(), 'height': 1100}),
+          ],
+        ),
+      ]);
+      await launch(tester);
+      expect(kpi(tester, 'kpi-floor-without'), '11.34 m²');
+      expect(kpi(tester, 'kpi-floor-with'), '63.60 m²');
+      expect(kpi(tester, 'kpi-rack-without'), '0.00 m²');
+      expect(
+        find.textContaining(
+          'Floor totals include 1 calculable parts; rack totals include 0',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Floor and rack totals cover different parts'),
+        findsOneWidget,
+      );
+      final rows = tester
+          .widgetList<DataTable>(find.byType(DataTable))
+          .last
+          .rows;
+      expect((rows.single.cells[5].child as Text).data, '11.34 m²');
+      expect((rows.single.cells[11].child as Text).data, '—');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'floor KPI sums displayed cents and stays at the whole-project total when searching',
+    (tester) async {
+      await ProjectStore().save([
+        WarehouseProject(
+          id: 'floor-cents',
+          name: 'Floor cents',
+          parts: [
+            PartInput.fromJson({
+              ...sample.toJson(),
+              'partNumber': 'CENTS-A',
+              'width': 801,
+            }),
+            PartInput.fromJson({
+              ...sample.toJson(),
+              'partNumber': 'CENTS-B',
+              'width': 801,
+            }),
+          ],
+        ),
+      ]);
+      await launch(tester);
+      expect(kpi(tester, 'kpi-floor-without'), '22.70 m²');
+      final rows = tester
+          .widgetList<DataTable>(find.byType(DataTable))
+          .last
+          .rows;
+      expect(rows, hasLength(2));
+      expect(rows.map((row) => (row.cells[5].child as Text).data), [
+        '11.35 m²',
+        '11.35 m²',
+      ]);
+      await tester.ensureVisible(find.byKey(const Key('part-search')));
+      await tester.enterText(find.byKey(const Key('part-search')), 'CENTS-A');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widgetList<DataTable>(find.byType(DataTable)).last.rows,
+        hasLength(1),
+      );
+      expect(kpi(tester, 'kpi-floor-without'), '22.70 m²');
+      expect(
+        textValue(tester, 'floor-storage-project-total'),
+        contains('22.70 m²'),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'floor gangway formula keeps Q over S unrounded and leaves rack capacity independent',
     (tester) async {
       await ProjectStore().save([

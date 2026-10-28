@@ -312,7 +312,7 @@ class WorkbookService {
       'Legacy direct pallet capacity without box quantities uses inferred packaging: one box containing that pallet capacity. Review inferred box quantities before relying on per-shift rounding.',
       'Use numeric cells or decimal-point text. Formula cells are not evaluated; paste values before importing.',
       'Floor with gangways = (Q / S) × L × (W + G) / 1,000,000. Q = required pallets; S = effective floor stacking; L/W/G in mm. Keep Q / S unrounded and use full gangway width G.',
-      'Floor without gangways retains actual occupied rows and clearances. Rack gangways retain actual rack run frontage × full gangway width. These are allocated planning estimates, not optimized layouts.',
+      'Floor without gangways retains actual occupied rows and clearances. Its project total sums independently valid floor storage results rounded to two decimals; rack fit errors do not remove valid floor areas. Rack gangways retain actual rack run frontage × full gangway width. These are allocated planning estimates, not optimized layouts.',
       'All imports, calculations, project storage and exports run locally and work offline.',
     ]) {
       _append(instructions, [line]);
@@ -615,7 +615,9 @@ class WorkbookService {
       _append(floor, [
         ..._inputValues(result.input),
         result.input.stacking,
-        result.isValid ? 'Valid' : 'Invalid — excluded from totals',
+        result.isFloorValid
+            ? (result.isValid ? 'Valid' : 'Included in floor totals — rack validation warning')
+            : 'Invalid floor — excluded from floor totals',
         result.errors.join(' | '),
         result.requiredParts,
         result.requiredPallets,
@@ -626,9 +628,9 @@ class WorkbookService {
         f?.rows,
         f?.rowWidth,
         f?.rowDepth,
-        f?.withoutGangways,
-        f?.gangwayArea,
-        f?.withGangways,
+        result.isFloorValid ? f?.storageArea : null,
+        result.isFloorValid ? f?.gangwayArea : null,
+        result.isFloorValid ? f?.withGangways : null,
         f?.fullRowDepth,
         f?.lastRowDepth,
         f?.lastRowPallets,
@@ -673,7 +675,9 @@ class WorkbookService {
       final bayLength = r?.effectiveBayLength ?? 0;
       _append(rack, [
         result.input.partNumber,
-        result.isValid ? 'Valid' : 'Invalid — excluded from totals',
+        result.isRackValid
+            ? (result.isValid ? 'Valid' : 'Included in rack totals — floor validation warning')
+            : 'Invalid rack — excluded from rack totals',
         result.errors.join(' | '),
         result.requiredPallets,
         result.input.length,
@@ -694,9 +698,9 @@ class WorkbookService {
             .map((bays) => (bays * bayLength / 1000).toStringAsFixed(3))
             .join(', '),
         r == null ? null : r.bays * r.effectiveBayLength / 1000,
-        r?.withoutGangways,
-        r?.gangwayArea,
-        r?.withGangways,
+        result.isRackValid ? r?.withoutGangways : null,
+        result.isRackValid ? r?.gangwayArea : null,
+        result.isRackValid ? r?.withGangways : null,
         ..._planningValues(result.planning, result.input, settingsValue),
       ]);
     }
@@ -726,14 +730,16 @@ class WorkbookService {
         !available
             ? 'INVALID SETTINGS — totals unavailable'
             : calculation.invalidCount > 0
-            ? 'PARTIAL TOTALS — ${calculation.invalidCount} invalid part rows excluded'
+            ? 'PARTIAL TOTALS — ${calculation.invalidCount} part rows need review; each storage scenario includes its calculable rows'
             : 'Complete — all imported part rows are valid',
       ],
       ['Settings validation', calculation.settingsErrors.join(' | ')],
       ['Total imported part rows', project.parts.length],
-      ['Valid part rows included in totals', calculation.validCount],
+      ['Fully valid comparison rows', calculation.validCount],
+      ['Floor part rows included in totals', calculation.floorValidCount],
+      ['Rack part rows included in totals', calculation.rackValidCount],
       ['Invalid part rows', calculation.invalidCount],
-      ['Total required pallets (valid rows)', calculation.totalRequiredPallets],
+      ['Total required pallets (valid planning rows)', calculation.totalRequiredPallets],
       ['Total floor positions', calculation.totalFloorPositions],
       ['Total floor rows', calculation.totalFloorRows],
       ['Total rack bays', calculation.totalRackBays],
@@ -772,8 +778,8 @@ class WorkbookService {
       'Floor formula storage base = (Q / S) × L × W / 1,000,000. Floor gangway component = (Q / S) × L × G / 1,000,000.',
       'Floor without gangways independently uses rounded floor positions, clearances and actual occupied row depths, so it has a different storage base from the floor with-gangways formula.',
       'Rack gangway = sum of actual run frontages (m) × (configured gangway width (mm) / 1000).',
-      'Invalid parts remain visible in calculations and are excluded from partial totals.',
-      'Negative savings mean racks require more ground area. Numeric footprints retain precision and display two decimals.',
+      'Floor and rack totals include independently calculable rows. Rack fit errors do not exclude valid floor results, and floor fit errors do not exclude valid rack results. Duplicate and invalid input rows remain visible but do not contribute.',
+      'Negative savings mean racks require more ground area. Pallets without gangways equals the sum of two-decimal Floor storage m² contributions exported as Without Gangways (m²), using integer area cents; raw dimensions and formula intermediates retain precision.',
     ]) {
       _append(comparison, [line]);
     }
@@ -788,7 +794,9 @@ class WorkbookService {
     for (final result in calculation.results) {
       _append(comparison, [
         result.input.partNumber,
-        result.isValid ? 'Valid' : 'Invalid',
+        result.isPlanningValid
+            ? (result.isValid ? 'Valid' : 'Valid planning — storage scenario needs review')
+            : 'Invalid planning — excluded',
         result.errors.join(' | '),
         ..._planningValues(result.planning, result.input, settingsValue),
       ]);
@@ -858,6 +866,7 @@ class WorkbookService {
         'mm; configured gangway width',
       ],
       ['Floor pallet clearance', s.floorPalletClearance, 'mm'],
+      ['Floor storage total rounding', 'Sum of row areas rounded to two decimals', 'm²; independently valid floor rows, including rows with rack fit errors'],
       ['Rack levels', s.rackLevels, 'levels'],
       ['Rack usable slot length', s.rackSlotLength, 'mm'],
       ['Rack usable slot depth', s.rackSlotDepth, 'mm'],

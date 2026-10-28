@@ -114,6 +114,47 @@ test('shift inventory renders the same ten required pallets in both warehouse sc
   assert.deepEqual(ui.errors,[]);
 });
 
+test('floor storage contributes to the KPI despite a rack-only validation failure',t=>{
+  const ui=boot(t,workspace({parts:[part({height:1100})]}));
+  assert.deepEqual(ui.kpis(),['11.34','63.60','0.00','0.00']);
+  assert.match(ui.$('#main').textContent,/Floor totals include 1 calculable parts; rack totals include 0/);
+  assert.match(ui.$('.savings-panel').textContent,/totals cover different parts/);
+  ui.click('[data-view="consumption"]');
+  assert.equal(ui.cell('Floor storage m²'),'11.34');
+  assert.equal(ui.cell('Rack storage m²'),'—');
+  assert.match(ui.$('.project-floor-total').textContent,/11\.34 m²/);
+  assert.deepEqual(ui.errors,[]);
+});
+
+test('floor KPI equals displayed cents across every page and is unchanged by search',t=>{
+  const parts=Array.from({length:32},(_,i)=>part({partNumber:`PART-${String(i+1).padStart(3,'0')}`,width:801}));
+  const ui=boot(t,workspace({parts}));
+  assert.equal(ui.kpis()[0],'363.20');
+  ui.click('[data-view="parts"]');
+  const cents=()=>[...ui.$('#parts-table').querySelectorAll('tbody tr')].reduce((sum,row)=>sum+Math.round(Number(row.children[5].textContent.replaceAll(',',''))*100),0);
+  let displayedCents=cents();
+  assert.equal(ui.$('#parts-table').querySelectorAll('tbody tr').length,30);
+  ui.click('[data-page="1"]');
+  displayedCents+=cents();
+  assert.equal(displayedCents,36320);
+  assert.match(ui.$('.project-floor-total').textContent,/363\.20 m²/);
+  ui.input('#part-search','PART-032');
+  assert.equal(ui.$('#parts-table').querySelectorAll('tbody tr').length,1);
+  assert.match(ui.$('.project-floor-total').textContent,/363\.20 m²/);
+  ui.click('[data-view="dashboard"]');
+  assert.equal(ui.kpis()[0],'363.20');
+  assert.deepEqual(ui.errors,[]);
+});
+
+test('duplicate and input-invalid rows display no floor-storage contributions',t=>{
+  const ui=boot(t,workspace({parts:[part({partNumber:'VALID'}),part({partNumber:'DUP'}),part({partNumber:' dup '}),part({partNumber:'BAD',qtyBox:0})]}));
+  assert.equal(ui.kpis()[0],'11.34');
+  ui.click('[data-view="consumption"]');
+  assert.equal(ui.cell('Floor storage m²',0),'11.34');
+  for(const index of [1,2,3])assert.equal(ui.cell('Floor storage m²',index),'—');
+  assert.deepEqual(ui.errors,[]);
+});
+
 test('first launch creates version-three shift examples with local resources only',t=>{
   const ui=boot(t,null);
   const saved=ui.state();

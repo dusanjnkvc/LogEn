@@ -44,7 +44,7 @@ Uint8List source(List<List<Object?>> rows) {
 String? value(Sheet sheet, String label, {int row = 1}) {
   final col = sheet.rows.first.indexWhere((c) => c?.value.toString() == label);
   expect(col, greaterThanOrEqualTo(0), reason: 'Missing $label');
-  return sheet.rows[row][col]?.value.toString();
+  return sheet.rows[row][col]?.value?.toString();
 }
 
 double numeric(Sheet sheet, String label, {int row = 1}) =>
@@ -195,6 +195,29 @@ void main() {
     expect(numeric(floor, 'Without Gangways (m²)'), closeTo(3.42, 1e-9));
     expect(value(floor, 'Floor With Gangways Formula').toString(), contains('(7 / 3)'));
     expect(numeric(book['Rack Calculations'], 'With Allocated Gangways (m²)'), closeTo(16.815, 1e-9));
+  });
+  test('floor storage export includes rack-invalid rows and sums displayed area cents', () {
+    final input = service.importBytes(service.templateBytes());
+    PartInput part(String number, {double width = 800, double height = 1000}) =>
+        PartInput.fromJson({...input.parts.single.toJson(),
+          'partNumber': number, 'width': width, 'height': height});
+    final floorOnly = output(project([part('FLOOR-ONLY', height: 1100)]));
+    expect(numeric(floorOnly['Floor Pallet Calculations'], 'Without Gangways (m²)'), 11.34);
+    expect(value(floorOnly['Floor Pallet Calculations'], 'Status'), contains('Included in floor totals'));
+    expect(value(floorOnly['Rack Calculations'], 'Without Gangways (m²)'), isNull);
+    expect(value(floorOnly['Rack Calculations'], 'Status'), contains('excluded from rack totals'));
+    expect(floorOnly['Warehouse Comparison'].rows[1][1]!.value.toString(), '11.34');
+    final rounded = output(project([part('A', width: 801), part('B', width: 801)]));
+    final floor = rounded['Floor Pallet Calculations'];
+    expect(numeric(floor, 'Without Gangways (m²)', row: 1), 11.35);
+    expect(numeric(floor, 'Without Gangways (m²)', row: 2), 11.35);
+    expect(double.parse(rounded['Warehouse Comparison'].rows[1][1]!.value.toString()), 22.70);
+    expect(numeric(floor, 'Row Width (m)') * numeric(floor, 'Total Occupied Row Depth (m)'), closeTo(11.3526, 1e-9));
+    final duplicates = output(project([part('SAME'), part('SAME')]));
+    for (final name in ['Floor Pallet Calculations', 'Rack Calculations']) {
+      expect(value(duplicates[name], 'Without Gangways (m²)', row: 1), isNull);
+      expect(value(duplicates[name], 'Without Gangways (m²)', row: 2), isNull);
+    }
   });
   test('selected1–3 shifts and DOH override appear in result exports', () {
     final input = service.importBytes(service.templateBytes());

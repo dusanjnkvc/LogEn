@@ -98,7 +98,7 @@
         'Use numeric cells or decimal-point text. Formula cells are not evaluated; paste calculated values before importing.',
         'Use one unique part number per row. Invalid and duplicate rows remain visible. Both floor and rack scenarios use the same required pallets.',
         'Floor with gangways = (Q / S) × L × (W + G) / 1,000,000; Q = required pallets, S = effective floor stacking, L/W/G in mm. Keep Q / S unrounded and use full gangway width G.',
-        'Floor without gangways retains actual occupied rows and clearances. Rack gangways retain actual rack run frontage × full gangway width. These are allocated planning estimates, not optimized layouts.',
+        'Floor without gangways retains actual occupied rows and clearances. Its project total sums each independently valid floor storage result rounded to two decimals; rack fit errors do not remove valid floor areas. Rack gangways retain actual rack run frontage × full gangway width. These are allocated planning estimates, not optimized layouts.',
         'All imports, calculations, projects and exports work offline on this device.',
       ].forEach(line => add(notes, [line]));
       notes.getColumn(1).width = 120;
@@ -209,13 +209,13 @@
       const floor = table(workbook, 'Floor Pallet Calculations', floorHeaders, floorHeaders.map((header, index) => /\(m²\)|\(days\)|Consumption|Pallets per Day|equivalent/.test(header) ? index : -1).filter(index => index >= 0));
       calculation.results.forEach(result => {
         const value = result.floor;
-        add(floor, [...inputValues(result.input), result.input.stacking, result.isValid ? 'Valid' : 'Invalid — excluded from totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, value?.withoutGangways, value?.gangwayArea, value?.withGangways, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `SQM = (${result.requiredPallets} / ${value.effectiveStacking}) * ${result.input.length} * (${result.input.width} + ${project.settings.gangwayWidth}) / 1000000` : null]);
+        add(floor, [...inputValues(result.input), result.input.stacking, result.isFloorValid ? (result.isValid ? 'Valid' : 'Included in floor totals — rack validation warning') : 'Invalid floor — excluded from floor totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, result.isFloorValid ? value?.storageArea : null, result.isFloorValid ? value?.gangwayArea : null, result.isFloorValid ? value?.withGangways : null, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `SQM = (${result.requiredPallets} / ${value.effectiveStacking}) * ${result.input.length} * (${result.input.width} + ${project.settings.gangwayWidth}) / 1000000` : null]);
       });
       const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Pallets Per Slot', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS];
       const rack = table(workbook, 'Rack Calculations', rackHeaders, [19, 20, 21, 22]);
       calculation.results.forEach(result => {
         const value = result.rack;
-        add(rack, [result.input.partNumber, result.isValid ? 'Valid' : 'Invalid — excluded from totals', (result.errors || []).join(' | '), result.requiredPallets, result.input.length, result.input.width, result.input.height, value?.rotated, value?.palletsPerSlot, value?.levels, value?.capacityPerBay, value?.bays, value?.effectiveBayLength, value?.effectiveBayDepth, value?.effectiveBayHeight, value?.maxBaysPerRun, value?.runs, value?.baysPerRun.join(', '), value?.baysPerRun.map(bays => (bays * value.effectiveBayLength / 1000).toFixed(3)).join(', '), value ? value.bays * value.effectiveBayLength / 1000 : null, value?.withoutGangways, value?.gangwayArea, value?.withGangways, ...planningValues(result.planning, result.input, project.settings)]);
+        add(rack, [result.input.partNumber, result.isRackValid ? (result.isValid ? 'Valid' : 'Included in rack totals — floor validation warning') : 'Invalid rack — excluded from rack totals', (result.errors || []).join(' | '), result.requiredPallets, result.input.length, result.input.width, result.input.height, value?.rotated, value?.palletsPerSlot, value?.levels, value?.capacityPerBay, value?.bays, value?.effectiveBayLength, value?.effectiveBayDepth, value?.effectiveBayHeight, value?.maxBaysPerRun, value?.runs, value?.baysPerRun.join(', '), value?.baysPerRun.map(bays => (bays * value.effectiveBayLength / 1000).toFixed(3)).join(', '), value ? value.bays * value.effectiveBayLength / 1000 : null, result.isRackValid ? value?.withoutGangways : null, result.isRackValid ? value?.gangwayArea : null, result.isRackValid ? value?.withGangways : null, ...planningValues(result.planning, result.input, project.settings)]);
       });
 
       const comparison = workbook.addWorksheet('Warehouse Comparison');
@@ -229,12 +229,14 @@
       ].forEach(([label, value]) => add(comparison, [label, available ? value : 'Unavailable — invalid settings'], 'kpi'));
       add(comparison, []);
       [
-        ['Totals status', !available ? 'INVALID SETTINGS — totals unavailable' : calculation.invalidCount ? 'PARTIAL TOTALS — ' + calculation.invalidCount + ' invalid part rows excluded' : 'Complete — all imported part rows are valid'],
+        ['Totals status', !available ? 'INVALID SETTINGS — totals unavailable' : calculation.invalidCount ? 'PARTIAL TOTALS — ' + calculation.invalidCount + ' part rows need review; each storage scenario includes its calculable rows' : 'Complete — all imported part rows are valid'],
         ['Settings validation', (calculation.settingsErrors || []).join(' | ')],
         ['Total imported part rows', project.parts.length],
-        ['Valid part rows included in totals', calculation.validCount],
+        ['Fully valid comparison rows', calculation.validCount],
+        ['Floor part rows included in totals', calculation.floorValidCount],
+        ['Rack part rows included in totals', calculation.rackValidCount],
         ['Invalid part rows', calculation.invalidCount],
-        ['Total required pallets (valid rows)', calculation.totalRequiredPallets],
+        ['Total required pallets (valid planning rows)', calculation.totalRequiredPallets],
         ['Total floor positions', calculation.totalFloorPositions],
         ['Total floor rows', calculation.totalFloorRows],
         ['Total rack bays', calculation.totalRackBays],
@@ -260,14 +262,14 @@
         'Floor without gangways uses rounded floor positions, clearances and actual occupied row depths. Its independent base differs from the floor with-gangways formula base.',
         'Rack gangway = sum of actual run frontages (m) × (configured gangway width (mm) / 1000).',
         'Allocated footprints are planning estimates, not optimized physical warehouse designs. Count shared gangways once in an actual layout.',
-        'Invalid parts remain listed on the floor and rack calculation sheets; partial totals exclude these rows.',
+        'Floor and rack totals include independently calculable rows. A rack fit error does not exclude a valid floor result, and a floor fit error does not exclude a valid rack result. Duplicate and invalid input rows remain listed but do not contribute.',
         'Negative savings mean racks require more floor area. N/A percentages have a zero floor denominator.',
-        'Footprints display two decimals while exported numeric values retain full precision.',
+        'Pallets without gangways equals the sum of the two-decimal Floor storage m² contributions exported as Without Gangways (m²). This sums integer area cents; raw dimensions and formula intermediates retain precision.',
       ].forEach(line => add(comparison, [line]));
       add(comparison, []);
       add(comparison, ['Part shift rounding and DOH planning'], 'header');
       add(comparison, ['Part Number', 'Status', 'Validation Errors', ...PLANNING_HEADERS], 'header');
-      calculation.results.forEach(result => add(comparison, [result.input.partNumber, result.isValid ? 'Valid' : 'Invalid', (result.errors || []).join(' | '), ...planningValues(result.planning, result.input, project.settings)]));
+      calculation.results.forEach(result => add(comparison, [result.input.partNumber, result.isPlanningValid ? (result.isValid ? 'Valid' : 'Valid planning — storage scenario needs review') : 'Invalid planning — excluded', (result.errors || []).join(' | '), ...planningValues(result.planning, result.input, project.settings)]));
       add(comparison, []);
       add(comparison, ['Required-pallet formula', 'CEILING(CEILING(consumption per shift / parts per box / boxes per pallet) × selected DOH × shifts per day). Round one-shift pallets up first, then multiply DOH and shifts and apply the final CEILING.']);
       add(comparison, ['Optional stock interpretation', 'The eight-column input has no current stock quantity. Actual stock coverage is unavailable unless older or optional stock data is provided. Unknown stock is never treated as zero.']);
@@ -291,6 +293,7 @@
         ['Gangway allocation factor', 1, '100% for both floor and rack footprints'],
         ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
         ['Floor pallet clearance', s.floorPalletClearance, 'mm'],
+        ['Floor storage total rounding', 'Sum of row areas rounded to two decimals', 'm²; independently valid floor rows, including rows with rack fit errors'],
         ['Rack levels', s.rackLevels, 'levels'], ['Rack usable slot length', s.rackSlotLength, 'mm'],
         ['Rack usable slot depth', s.rackSlotDepth, 'mm'], ['Rack usable slot height', s.rackSlotHeight, 'mm'],
         ['Rack structural length allowance', s.rackStructuralLength, 'mm'], ['Rack structural depth allowance', s.rackStructuralDepth, 'mm'],

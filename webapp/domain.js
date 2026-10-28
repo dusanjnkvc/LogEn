@@ -149,9 +149,18 @@
     const quotient = Math.floor(numerator / denominator);
     return quotient + (numerator % denominator === 0 ? 0 : 1);
   }
+  function storageAreaCents(value) {
+    const scaled = value * 100;
+    if (!Number.isFinite(scaled) || Math.abs(scaled) > Number.MAX_SAFE_INTEGER)
+      throw new Error('Floor storage area exceeds supported numeric precision.');
+    return Math.round(scaled + Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4);
+  }
   function resultFor(input, errors, requiredParts = null, requiredPallets = null, floorResult = null, rack = null, planning = null) {
     return {
       input, requiredParts, requiredPallets, floor: floorResult, rack, planning, errors,
+      isFloorValid: floorResult !== null,
+      isRackValid: rack !== null,
+      isPlanningValid: planning !== null,
       isValid: errors.length === 0 && floorResult !== null && rack !== null
     };
   }
@@ -220,6 +229,7 @@
         const rowDepth = fullRowDepth;
         const totalOccupiedDepth = (positions * input.length + Math.max(0, positions - rows) * s.floorPalletClearance) / 1000;
         const withoutGangways = rowWidth * totalOccupiedDepth;
+        const storageArea = storageAreaCents(withoutGangways) / 100;
         // Floor area with gangways uses the user's independent Q/S formula.
         // Q/S stays fractional; rounded positions/rows apply to storage-only area.
         const formulaPositions = requiredPallets / effectiveStacking;
@@ -231,7 +241,8 @@
           throw new Error('Floor area exceeds supported numeric precision.');
         floorResult = { maximumStacking, effectiveStacking, positions,
           palletsPerRow, rows, rowWidth, rowDepth, totalOccupiedDepth, fullRowDepth,
-          lastRowDepth, lastRowPallets, withoutGangways, formulaPositions,
+          lastRowDepth, lastRowPallets, withoutGangways,
+          storageArea, formulaPositions,
           formulaStorageArea, gangwayArea, withGangways };
       }
 
@@ -294,25 +305,31 @@
       if (counts.get(keyFor(input)) > 1) {
         result.errors.push('Duplicate Part Number. Consolidate this part into one input row.');
         result.isValid = false;
+        result.isFloorValid = result.isRackValid = result.isPlanningValid = false;
       }
       return result;
     });
     const valid = results.filter(r => r.isValid);
-    const total = fn => valid.reduce((sum, row) => sum + fn(row), 0);
+    const floors = results.filter(r => r.isFloorValid);
+    const racks = results.filter(r => r.isRackValid);
+    const planned = results.filter(r => r.isPlanningValid);
+    const total = (rows, fn) => rows.reduce((sum, row) => sum + fn(row), 0);
     const project = {
       results, settingsErrors, invalidCount: results.length - valid.length,
       validCount: valid.length,
-      totalRequiredPallets: total(r => r.requiredPallets),
-      totalFloorPositions: total(r => r.floor.positions),
-      totalFloorRows: total(r => r.floor.rows),
-      totalRackBays: total(r => r.rack.bays),
-      totalRackRuns: total(r => r.rack.runs),
-      floorWithoutGangways: total(r => r.floor.withoutGangways),
-      floorWithGangways: total(r => r.floor.withGangways),
-      rackWithoutGangways: total(r => r.rack.withoutGangways),
-      rackWithGangways: total(r => r.rack.withGangways),
-      floorGangwayArea: total(r => r.floor.gangwayArea),
-      rackGangwayArea: total(r => r.rack.gangwayArea)
+      floorValidCount: floors.length, rackValidCount: racks.length,
+      totalRequiredPallets: total(planned, r => r.requiredPallets),
+      totalFloorPositions: total(floors, r => r.floor.positions),
+      totalFloorRows: total(floors, r => r.floor.rows),
+      totalRackBays: total(racks, r => r.rack.bays),
+      totalRackRuns: total(racks, r => r.rack.runs),
+      // Sum the exact two-decimal contributions displayed in Floor storage m².
+      floorWithoutGangways: total(floors, r => storageAreaCents(r.floor.withoutGangways)) / 100,
+      floorWithGangways: total(floors, r => r.floor.withGangways),
+      rackWithoutGangways: total(racks, r => r.rack.withoutGangways),
+      rackWithGangways: total(racks, r => r.rack.withGangways),
+      floorGangwayArea: total(floors, r => r.floor.gangwayArea),
+      rackGangwayArea: total(racks, r => r.rack.gangwayArea)
     };
     project.savingWithoutGangways = project.floorWithoutGangways - project.rackWithoutGangways;
     project.savingWithGangways = project.floorWithGangways - project.rackWithGangways;
