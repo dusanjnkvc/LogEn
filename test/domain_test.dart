@@ -46,9 +46,9 @@ void main() {
       expect(r.planning!.roundedPalletsPerShift, 1);
       expect(r.planning!.plannedPalletsPerDay, 2);
       expect(r.floor!.withoutGangways, closeTo(11.34, 1e-9));
-      expect(r.floor!.withGangways, closeTo(19.44, 1e-9));
+      expect(r.floor!.withGangways, closeTo(27.54, 1e-9));
       expect(r.rack!.withoutGangways, closeTo(7.98, 1e-9));
-      expect(r.rack!.withGangways, closeTo(20.805, 1e-9));
+      expect(r.rack!.withGangways, closeTo(33.63, 1e-9));
     },
   );
   test('rounding is per shift before DOH and shifts, not over total parts', () {
@@ -253,7 +253,7 @@ void main() {
       final a = calculate(), b = calculate({'stacking': 3});
       expect(b.floor!.positions, 4);
       expect(b.floor!.withoutGangways, closeTo(4.5, 1e-9));
-      expect(b.floor!.withGangways, closeTo(8.55, 1e-9));
+      expect(b.floor!.withGangways, closeTo(12.6, 1e-9));
       expect(a.rack!.bays, b.rack!.bays);
       expect(calculate({'stacking': 99}).floor!.effectiveStacking, 5);
     },
@@ -300,7 +300,7 @@ void main() {
       expect(r.rack!.runs, 2);
       expect(r.rack!.baysPerRun, [5, 1]);
       expect(r.rack!.withoutGangways, closeTo(23.94, 1e-9));
-      expect(r.rack!.gangwayArea, closeTo(38.475, 1e-9));
+      expect(r.rack!.gangwayArea, closeTo(76.95, 1e-9));
     },
   );
   test('rack depth and vertical clearances enforce independent boundaries', () {
@@ -335,7 +335,7 @@ void main() {
       expect(r.totalFloorRows, 8);
       expect(r.totalRackBays, 4);
       expect(r.floorWithoutGangways, closeTo(22.68, 1e-9));
-      expect(r.rackWithGangways, closeTo(41.61, 1e-9));
+      expect(r.rackWithGangways, closeTo(67.26, 1e-9));
     },
   );
   test(
@@ -364,7 +364,7 @@ void main() {
     'negative savings are preserved and zero denominators stay undefined',
     () {
       final r = calculateProject([part()], settings());
-      expect(r.savingWithGangways, closeTo(-1.365, 1e-9));
+      expect(r.savingWithGangways, closeTo(-6.09, 1e-9));
       expect(r.savingWithGangwaysPercent, lessThan(0));
       final zero = calculateProject([
         part({'consumptionPerShift': 0}),
@@ -372,32 +372,32 @@ void main() {
       expect(zero.savingWithGangwaysPercent, isNull);
     },
   );
-  test('both scenarios allocate half the saved physical gangway width', () {
+  test('both scenarios allocate the full saved physical gangway width', () {
     final baseline = calculate({}, {'gangwayWidth': 0});
     for (final width in [0, 3000, 4500, 4501]) {
       final s = settings({'gangwayWidth': width});
       final r = calculatePart(part(), s);
       expect(s.gangwayWidth, width);
-      expect(s.allocatedGangwayWidth, width / 2);
+      expect(s.allocatedGangwayWidth, width);
       expect(r.requiredPallets, baseline.requiredPallets);
       expect(r.floor!.withoutGangways, baseline.floor!.withoutGangways);
       expect(r.rack!.withoutGangways, baseline.rack!.withoutGangways);
-      expect(r.floor!.gangwayArea, closeTo(4 * .9 * (width / 2 / 1000), 1e-9));
-      expect(r.rack!.gangwayArea, closeTo(5.7 * (width / 2 / 1000), 1e-9));
+      expect(r.floor!.gangwayArea, closeTo(4 * .9 * (width / 1000), 1e-9));
+      expect(r.rack!.gangwayArea, closeTo(5.7 * (width / 1000), 1e-9));
       expect(r.floor!.withGangways,
           closeTo(baseline.floor!.withoutGangways + r.floor!.gangwayArea, 1e-9));
       expect(r.rack!.withGangways,
           closeTo(baseline.rack!.withoutGangways + r.rack!.gangwayArea, 1e-9));
     }
     final r = calculate();
-    expect(r.floor!.gangwayArea, closeTo(8.1, 1e-9));
-    expect(r.rack!.gangwayArea, closeTo(12.825, 1e-9));
+    expect(r.floor!.gangwayArea, closeTo(16.2, 1e-9));
+    expect(r.rack!.gangwayArea, closeTo(25.65, 1e-9));
   });
   test('gangways alter allocated area only', () {
     final a = calculate(), b = calculate({}, {'gangwayWidth': 3000});
     expect(a.floor!.withoutGangways, b.floor!.withoutGangways);
     expect(a.rack!.withoutGangways, b.rack!.withoutGangways);
-    expect(b.floor!.withGangways, closeTo(16.74, 1e-9));
+    expect(b.floor!.withGangways, closeTo(22.14, 1e-9));
   });
   test('invalid settings and empty projects remain safe and explicit', () {
     final r = calculateProject([part()], settings({'maxRackRunLength': 2000}));

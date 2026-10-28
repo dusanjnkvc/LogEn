@@ -97,7 +97,7 @@
         'If old data has only direct parts-per-pallet capacity, packaging is inferred as one box containing that capacity. Review inferred packaging before relying on shift rounding.',
         'Use numeric cells or decimal-point text. Formula cells are not evaluated; paste calculated values before importing.',
         'Use one unique part number per row. Invalid and duplicate rows remain visible. Both floor and rack scenarios use the same required pallets.',
-        'Each part has dedicated floor rows and rack bays. Gangway-inclusive figures use half (50%) of the configured gangway width for allocated planning estimates, not optimized physical layouts.',
+        'Each part has dedicated floor rows and rack bays. Gangway-inclusive figures use the full (100%) configured gangway width for allocated planning estimates, not optimized physical layouts.',
         'All imports, calculations, projects and exports work offline on this device.',
       ].forEach(line => add(notes, [line]));
       notes.getColumn(1).width = 120;
@@ -253,9 +253,9 @@
       add(comparison, []);
       [
         'Both storage scenarios use the same required pallets, with dedicated floor rows and rack bays per part.',
-        'Storage-only footprints exclude gangways. Gangway-inclusive values allocate half (50%) of the configured gangway width.',
-        'Floor gangway = rows × row width (m) × (configured gangway width (mm) / 2 / 1000).',
-        'Rack gangway = sum of actual run frontages (m) × (configured gangway width (mm) / 2 / 1000).',
+        'Storage-only footprints exclude gangways. Gangway-inclusive values allocate the full (100%) configured gangway width.',
+        'Floor gangway = rows × row width (m) × (configured gangway width (mm) / 1000).',
+        'Rack gangway = sum of actual run frontages (m) × (configured gangway width (mm) / 1000).',
         'Allocated footprints are planning estimates, not optimized physical warehouse designs. Count shared gangways once in an actual layout.',
         'Invalid parts remain listed on the floor and rack calculation sheets; partial totals exclude these rows.',
         'Negative savings mean racks require more floor area. N/A percentages have a zero floor denominator.',
@@ -285,8 +285,8 @@
         ['Optional stock warnings', calculation.results.filter(result => result.planning?.stockQty == null).length, 'part numbers with no provided current stock quantity; actual coverage is unavailable'],
         ['Maximum floor stacking height', s.maxFloorStackingHeight, 'mm'], ['Maximum floor row depth LIMIT', s.maxFloorRowDepth, 'mm; 0 = unlimited. Footprint uses actual occupied depth.'],
         ['Gangway width', s.gangwayWidth, 'mm; full configured width'],
-        ['Gangway allocation factor', 0.5, '50% for both floor and rack footprints'],
-        ['Allocated gangway width (50%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width / 2'],
+        ['Gangway allocation factor', 1, '100% for both floor and rack footprints'],
+        ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
         ['Floor pallet clearance', s.floorPalletClearance, 'mm'],
         ['Rack levels', s.rackLevels, 'levels'], ['Rack usable slot length', s.rackSlotLength, 'mm'],
         ['Rack usable slot depth', s.rackSlotDepth, 'mm'], ['Rack usable slot height', s.rackSlotHeight, 'mm'],
@@ -312,7 +312,7 @@
         'Capacity per bay = pallets per slot × rack levels. Rack bays = CEILING(required pallets / capacity per bay). Floor stacking never applies to racks.',
         'Effective bay L / D = usable slot L / D + respective structural allowance. Rack storage area = bays × effective bay L × effective bay D / 1000000.',
         'Maximum bays per run = FLOOR(maximum run length / effective bay L). Runs = CEILING(bays / maximum bays per run). Final run uses only assigned bays.',
-        'Allocated gangway width = configured gangway width / 2. Floor gangway area = rows × row width × allocated width / 1000; rack gangway area = actual run frontage × allocated width / 1000.',
+        'Allocated gangway width = configured gangway width. Floor gangway area = rows × row width × allocated width / 1000; rack gangway area = actual run frontage × allocated width / 1000.',
         'Structural height allowance describes physical bay height; it does not increase usable loaded-pallet height or multiply the ground footprint.',
       ].forEach(line => add(settings, [line]));
       settings.getColumn(1).width = 115;

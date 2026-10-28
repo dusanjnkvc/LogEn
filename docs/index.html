@@ -155,8 +155,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     customCoverageDays: 'Custom target coverage'
   };
 
-  // Each storage allocation is charged half of the configured physical aisle.
-  const allocatedGangwayWidth = settings => settings.gangwayWidth / 2;
+  // Each storage allocation uses the full configured physical aisle width.
+  const allocatedGangwayWidth = settings => settings.gangwayWidth;
 
   function validateSettings(s) {
     const errors = [];
@@ -380,7 +380,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const totalFrontageMetres = baysPerRun.reduce((total, count) =>
           total + count * effectiveBayLength / 1000, 0);
         const gangwayArea = totalFrontageMetres * allocatedGangwayWidth(s) / 1000;
-        // Combine storage and the half-width allocation before unit conversion.
+        // Combine storage and the full-width allocation before unit conversion.
         const withGangways = bays * effectiveBayLength *
           (effectiveBayDepth + allocatedGangwayWidth(s)) / 1000000;
         if (![withoutGangways, gangwayArea, withGangways, effectiveBayHeight].every(Number.isFinite))
@@ -538,7 +538,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         'If old data has only direct parts-per-pallet capacity, packaging is inferred as one box containing that capacity. Review inferred packaging before relying on shift rounding.',
         'Use numeric cells or decimal-point text. Formula cells are not evaluated; paste calculated values before importing.',
         'Use one unique part number per row. Invalid and duplicate rows remain visible. Both floor and rack scenarios use the same required pallets.',
-        'Each part has dedicated floor rows and rack bays. Gangway-inclusive figures use half (50%) of the configured gangway width for allocated planning estimates, not optimized physical layouts.',
+        'Each part has dedicated floor rows and rack bays. Gangway-inclusive figures use the full (100%) configured gangway width for allocated planning estimates, not optimized physical layouts.',
         'All imports, calculations, projects and exports work offline on this device.',
       ].forEach(line => add(notes, [line]));
       notes.getColumn(1).width = 120;
@@ -694,9 +694,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       add(comparison, []);
       [
         'Both storage scenarios use the same required pallets, with dedicated floor rows and rack bays per part.',
-        'Storage-only footprints exclude gangways. Gangway-inclusive values allocate half (50%) of the configured gangway width.',
-        'Floor gangway = rows × row width (m) × (configured gangway width (mm) / 2 / 1000).',
-        'Rack gangway = sum of actual run frontages (m) × (configured gangway width (mm) / 2 / 1000).',
+        'Storage-only footprints exclude gangways. Gangway-inclusive values allocate the full (100%) configured gangway width.',
+        'Floor gangway = rows × row width (m) × (configured gangway width (mm) / 1000).',
+        'Rack gangway = sum of actual run frontages (m) × (configured gangway width (mm) / 1000).',
         'Allocated footprints are planning estimates, not optimized physical warehouse designs. Count shared gangways once in an actual layout.',
         'Invalid parts remain listed on the floor and rack calculation sheets; partial totals exclude these rows.',
         'Negative savings mean racks require more floor area. N/A percentages have a zero floor denominator.',
@@ -726,8 +726,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         ['Optional stock warnings', calculation.results.filter(result => result.planning?.stockQty == null).length, 'part numbers with no provided current stock quantity; actual coverage is unavailable'],
         ['Maximum floor stacking height', s.maxFloorStackingHeight, 'mm'], ['Maximum floor row depth LIMIT', s.maxFloorRowDepth, 'mm; 0 = unlimited. Footprint uses actual occupied depth.'],
         ['Gangway width', s.gangwayWidth, 'mm; full configured width'],
-        ['Gangway allocation factor', 0.5, '50% for both floor and rack footprints'],
-        ['Allocated gangway width (50%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width / 2'],
+        ['Gangway allocation factor', 1, '100% for both floor and rack footprints'],
+        ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
         ['Floor pallet clearance', s.floorPalletClearance, 'mm'],
         ['Rack levels', s.rackLevels, 'levels'], ['Rack usable slot length', s.rackSlotLength, 'mm'],
         ['Rack usable slot depth', s.rackSlotDepth, 'mm'], ['Rack usable slot height', s.rackSlotHeight, 'mm'],
@@ -753,7 +753,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         'Capacity per bay = pallets per slot × rack levels. Rack bays = CEILING(required pallets / capacity per bay). Floor stacking never applies to racks.',
         'Effective bay L / D = usable slot L / D + respective structural allowance. Rack storage area = bays × effective bay L × effective bay D / 1000000.',
         'Maximum bays per run = FLOOR(maximum run length / effective bay L). Runs = CEILING(bays / maximum bays per run). Final run uses only assigned bays.',
-        'Allocated gangway width = configured gangway width / 2. Floor gangway area = rows × row width × allocated width / 1000; rack gangway area = actual run frontage × allocated width / 1000.',
+        'Allocated gangway width = configured gangway width. Floor gangway area = rows × row width × allocated width / 1000; rack gangway area = actual run frontage × allocated width / 1000.',
         'Structural height allowance describes physical bay height; it does not increase usable loaded-pallet height or multiply the ground footprint.',
       ].forEach(line => add(settings, [line]));
       settings.getColumn(1).width = 115;
@@ -1040,7 +1040,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         stock.append($('p', 'muted formula-hint', 'Required pallets = CEILING(CEILING(consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet) × selected DOH × shifts per day). The outer ceiling only affects fractional DOH.'));
         const preview = $('div', 'planning-preview');
         stock.append(preview);
-        const floor = section(body, 'Floor storage & gangways', 'Enter the full physical gangway width. Floor and rack footprints allocate half of that width (50%).');
+        const floor = section(body, 'Floor storage & gangways', 'Enter the full physical gangway width. Floor and rack footprints use the complete configured width (100%).');
         const floorGrid = $('div', 'form-grid'); floor.append(floorGrid);
         field(floorGrid, 'maxFloorStackingHeight', 'Maximum floor stacking height', true);
         field(floorGrid, 'maxFloorRowDepth', 'Maximum floor row depth · 0 = unrestricted');
@@ -1073,7 +1073,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const update = () => {
           const settings = draft();
           planningPreview(preview, sample, settings, true);
-          gangwayHint.textContent = `Allocated gangway width = ${display(settings.gangwayWidth)} ÷ 2 = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm for both floor and rack calculations.`;
+          gangwayHint.textContent = `Allocated gangway width = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm (100% of configured width) for both floor and rack calculations.`;
         };
         for (const input of Object.values(fields)) input.input.addEventListener('input', update);
         shifts.addEventListener('change', update); coverage.addEventListener('change', update); rotation.addEventListener('change', update);
@@ -1189,7 +1189,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           formula(floorSection, 'Dedicated floor rows', `CEILING(${n(floor.positions)} ÷ ${n(floor.palletsPerRow)})`, `${n(floor.rows)} rows`);
           formula(floorSection, 'Actual occupied floor row depth', `Sum of occupied row depths = (${n(floor.positions)} positions × ${n(input.length)} mm + (${n(floor.positions)} − ${n(floor.rows)}) gaps × ${n(settings.floorPalletClearance)} mm) / 1000\nDeepest row: ${n(floor.rowDepth)} m · last row: ${n(floor.lastRowPallets)} pallets / ${n(floor.lastRowDepth)} m`, `${n(floor.totalOccupiedDepth)} m total occupied row depth`);
           formula(floorSection, 'A · Pallets without gangways', `(${n(input.width)} + ${n(settings.floorPalletClearance)}) / 1000 m row width × ${n(floor.totalOccupiedDepth)} m total occupied depth`, area(floor.withoutGangways));
-          formula(floorSection, 'Allocated floor gangway', `${n(floor.rows)} rows × ${n(floor.rowWidth)} m × (${n(settings.gangwayWidth)} ÷ 2) / 1000 m = rows × row width × ${n(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} / 1000 m`, area(floor.gangwayArea));
+          formula(floorSection, 'Allocated floor gangway', `${n(floor.rows)} rows × ${n(floor.rowWidth)} m × ${n(settings.gangwayWidth)} / 1000 m`, area(floor.gangwayArea));
           formula(floorSection, 'B · Pallets with allocated gangways', `${n(floor.withoutGangways)} + ${n(floor.gangwayArea)} m²`, area(floor.withGangways));
         }
         const rackSection = section(body, 'C / D · Pallet rack storage');
@@ -1207,10 +1207,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           formula(rackSection, 'Maximum bays per run', `FLOOR(${n(settings.maxRackRunLength)} ÷ ${n(rack.effectiveBayLength)})`, `${n(rack.maxBaysPerRun)} bays`);
           const baysPerRun = rack.baysPerRun ?? [];
           formula(rackSection, 'Required rack runs', `CEILING(${n(rack.bays)} ÷ ${n(rack.maxBaysPerRun)})\nBays per run: ${baysPerRun.length ? baysPerRun.map(n).join(', ') : 'none'}\nRun lengths: ${baysPerRun.length ? baysPerRun.map(bays => `${n(bays * rack.effectiveBayLength / 1000)} m`).join(', ') : 'none'}`, `${n(rack.runs)} runs`);
-          formula(rackSection, 'Allocated rack gangway', `Total run frontage × half gangway width = (${n(rack.bays)} × ${n(rack.effectiveBayLength)} / 1000 m) × (${n(settings.gangwayWidth)} ÷ 2) / 1000 m; allocated width = ${n(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm`, area(rack.gangwayArea));
+          formula(rackSection, 'Allocated rack gangway', `Total run frontage × full gangway width = (${n(rack.bays)} × ${n(rack.effectiveBayLength)} / 1000 m) × ${n(settings.gangwayWidth)} / 1000 m; allocated width = ${n(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm`, area(rack.gangwayArea));
           formula(rackSection, 'D · Racks with allocated gangways', `${n(rack.withoutGangways)} + ${n(rack.gangwayArea)} m²`, area(rack.withGangways));
         }
-        body.append(notice('Floor stacking is not applied to racks. Rack levels increase capacity, not ground footprint. Structural height is recorded per level and does not affect area. Both scenarios allocate 50% of the configured gangway width. These are planning estimates; a physical layout must count shared gangways once.'));
+        body.append(notice('Floor stacking is not applied to racks. Rack levels increase capacity, not ground footprint. Structural height is recorded per level and does not affect area. Both scenarios use 100% of the configured gangway width. These are planning estimates; a physical layout must count shared gangways once.'));
         return { read: () => true };
       }
     }).then(() => undefined);
@@ -1367,7 +1367,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return '';
   }
   function kpi(title, value, rack, allocated, unavailable) {
-    return `<article class="kpi-card ${!rack ? 'accent' : ''}"><div class="kpi-top"><span class="kpi-icon ${rack ? 'rack' : ''}">${icon(rack ? 'rack' : 'box')}</span><span class="kpi-tag">${allocated ? 'ALLOCATED FOOTPRINT' : 'STORAGE ONLY'}</span></div><h2>${title}</h2><div class="kpi-value">${unavailable ? '—' : area(value)}<small>m²</small></div><div class="kpi-description">${allocated ? 'Storage + half-width gangway allocation' : rack ? 'Ground area · all rack levels included' : 'Dedicated floor rows · stacking applied'}</div></article>`;
+    return `<article class="kpi-card ${!rack ? 'accent' : ''}"><div class="kpi-top"><span class="kpi-icon ${rack ? 'rack' : ''}">${icon(rack ? 'rack' : 'box')}</span><span class="kpi-tag">${allocated ? 'ALLOCATED FOOTPRINT' : 'STORAGE ONLY'}</span></div><h2>${title}</h2><div class="kpi-value">${unavailable ? '—' : area(value)}<small>m²</small></div><div class="kpi-description">${allocated ? 'Storage + full-width gangway allocation' : rack ? 'Ground area · all rack levels included' : 'Dedicated floor rows · stacking applied'}</div></article>`;
   }
   function savingsItem(label, value, percent) {
     const unavailable = typeof value !== 'number' || !Number.isFinite(value);
@@ -1428,7 +1428,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       `<div class="kpi-grid">${kpi('PALLETS — WITHOUT GANGWAYS',values[0],false,false,unavailable)}${kpi('PALLETS — WITH GANGWAYS',values[1],false,true,unavailable)}${kpi('RACKS — WITHOUT GANGWAYS',values[2],true,false,unavailable)}${kpi('RACKS — WITH GANGWAYS',values[3],true,true,unavailable)}</div>` +productionPanel(c)+
       `<div class="two-col"><section class="panel"><div class="panel-head"><div><h2>Floor vs. rack storage</h2><p>Compare the four footprint scenarios</p></div><span class="unit-tag">m²</span></div><div class="chart" role="img" aria-label="Footprint comparison: ${values.map(area).join(', ')} square meters"><div style="display:${unavailable ? 'block' : 'none'}" class="notice error">Correct warehouse settings to calculate footprints.</div>${chartLabels.map((r,i) => `<div class="chart-row"><div class="chart-label">${r[0]}<small>${r[1]}</small></div><div class="chart-track"><div class="chart-bar ${r[2]}" style="width:${unavailable ? 0 : values[i]/max*100}%"></div></div><span class="chart-number">${unavailable ? '—' : area(values[i])}</span></div>`).join('')}</div><div class="chart-legend"><span><i class="legend-dot"></i>Floor pallets</span><span><i class="legend-dot rack"></i>Pallet racks</span><span>Striped = allocated gangways included</span></div></section><section class="panel savings-panel"><div class="panel-head"><div><h2>Space savings with racks</h2><p>Floor footprint minus rack footprint</p></div>${icon('chart')}</div><div class="saving-items">${savingsItem('WITHOUT GANGWAYS',unavailable ? null : c.savingWithoutGangways,unavailable ? null : c.savingWithoutGangwaysPercent)}${savingsItem('WITH ALLOCATED GANGWAYS',unavailable ? null : c.savingWithGangways,unavailable ? null : c.savingWithGangwaysPercent)}</div></section></div>` +
       `<section class="panel stats-panel"><div class="panel-head"><h2>Warehouse at a glance</h2><button class="text-link" data-action="settings">Configure warehouse ${icon('settings')}</button></div><div class="stats-grid">${stats.map(([label,value,unit],i) => `<div class="stat"><span class="stat-label">${label}</span><span class="stat-value">${unavailable && i > 0 ? '—' : unit ? area(value) : count(value)}${unit ? `<small>${unit}</small>` : ''}</span>${i===0 && c.invalidCount ? `<span class="badge error">${c.invalidCount} invalid</span>` : ''}</div>`).join('')}</div></section>` +
-      `<div class="allocation-note">${icon('info')}<span>Ground storage uses actual occupied pallet-row depth, including pallet clearances. The row-depth setting limits row capacity; 0 removes that limit. Gangway-inclusive values use half the configured width: ${count(p.settings.gangwayWidth)} ÷ 2 = ${count(D.allocatedGangwayWidth(p.settings))} mm. These are allocated planning estimates. Each part has dedicated rows and rack bays; shared gangways count once in a physical design.</span></div>` +
+      `<div class="allocation-note">${icon('info')}<span>Ground storage uses actual occupied pallet-row depth, including pallet clearances. The row-depth setting limits row capacity; 0 removes that limit. Gangway-inclusive values use the full configured width: ${count(D.allocatedGangwayWidth(p.settings))} mm. These are allocated planning estimates. Each part has dedicated rows and rack bays; shared gangways count once in a physical design.</span></div>` +
       `<section class="panel table-panel"><div class="panel-head"><div><h2>Part number overview</h2><p>Tap any part number to see the formulas behind it</p></div><button class="text-link" data-action="parts">View all parts ${icon('arrow')}</button></div>${previewTable(c)}<div class="table-footer"><span>Showing ${Math.min(p.parts.length,4)} of ${p.parts.length} part numbers</span><span>Same required pallets in both scenarios</span></div></section>`;
   }
   function previewTable(c) {
@@ -1538,7 +1538,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     } catch(error){toast(error.message||'This backup could not be read.',true);}
   }
   async function help() {
-    await modal({title:'From shift consumption to warehouse space',eyebrow:'HOW LOGEN WORKS',body:`<div class="help-steps"><div class="help-step"><strong>01 / PREPARE</strong><h3>Download the eight-column template</h3><p>Part Number, QTY in Box, QTY boxes per Pallet, Consumption per shift, DOH (Days on hand), L(mm), W(mm), H(mm).</p></div><div class="help-step"><strong>02 / IMPORT</strong><h3>Import your parts</h3><p>All file processing happens locally. L, W and H are loaded pallet dimensions. Stacking defaults to 1 and can be edited for each part.</p></div><div class="help-step"><strong>03 / CONFIGURE</strong><h3>Choose shifts and DOH</h3><p>Select 1, 2 or 3 shifts per day. Use each part’s Excel DOH or apply a chosen DOH override to all parts.</p></div><div class="help-step"><strong>04 / COMPARE</strong><h3>Review and export</h3><p>The same required pallet count drives floor and rack m² calculations. Inspect substituted formulas and export the five-sheet workbook.</p></div></div><h3>Your required-pallet formula</h3><div class="formula-box"><code>ROUNDUP(Consumption per shift / QTY in Box / QTY boxes per Pallet, 0) × DOH × shifts per day</code></div><p class="muted">Rounding is applied to one shift first. Example: 1,000 parts/shift ÷ 20 parts/box ÷ 40 boxes/pallet = 1.25 pallets/shift → rounded to 2. With 5 DOH and 2 shifts/day, required pallets = 2 × 5 × 2 = 20. If fractional DOH produces a fractional final count, it is rounded up to whole storage pallets.</p><h3>Ground storage uses actual occupied depth</h3><p class="muted">The ground depth setting limits pallets per row; 0 removes the limit. Storage-only area uses occupied depths of full and partial rows, including clearances, instead of reserving unused depth. Rack dimensions and clearances remain independent.</p><h3>Projects and offline use</h3><p class="muted">Projects → Delete project asks for confirmation. Restore a deleted project with all inventory and settings from Deleted projects. The file embeds all code, Excel tools and the logo. Back up projects before moving this file or clearing browser data.</p><h3>Allocated planning footprints</h3><p class="muted">Each part has dedicated floor rows and rack bays. Both floor and rack gangway-inclusive results use half the configured Gangway width (4500 mm ÷ 2 = 2250 mm). These are planning estimates, not an optimized physical design. Count shared gangways once in a physical layout.</p>`,confirm:'Got it',cancel:''});
+    await modal({title:'From shift consumption to warehouse space',eyebrow:'HOW LOGEN WORKS',body:`<div class="help-steps"><div class="help-step"><strong>01 / PREPARE</strong><h3>Download the eight-column template</h3><p>Part Number, QTY in Box, QTY boxes per Pallet, Consumption per shift, DOH (Days on hand), L(mm), W(mm), H(mm).</p></div><div class="help-step"><strong>02 / IMPORT</strong><h3>Import your parts</h3><p>All file processing happens locally. L, W and H are loaded pallet dimensions. Stacking defaults to 1 and can be edited for each part.</p></div><div class="help-step"><strong>03 / CONFIGURE</strong><h3>Choose shifts and DOH</h3><p>Select 1, 2 or 3 shifts per day. Use each part’s Excel DOH or apply a chosen DOH override to all parts.</p></div><div class="help-step"><strong>04 / COMPARE</strong><h3>Review and export</h3><p>The same required pallet count drives floor and rack m² calculations. Inspect substituted formulas and export the five-sheet workbook.</p></div></div><h3>Your required-pallet formula</h3><div class="formula-box"><code>ROUNDUP(Consumption per shift / QTY in Box / QTY boxes per Pallet, 0) × DOH × shifts per day</code></div><p class="muted">Rounding is applied to one shift first. Example: 1,000 parts/shift ÷ 20 parts/box ÷ 40 boxes/pallet = 1.25 pallets/shift → rounded to 2. With 5 DOH and 2 shifts/day, required pallets = 2 × 5 × 2 = 20. If fractional DOH produces a fractional final count, it is rounded up to whole storage pallets.</p><h3>Ground storage uses actual occupied depth</h3><p class="muted">The ground depth setting limits pallets per row; 0 removes the limit. Storage-only area uses occupied depths of full and partial rows, including clearances, instead of reserving unused depth. Rack dimensions and clearances remain independent.</p><h3>Projects and offline use</h3><p class="muted">Projects → Delete project asks for confirmation. Restore a deleted project with all inventory and settings from Deleted projects. The file embeds all code, Excel tools and the logo. Back up projects before moving this file or clearing browser data.</p><h3>Allocated planning footprints</h3><p class="muted">Each part has dedicated floor rows and rack bays. Both floor and rack gangway-inclusive results use the full configured Gangway width (4500 mm uses 4500 mm). These are planning estimates, not an optimized physical design. Count shared gangways once in a physical layout.</p>`,confirm:'Got it',cancel:''});
   }
   function renderRecovery() {
     $('main').innerHTML=heading('WORKSPACE RECOVERY','Saved data needs attention','The saved workspace has been kept intact.')+`<div class="notice error">${escape(loadError)}</div><section class="panel backup-panel"><div><h2>Recover your workspace</h2><p>Restore a JSON backup, or recover the previous local save.</p></div><div class="actions"><button class="btn btn-primary" data-action="restore">Restore backup</button><button class="btn btn-secondary" data-action="recover">Recover previous save</button><button class="btn btn-secondary" data-action="raw-backup">Download saved data</button></div></section>`;

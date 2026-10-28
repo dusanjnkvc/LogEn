@@ -88,9 +88,9 @@ void main() {
       expect(c.invalidCount, 0);
       expect(c.totalRequiredPallets, 10);
       expect(c.floorWithoutGangways, closeTo(11.34, 1e-9));
-      expect(c.floorWithGangways, closeTo(19.44, 1e-9));
+      expect(c.floorWithGangways, closeTo(27.54, 1e-9));
       expect(c.rackWithoutGangways, closeTo(7.98, 1e-9));
-      expect(c.rackWithGangways, closeTo(20.805, 1e-9));
+      expect(c.rackWithGangways, closeTo(33.63, 1e-9));
     },
   );
   test(
@@ -120,7 +120,7 @@ void main() {
     },
   );
   test(
-    'exports preserve full gangway width and apply half-width allocation',
+    'exports preserve full gangway width and apply full-width allocation',
     () {
       final input = service.importBytes(service.templateBytes());
       for (final width in [4500.0, 6000.0, 0.0]) {
@@ -138,15 +138,14 @@ void main() {
         );
         expect(settings.gangwayWidth, width);
         expect(setting('Gangway width'), width);
-        expect(setting('Gangway allocation factor'), .5);
-        expect(setting('Allocated gangway width (50%)'), width / 2);
+        expect(setting('Gangway allocation factor'), 1);
+        expect(setting('Allocated gangway width (100%)'), width);
         expect(
           numeric(f, 'Allocated Gangway Area (m²)'),
           closeTo(
             c.results.single.floor!.rows *
                 c.results.single.floor!.rowWidth *
                 width /
-                2 /
                 1000,
             1e-9,
           ),
@@ -154,7 +153,7 @@ void main() {
         expect(
           numeric(r, 'Allocated Gangway Area (m²)'),
           closeTo(
-            numeric(r, 'Total Run Frontage (m)') * width / 2 / 1000,
+            numeric(r, 'Total Run Frontage (m)') * width / 1000,
             1e-9,
           ),
         );
@@ -178,7 +177,7 @@ void main() {
           b['Warehouse Comparison'].rows
               .map((row) => row.first?.value.toString())
               .join(' '),
-          contains('configured gangway width (mm) / 2 / 1000'),
+          contains('configured gangway width (mm) / 1000'),
         );
       }
     },

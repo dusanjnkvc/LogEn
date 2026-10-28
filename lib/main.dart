@@ -741,7 +741,7 @@ class _DashboardState extends State<_Dashboard> {
                 '  ·  DOH: ${_coverageLabel(project.settings)}'
                 '  ·  ${project.settings.rackLevels} rack levels'
                 '  ·  ${project.settings.gangwayWidth.toStringAsFixed(0)} mm gangway'
-                ' (${project.settings.allocatedGangwayWidth.toStringAsFixed(0)} mm allocated)'
+                ' (full width)'
                 '  ·  Saved on this device',
                 style: const TextStyle(
                   color: _muted,
@@ -818,7 +818,7 @@ class _DashboardState extends State<_Dashboard> {
         ),
         const SizedBox(height: 22),
         const _Notice(
-          'Gangway-inclusive results allocate half (50%) of the configured gangway width. Each part uses dedicated floor rows and rack bays. These estimates do not represent an optimized physical layout.',
+          'Gangway-inclusive results use the full configured gangway width. Each part uses dedicated floor rows and rack bays. These estimates do not represent an optimized physical layout.',
         ),
         const SizedBox(height: 22),
         LayoutBuilder(

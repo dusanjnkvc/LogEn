@@ -332,10 +332,10 @@ class _SettingsEditorState extends State<_SettingsEditor> {
   String _gangwayAllocationHint() {
     final width = double.tryParse(_fields['gangwayWidth']!.text.trim());
     if (width == null || !width.isFinite || width < 0) {
-      return 'Enter a valid full gangway width to preview the 50% allocation.';
+      return 'Enter a valid full gangway width to preview the allocation.';
     }
-    return 'Allocated gangway width = ${_number(width)} ÷ 2 = '
-        '${_number(_draftSettings().allocatedGangwayWidth)} mm for both floor and rack calculations.';
+    return 'Allocated gangway width = ${_number(_draftSettings().allocatedGangwayWidth)} mm '
+        '(100% of configured width) for both floor and rack calculations.';
   }
 
   void _save() {
@@ -423,7 +423,7 @@ class _SettingsEditorState extends State<_SettingsEditor> {
           const _SectionHeading(
             'FLOOR STORAGE & GANGWAYS',
             description:
-                'Enter the full physical gangway width. Floor and rack footprints allocate half of that width (50%).',
+                'Enter the full physical gangway width. Floor and rack footprints use the complete configured width (100%).',
           ),
           _FieldGrid([
             _field('maxFloorStackingHeight'),
@@ -469,7 +469,7 @@ class _SettingsEditorState extends State<_SettingsEditor> {
           ),
           const SizedBox(height: 10),
           const _Notice(
-            'Gangway-inclusive results allocate 50% of the configured gangway width. '
+            'Gangway-inclusive results use 100% of the configured gangway width. '
             'They do not represent an optimized physical warehouse layout.',
           ),
           if (_errors.isNotEmpty) ...[
@@ -1019,7 +1019,7 @@ class _PartDetails extends StatelessWidget {
             ),
             _DetailLine(
               'Allocated floor gangway area',
-              '${floor.rows} rows × ${n(floor.rowWidth)} m × (${n(settings.gangwayWidth)} ÷ 2) / 1000 m\n'
+              '${floor.rows} rows × ${n(floor.rowWidth)} m × ${n(settings.gangwayWidth)} / 1000 m\n'
                   'Allocated gangway width = ${n(settings.allocatedGangwayWidth)} mm',
               result: _area(floor.gangwayArea),
             ),
@@ -1090,8 +1090,8 @@ class _PartDetails extends StatelessWidget {
             ),
             _DetailLine(
               'Allocated rack gangway area',
-              'Total run frontage × half gangway width = '
-                  '(${rack.bays} × ${n(rack.effectiveBayLength)} / 1000 m) × (${n(settings.gangwayWidth)} ÷ 2) / 1000 m\n'
+              'Total run frontage × full gangway width = '
+                  '(${rack.bays} × ${n(rack.effectiveBayLength)} / 1000 m) × ${n(settings.gangwayWidth)} / 1000 m\n'
                   'Allocated gangway width = ${n(settings.allocatedGangwayWidth)} mm',
               result: _area(rack.gangwayArea),
             ),
@@ -1104,7 +1104,7 @@ class _PartDetails extends StatelessWidget {
           const SizedBox(height: 22),
           const _Notice(
             'Each part uses dedicated floor rows and rack bays. Floor stacking does not apply to racks. '
-            'Both scenarios allocate 50% of the configured gangway width. These are planning estimates; a physical layout must count shared gangways once.',
+            'Both scenarios use 100% of the configured gangway width. These are planning estimates; a physical layout must count shared gangways once.',
           ),
         ],
       ),

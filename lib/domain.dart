@@ -159,8 +159,8 @@ class WarehouseSettings {
   final double maxFloorStackingHeight;
   final double maxFloorRowDepth;
   final double gangwayWidth;
-  /// The allocated footprint uses half of the configured physical aisle width.
-  double get allocatedGangwayWidth => gangwayWidth / 2;
+  /// The allocated footprint uses the full configured physical aisle width.
+  double get allocatedGangwayWidth => gangwayWidth;
   final double floorPalletClearance;
   final int rackLevels;
   final double rackSlotLength;
@@ -855,7 +855,7 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
         (sum, count) => sum + count * bayLength / 1000,
       );
       final gangway = frontageMetres * settings.allocatedGangwayWidth / 1000;
-      // Combine storage and the half-width allocation before unit conversion.
+      // Combine storage and the full-width allocation before unit conversion.
       final withGangways =
           bays * bayLength * (bayDepth + settings.allocatedGangwayWidth) / 1000000;
       if (![

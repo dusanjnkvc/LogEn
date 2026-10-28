@@ -37,8 +37,8 @@
     customCoverageDays: 'Custom target coverage'
   };
 
-  // Each storage allocation is charged half of the configured physical aisle.
-  const allocatedGangwayWidth = settings => settings.gangwayWidth / 2;
+  // Each storage allocation uses the full configured physical aisle width.
+  const allocatedGangwayWidth = settings => settings.gangwayWidth;
 
   function validateSettings(s) {
     const errors = [];
@@ -262,7 +262,7 @@
         const totalFrontageMetres = baysPerRun.reduce((total, count) =>
           total + count * effectiveBayLength / 1000, 0);
         const gangwayArea = totalFrontageMetres * allocatedGangwayWidth(s) / 1000;
-        // Combine storage and the half-width allocation before unit conversion.
+        // Combine storage and the full-width allocation before unit conversion.
         const withGangways = bays * effectiveBayLength *
           (effectiveBayDepth + allocatedGangwayWidth(s)) / 1000000;
         if (![withoutGangways, gangwayArea, withGangways, effectiveBayHeight].every(Number.isFinite))
