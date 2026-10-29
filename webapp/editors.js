@@ -510,15 +510,24 @@
       if(!plan?.available){body.append(notice(plan?.error||'Rack layout unavailable.',true));return {read:()=>true};}
       body.append($('p','',`${display(plan.quantity)} units · ${display(plan.bays)} vertical bays · ${display(settings.rackLevels)} levels · ${area(plan.withoutGangways)} without gangways`));
       body.append(notice('Feasible shelf packing estimate, not a guaranteed optimum. All units fit usable length/depth/height. No stacking inside a shelf. Part-level diagrams show standalone estimates; this overview and dashboard use shared allocation.'));
-      const limit=Math.min(plan.shelves.length,100);
-      for(let i=0;i<limit;i++){
+      const selectorLabel=$('label','field');selectorLabel.append($('span','','Rack bay'));
+      const baySelect=$('select');baySelect.setAttribute('aria-label','Rack bay');
+      for(let b=0;b<plan.bays;b++){const option=$('option','',`Bay ${b+1} of ${plan.bays}`);option.value=String(b);baySelect.append(option);}
+      selectorLabel.append(baySelect);body.append(selectorLabel);
+      const scope=$('p','muted'),shelfViews=$('div','shared-shelf-views');body.append(scope,shelfViews);
+      function showBay(){
+        shelfViews.replaceChildren();const bay=Number(baySelect.value)||0,start=bay*settings.rackLevels,end=Math.min(plan.shelves.length,start+settings.rackLevels);
+        scope.textContent=`Showing Bay ${bay+1} of ${plan.bays}. Total floor area includes all ${plan.bays} bays, not only the selected bay.`;
+      for(let i=start;i<end;i++){
         const shelf=plan.shelves[i],card=$('section','editor-section');
         card.append($('h3','',`Bay ${Math.floor(i/settings.rackLevels)+1} · shelf ${i%settings.rackLevels+1}`));
         const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${settings.rackSlotLength} ${settings.rackSlotDepth}`);svg.setAttribute('role','img');svg.setAttribute('aria-label','Top view of shared shelf '+(i+1));svg.style.cssText='width:100%;max-height:240px;background:#202329;border:2px solid #ffce24';
         for(const box of shelf.placements){const rect=document.createElementNS(svg.namespaceURI,'rect');for(const [k,v] of Object.entries({x:box.x,y:box.y,width:box.length,height:box.depth,fill:'#ffce24',stroke:'#111','stroke-width':10}))rect.setAttribute(k,String(v));const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=box.partNumber;rect.append(title);svg.append(rect);}
-        card.append(svg);const counts=new Map();shelf.placements.forEach(p=>counts.set(p.partNumber,(counts.get(p.partNumber)||0)+1));card.append($('p','muted',[...counts].map(([pn,n])=>pn+' × '+n).join(' · ')));body.append(card);
+        card.append(svg);const counts=new Map();shelf.placements.forEach(p=>counts.set(p.partNumber,(counts.get(p.partNumber)||0)+1));card.append($('p','muted',[...counts].map(([pn,n])=>pn+' × '+n).join(' · ')));shelfViews.append(card);
       }
-      body.append($('p','muted',`Top views, gangways excluded. Gap between units: ${display(settings.betweenBoxesAllowance ?? 0)} mm. Showing ${limit} of ${plan.shelves.length} occupied shelves; totals include all units. Unused shelf surface: ${area(plan.unused)}; utilization: ${display(plan.utilization)}%. Empty levels in the final bay remain reserved.`));
+      }
+      baySelect.addEventListener('change',showBay);showBay();
+      body.append($('p','muted',`Top views show usable shelf placement, gangways excluded. Total floor area also includes structural length and depth allowances. Gap between units: ${display(settings.betweenBoxesAllowance ?? 0)} mm. Unused shelf surface: ${area(plan.unused)}; utilization: ${display(plan.utilization)}%. Empty levels in the final bay remain reserved.`));
       return {read:()=>true};
     }});
   }
