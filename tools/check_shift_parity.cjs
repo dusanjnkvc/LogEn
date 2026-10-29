@@ -16,7 +16,7 @@ let cursor=0;
 const rates=[0,1e-20,500,800,1000,1600.00001];
 for(const shifts of [1,2,3]) for(const doh of [0,0.25,1,5,7.5]) for(const depth of [0,5000]) for(const stacking of [1,3]) {
   add('shift/doh/depth/stack '+cursor,{consumptionPerShift:rates[cursor%rates.length],doh,stacking},
-    {shiftsPerDay:shifts,maxFloorRowDepth:depth,maxRackRunLength:cursor%2?5700:15000});
+    {shiftsPerDay:shifts,maxFloorRowDepth:depth,maxRackRunLength:cursor%2?5700:15000,stackabilityEnabled:cursor%3!==0});
   cursor++;
 }
 for(const days of [0,0.1,2,8.75]) for(const stock of [null,0,5600]) {

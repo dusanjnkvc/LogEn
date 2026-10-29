@@ -17,7 +17,7 @@ function part(changes = {}) {
     doh: 5, length: 1200, width: 800, height: 1000, stacking: 1, inputErrors: [], ...changes };
 }
 function workspace({ parts = [part()], settings = {}, version = 3, id = 'qa-warehouse', name = 'QA warehouse' } = {}) {
-  return { version, activeId: id, projects: [{ id, name, parts, settings: { ...D.createDefaultSettings(), ...settings },
+  return { version, activeId: id, projects: [{ id, name, parts, settings: { ...D.createDefaultSettings(), stackabilityEnabled:parts.some(p=>Number(p.stacking)>1), ...settings },
     rawInputRows: null, sourceName: 'Synthetic QA inventory', updatedAt: '2026-10-27T08:00:00.000Z' }] };
 }
 function legacyWorkspace() {
@@ -106,11 +106,102 @@ test('shift inventory renders the same ten required pallets in both warehouse sc
   assert.equal(ui.cell('QTY in Box'),'20');
   assert.equal(ui.cell('QTY boxes per Pallet'),'40');
   assert.equal(ui.cell('Pallets / shift (decimal)'),'0.625');
-  assert.equal(ui.cell('Rounded pallets / shift'),'1');
+  assert.equal(ui.cell('Planning pallets / day'),'2');
   assert.equal(ui.cell('Input DOH'),'5.00');
   assert.equal(ui.cell('Used DOH'),'5.00');
   assert.equal(ui.cell('Required pallets'),'10');
   assert.equal(ui.cell('Floor storage m²'),'11.34');
+  assert.deepEqual(ui.errors,[]);
+});
+
+test('selected shifts are combined before rounding the daily pallet demand',t=>{
+  const ui=boot(t,workspace({parts:[part({qtyBox:10,qtyOnPallet:10,consumptionPerShift:13,doh:2})]}));
+  ui.click('[data-view="consumption"]');
+  for(const [shifts,raw] of [[1,'0.13'],[2,'0.26'],[3,'0.39']]){
+    select(ui,'#production-shiftsPerDay',shifts);
+    assert.equal(ui.cell('Pallets / shift (decimal)'),'0.13');
+    assert.equal(ui.cell('Raw pallets / day'),raw);
+    assert.equal(ui.cell('Planning pallets / day'),'1');
+    assert.equal(ui.cell('Required pallets'),'2');
+  }
+  assert.deepEqual(ui.errors,[]);
+});
+
+test('Stackability gates all per-part factors and preserves them across disabling and reload',t=>{
+  const parts=Array.from({length:32},(_,i)=>part({partNumber:`STACK-${String(i+1).padStart(2,'0')}`,stacking:1}));
+  const ui=boot(t,workspace({parts,settings:{stackabilityEnabled:false}}));
+  assert.equal(ui.$('#production-stackabilityEnabled').checked,false);
+  ui.click('[data-view="consumption"]');
+  assert.equal(ui.$('#stacking-part-0').disabled,true);
+  ui.click('#production-stackabilityEnabled');
+  assert.equal(ui.state().projects[0].settings.stackabilityEnabled,true);
+  assert.equal(ui.$('#stacking-part-0').disabled,false);
+  ui.input('#stacking-part-0',3);
+  assert.equal(ui.state().projects[0].parts[0].stacking,3);
+  assert.equal(ui.cell('Floor storage m²',0),'4.50');
+  assert.equal(ui.cell('Rack storage m²',0),'7.98');
+  for(const invalid of [0,1.5,'']){
+    ui.input('#stacking-part-0',invalid);
+    assert.equal(ui.$('#stacking-part-0').getAttribute('aria-invalid'),'true');
+    assert.equal(ui.state().projects[0].parts[0].stacking,3);
+    assert.match(ui.$('.stacking-error').textContent,/not been saved/);
+  }
+  ui.input('#stacking-part-0',3);
+  ui.click('[data-consumption-page="1"]');
+  ui.input('#stacking-part-31',4);
+  assert.equal(ui.state().projects[0].parts[31].stacking,4);
+  assert.equal(ui.state().projects[0].parts[0].stacking,3);
+  ui.input('#consumption-search','STACK-32');
+  assert.equal(ui.$('#stacking-part-31').value,'4');
+  ui.input('#stacking-part-31',99);
+  assert.match(ui.$('#stacking-part-31').parentElement.textContent,/Used: 5/);
+  ui.click('#production-stackabilityEnabled');
+  assert.equal(ui.state().projects[0].settings.stackabilityEnabled,false);
+  assert.equal(ui.$('#stacking-part-31').disabled,true);
+  assert.equal(ui.state().projects[0].parts[31].stacking,99);
+  const reopened=boot(t,ui.state());
+  assert.equal(reopened.$('#production-stackabilityEnabled').checked,false);
+  reopened.click('#production-stackabilityEnabled');
+  reopened.click('[data-view="parts"]');
+  assert.equal(reopened.$('#stacking-part-0').value,'3');
+  assert.equal(reopened.$('#stacking-part-0').disabled,false);
+  assert.deepEqual(ui.errors,[]);assert.deepEqual(reopened.errors,[]);
+});
+
+test('legacy stackability migrates per active and deleted project without overriding explicit off',t=>{
+  const initial=workspace({parts:[part({stacking:3})]});
+  delete initial.projects[0].settings.stackabilityEnabled;
+  initial.projects.push(workspace({id:'explicit-off',parts:[part({stacking:4})],settings:{stackabilityEnabled:false}}).projects[0]);
+  initial.deletedProjects=[{...workspace({id:'deleted-stacking',parts:[part({stacking:4})]}).projects[0],deletedAt:'2026-10-28T08:00:00.000Z'}];
+  delete initial.deletedProjects[0].settings.stackabilityEnabled;
+  const ui=boot(t,initial),saved=ui.state();
+  assert.equal(saved.projects[0].settings.stackabilityEnabled,true);
+  assert.equal(saved.projects[1].settings.stackabilityEnabled,false);
+  assert.equal(saved.deletedProjects[0].settings.stackabilityEnabled,true);
+  assert.equal(saved.deletedProjects[0].parts[0].stacking,4);
+  assert.equal(ui.kpis()[0],'4.50');
+  ui.change('#project-select','explicit-off');
+  assert.equal(ui.$('#production-stackabilityEnabled').checked,false);
+  assert.equal(ui.kpis()[0],'11.34');
+  assert.deepEqual(ui.errors,[]);
+});
+
+test('part and settings editors use the shared Stackability setting',async t=>{
+  const ui=boot(t,workspace({parts:[part({stacking:3})],settings:{stackabilityEnabled:false}}));
+  ui.click('[data-view="parts"]');ui.click('[data-edit="0"]');
+  assert.equal(ui.$('dialog input[name="stacking"]').disabled,true);
+  ui.submit();await until(()=>!ui.w.document.querySelector('dialog'),'part save with disabled stacking');
+  assert.equal(ui.state().projects[0].parts[0].stacking,3);
+  ui.click('[data-view="dashboard"]');ui.click('#production-stackabilityEnabled');
+  ui.click('[data-view="parts"]');ui.click('[data-edit="0"]');
+  assert.equal(ui.$('dialog input[name="stacking"]').disabled,false);
+  ui.input('dialog input[name="stacking"]',2);ui.submit();
+  await until(()=>ui.state().projects[0].parts[0].stacking===2,'edited part factor');
+  ui.click('#settings-nav');
+  assert.equal(ui.$('dialog input[name="stackabilityEnabled"]').checked,true);
+  ui.click('dialog input[name="stackabilityEnabled"]');ui.submit();
+  await until(()=>ui.state().projects[0].settings.stackabilityEnabled===false,'settings stackability saved');
+  assert.equal(ui.state().projects[0].parts[0].stacking,2);
   assert.deepEqual(ui.errors,[]);
 });
 
@@ -177,7 +268,7 @@ test('version-one daily data migrates once and remains fixed per shift when shif
   select(ui,'#production-shiftsPerDay',3);
   assert.equal(ui.state().projects[0].parts[0].consumptionPerShift,500);
   assert.equal(ui.metric('Daily consumption'),'1,500.00');
-  assert.equal(ui.metric('Required storage pallets'),'15');
+  assert.equal(ui.metric('Required storage pallets'),'10');
   assert.deepEqual(ui.errors,[]);
 });
 
@@ -195,7 +286,7 @@ test('version-two monthly data migrates once with a visible inferred-packaging w
   assert.equal(ui.state().projects[0].parts[0].consumptionPerShift,500);
   assert.equal(ui.state().projects[0].parts[0].monthlyConsumption,22000);
   assert.equal(ui.metric('Daily consumption'),'1,500.00');
-  assert.equal(ui.metric('Required storage pallets'),'15');
+  assert.equal(ui.metric('Required storage pallets'),'10');
   assert.deepEqual(ui.errors,[]);
 });
 
@@ -208,25 +299,25 @@ test('one, two and three shifts multiply daily usage and required pallets withou
   select(ui,'#production-shiftsPerDay',3);
   assert.equal(ui.metric('Consumption per shift'),'500.00');
   assert.equal(ui.metric('Daily consumption'),'1,500.00');
-  assert.equal(ui.metric('Required storage pallets'),'15');
-  assert.deepEqual(ui.kpis(),['17.10','95.40','7.98','33.63']);
+  assert.equal(ui.metric('Required storage pallets'),'10');
+  assert.deepEqual(ui.kpis(),['11.34','63.60','7.98','33.63']);
   ui.click('[data-view="consumption"]');
   assert.equal(ui.cell('Consumption / shift'),'500.00');
   assert.equal(ui.cell('Shifts / day'),'3');
   assert.deepEqual(ui.errors,[]);
 });
 
-test('rounding happens before multiplying by DOH and shifts rather than rounding combined consumption',t=>{
+test('rounding happens after selected shifts and before DOH',t=>{
   const ui=boot(t,workspace({parts:[part({consumptionPerShift:1000})]}));
   ui.click('[data-view="consumption"]');
   assert.equal(ui.cell('Pallets / shift (decimal)'),'1.25');
-  assert.equal(ui.cell('Rounded pallets / shift'),'2');
-  assert.equal(ui.cell('Planning pallets / day'),'4');
-  assert.equal(ui.cell('Required pallets'),'20');
+  assert.equal(ui.cell('Raw pallets / day'),'2.50');
+  assert.equal(ui.cell('Planning pallets / day'),'3');
+  assert.equal(ui.cell('Required pallets'),'15');
   assert.notEqual(ui.cell('Required pallets'),'13');
   ui.click('[data-detail="0"]');
-  assert.match(formulaText(ui,'Round up for one shift first'),/2 pallets\/shift/);
-  assert.match(formulaText(ui,'Required pallets · used in both scenarios'),/CEILING\(2 × 5 × 2\)/);
+  assert.match(formulaText(ui,'Round up selected-shift demand'),/3 pallets\/day/);
+  assert.match(formulaText(ui,'Required pallets · used in both scenarios'),/CEILING\(3 × 5\)/);
   assert.deepEqual(ui.errors,[]);
 });
 
@@ -235,14 +326,14 @@ test('changing DOH override applies immediately and switching back preserves eac
   select(ui,'#production-shiftsPerDay',3);
   ui.input('#production-customCoverageDays',7);
   assert.equal(ui.state().projects[0].settings.coverageMode,'custom');
-  assert.equal(ui.metric('Required storage pallets'),'21');
+  assert.equal(ui.metric('Required storage pallets'),'14');
   ui.click('[data-view="consumption"]');
   assert.equal(ui.cell('Input DOH'),'5.00');
   assert.equal(ui.cell('Used DOH'),'7.00');
-  assert.equal(ui.cell('Required pallets'),'21');
+  assert.equal(ui.cell('Required pallets'),'14');
   ui.change('#production-coverageMode','input');
   assert.equal(ui.cell('Used DOH'),'5.00');
-  assert.equal(ui.cell('Required pallets'),'15');
+  assert.equal(ui.cell('Required pallets'),'10');
   assert.deepEqual(ui.errors,[]);
 });
 
@@ -279,7 +370,7 @@ test('an invalid saved fourth shift is visibly rejected and can be corrected to 
   assert.equal(ui.$('#production-shiftsPerDay').value,'4');
   assert.deepEqual([...ui.$('#production-shiftsPerDay').options].filter(option=>!option.disabled).map(option=>option.value),['1','2','3']);
   select(ui,'#production-shiftsPerDay',3);
-  assert.equal(ui.metric('Required storage pallets'),'15');
+  assert.equal(ui.metric('Required storage pallets'),'10');
   assert.doesNotMatch(ui.$('#main').textContent,/Warehouse settings need attention/);
   assert.deepEqual(ui.errors,[]);
 });
@@ -323,13 +414,13 @@ test('part editor previews per-shift rounding live and saves canonical packaging
   ui.click('[data-view="consumption"]');
   ui.click('[data-action="add"]');
   assert.equal(previewMetric(ui,'Raw pallets per shift'),'0.625 pallets/shift');
-  assert.equal(previewMetric(ui,'Rounded pallets per shift'),'1 pallets/shift');
+  assert.equal(previewMetric(ui,'Rounded pallets per day'),'2 pallets/day');
   assert.equal(previewMetric(ui,'Required pallets'),'10 pallets');
   ui.input('dialog input[type="text"]','QA-NEW');
   ui.input('dialog input[name="consumptionPerShift"]',1000);
   assert.equal(previewMetric(ui,'Raw pallets per shift'),'1.25 pallets/shift');
-  assert.equal(previewMetric(ui,'Rounded pallets per shift'),'2 pallets/shift');
-  assert.equal(previewMetric(ui,'Required pallets'),'20 pallets');
+  assert.equal(previewMetric(ui,'Rounded pallets per day'),'3 pallets/day');
+  assert.equal(previewMetric(ui,'Required pallets'),'15 pallets');
   ui.submit();
   await until(()=>ui.state().projects[0].parts.length===2,'canonical part save');
   const saved=ui.state().projects[0].parts[1];
@@ -400,13 +491,13 @@ test('unrestricted floor depth changes storage-only area while formula-with-gang
   assert.deepEqual(ui.errors,[]);
 });
 
-test('tiny nonzero shift rates remain inspectable while planning rounds each shift to one pallet',t=>{
+test('tiny nonzero shift rates remain inspectable while selected-day demand rounds to one pallet',t=>{
   const ui=boot(t,workspace({parts:[part({consumptionPerShift:1e-20})]}));
   ui.click('[data-view="consumption"]');
   assert.match(ui.cell('Consumption / shift'),/e-20/);
   assert.match(ui.cell('Pallets / shift (decimal)'),/e-23/);
-  assert.equal(ui.cell('Rounded pallets / shift'),'1');
-  assert.equal(ui.cell('Required pallets'),'10');
+  assert.equal(ui.cell('Planning pallets / day'),'1');
+  assert.equal(ui.cell('Required pallets'),'5');
   ui.click('[data-detail="0"]');
   assert.match(formulaText(ui,'Raw pallets per shift'),/e-20|e-23/);
   assert.deepEqual(ui.errors,[]);
@@ -429,9 +520,9 @@ test('the exact eight-column workbook imports through confirmation and uses defa
   assert.equal(saved.stacking,1);
   assert.equal(saved.stockQty,null);
   assert.equal(ui.state().projects[0].rawInputRows[1][3],1000);
-  assert.equal(ui.metric('Required storage pallets'),'20');
+  assert.equal(ui.metric('Required storage pallets'),'15');
   assert.equal(ui.metric('Daily consumption'),'2,000.00');
-  assert.deepEqual(ui.kpis(),['22.77','127.20','11.97','50.45']);
+  assert.deepEqual(ui.kpis(),['17.10','95.40','7.98','33.63']);
   assert.deepEqual(ui.errors,[]);
 });
 
@@ -530,7 +621,7 @@ test('deleting the final project creates empty defaults and restoring recovers i
   assert.equal(Object.hasOwn(restored,'deletedAt'),false);
   assert.equal(ui.$('#production-customCoverageDays').value,'7');
   assert.equal(ui.$('#production-shiftsPerDay').value,'3');
-  assert.equal(ui.metric('Required storage pallets'),'21');
+  assert.equal(ui.metric('Required storage pallets'),'14');
   assert.deepEqual(ui.errors,[]);
 });
 

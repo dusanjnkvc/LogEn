@@ -17,6 +17,7 @@ PartInput part([Map<String, dynamic> changes = const {}]) =>
 WarehouseSettings settings([Map<String, dynamic> changes = const {}]) =>
     WarehouseSettings.fromJson({
       ...const WarehouseSettings().toJson(),
+      'stackabilityEnabled': true,
       ...changes,
     });
 PartCalculation calculate([
@@ -33,6 +34,41 @@ PartCalculation forPallets(
 );
 
 void main() {
+  test(
+    'selected shift totals round once daily and stackability is an explicit saved setting',
+    () {
+      expect(const WarehouseSettings().stackabilityEnabled, isFalse);
+      for (final shifts in [1, 2, 3]) {
+        final r = calculate(
+          {'consumptionPerShift': 104},
+          {'shiftsPerDay': shifts},
+        );
+        expect(r.planning!.palletsPerShift, .13);
+        expect(r.planning!.palletsPerDay, closeTo(.13 * shifts, 1e-12));
+        expect(r.planning!.plannedPalletsPerDay, 1);
+        expect(r.requiredPallets, 5);
+      }
+      expect(
+        calculate({'consumptionPerShift': 1000}).planning!.plannedPalletsPerDay,
+        3,
+      );
+      expect(calculate({'consumptionPerShift': 1000}).requiredPallets, 15);
+      final on = calculate({'stacking': 3}, {'stackabilityEnabled': true});
+      final off = calculate({'stacking': 3}, {'stackabilityEnabled': false});
+      expect(on.floor!.effectiveStacking, 3);
+      expect(off.floor!.effectiveStacking, 1);
+      expect(off.input.stacking, 3);
+      expect(on.rack!.withGangways, off.rack!.withGangways);
+      final restored = WarehouseSettings.fromJson(
+        settings({'stackabilityEnabled': false}).toJson(),
+      );
+      expect(restored.stackabilityEnabled, isFalse);
+      expect(
+        restored.copyWith(stackabilityEnabled: true).stackabilityEnabled,
+        isTrue,
+      );
+    },
+  );
   test(
     'eight-column sample defaults to one-high and drives all four footprints',
     () {
@@ -51,13 +87,16 @@ void main() {
       expect(r.rack!.withGangways, closeTo(33.63, 1e-9));
     },
   );
-  test('rounding is per shift before DOH and shifts, not over total parts', () {
-    final r = calculate({'consumptionPerShift': 1000});
-    expect(r.planning!.palletsPerShift, 1.25);
-    expect(r.planning!.roundedPalletsPerShift, 2);
-    expect(r.requiredPallets, 20);
-    expect((r.requiredParts! / 800).ceil(), 13);
-  });
+  test(
+    'rounding follows selected shifts before DOH, not per shift or across DOH',
+    () {
+      final r = calculate({'consumptionPerShift': 1000});
+      expect(r.planning!.palletsPerShift, 1.25);
+      expect(r.planning!.roundedPalletsPerShift, 2);
+      expect(r.requiredPallets, 15);
+      expect((r.requiredParts! / 800).ceil(), 13);
+    },
+  );
   test(
     'one to three shifts multiply fixed per-shift consumption and storage',
     () {
@@ -65,7 +104,7 @@ void main() {
         final r = calculate({}, {'shiftsPerDay': shifts});
         expect(r.planning!.consumptionPerShift, 500);
         expect(r.planning!.dailyConsumption, 500 * shifts);
-        expect(r.requiredPallets, 5 * shifts);
+        expect(r.requiredPallets, 5 * (.625 * shifts).ceil());
       }
       for (final invalid in [0, 4, 1.5, double.nan]) {
         expect(settings({'shiftsPerDay': invalid}).validate(), isNotEmpty);
@@ -139,7 +178,7 @@ void main() {
       expect(migrated.stockQty, 5600);
       expect(migrated.packagingInferred, isFalse);
       final r = calculatePart(migrated, settings({'shiftsPerDay': 3}));
-      expect(r.requiredPallets, 15);
+      expect(r.requiredPallets, 10);
       expect(r.planning!.dailyConsumption, 1500);
     },
   );
@@ -167,7 +206,7 @@ void main() {
       );
       expect(
         calculatePart(saved, settings({'shiftsPerDay': 3})).requiredPallets,
-        15,
+        10,
       );
     },
   );
@@ -214,7 +253,7 @@ void main() {
         }).planning!.roundedPalletsPerShift,
         2,
       );
-      expect(calculate({'consumptionPerShift': 1e-20}).requiredPallets, 10);
+      expect(calculate({'consumptionPerShift': 1e-20}).requiredPallets, 5);
       expect(calculate({'consumptionPerShift': 1e300}).isValid, isFalse);
     },
   );
@@ -351,30 +390,45 @@ void main() {
       expect(r.floorWithoutGangways, closeTo(11.34, 1e-9));
     },
   );
-  test('floor total sums displayed storage cents independently of rack fit', () {
-    final r = calculateProject([
-      part({'partNumber': 'OK'}), part({'partNumber': 'TALL', 'height': 1100}),
-    ], settings());
-    expect(r.invalidCount, 1);
-    expect(r.floorValidCount, 2); expect(r.rackValidCount, 1);
-    expect(r.results.last.isFloorValid, isTrue); expect(r.results.last.isRackValid, isFalse);
-    expect(r.totalRequiredPallets, 20); expect(r.totalFloorPositions, 20);
-    expect(r.floorWithoutGangways, closeTo(22.68, 1e-9));
-    expect(r.floorWithGangways, closeTo(127.2, 1e-9));
-    expect(r.rackWithoutGangways, closeTo(7.98, 1e-9));
-    final cents = calculateProject([
-      part({'partNumber': 'C1', 'width': 801}), part({'partNumber': 'C2', 'width': 801}),
-    ], settings());
-    expect(cents.results.map((row) => row.floor!.storageArea), [11.35, 11.35]);
-    expect(cents.floorWithoutGangways, 22.70);
-    final floorBad = calculateProject([part()], settings({'maxFloorRowDepth': 1000}));
-    expect(floorBad.floorValidCount, 0); expect(floorBad.rackValidCount, 1);
-    expect(floorBad.floorWithoutGangways, 0);
-    expect(floorBad.rackWithoutGangways, closeTo(7.98, 1e-9));
-    final duplicates = calculateProject([part(), part()], settings());
-    expect(duplicates.floorValidCount, 0); expect(duplicates.rackValidCount, 0);
-    expect(duplicates.floorWithoutGangways, 0);
-  });
+  test(
+    'floor total sums displayed storage cents independently of rack fit',
+    () {
+      final r = calculateProject([
+        part({'partNumber': 'OK'}),
+        part({'partNumber': 'TALL', 'height': 1100}),
+      ], settings());
+      expect(r.invalidCount, 1);
+      expect(r.floorValidCount, 2);
+      expect(r.rackValidCount, 1);
+      expect(r.results.last.isFloorValid, isTrue);
+      expect(r.results.last.isRackValid, isFalse);
+      expect(r.totalRequiredPallets, 20);
+      expect(r.totalFloorPositions, 20);
+      expect(r.floorWithoutGangways, closeTo(22.68, 1e-9));
+      expect(r.floorWithGangways, closeTo(127.2, 1e-9));
+      expect(r.rackWithoutGangways, closeTo(7.98, 1e-9));
+      final cents = calculateProject([
+        part({'partNumber': 'C1', 'width': 801}),
+        part({'partNumber': 'C2', 'width': 801}),
+      ], settings());
+      expect(cents.results.map((row) => row.floor!.storageArea), [
+        11.35,
+        11.35,
+      ]);
+      expect(cents.floorWithoutGangways, 22.70);
+      final floorBad = calculateProject([
+        part(),
+      ], settings({'maxFloorRowDepth': 1000}));
+      expect(floorBad.floorValidCount, 0);
+      expect(floorBad.rackValidCount, 1);
+      expect(floorBad.floorWithoutGangways, 0);
+      expect(floorBad.rackWithoutGangways, closeTo(7.98, 1e-9));
+      final duplicates = calculateProject([part(), part()], settings());
+      expect(duplicates.floorValidCount, 0);
+      expect(duplicates.rackValidCount, 0);
+      expect(duplicates.floorWithoutGangways, 0);
+    },
+  );
   test(
     'duplicate part numbers are case-insensitive and revalidation clears them',
     () {
@@ -387,7 +441,9 @@ void main() {
   test(
     'negative savings are preserved and zero denominators stay undefined',
     () {
-      final r = calculateProject([part({'stacking': 3})], settings());
+      final r = calculateProject([
+        part({'stacking': 3}),
+      ], settings());
       expect(r.savingWithGangways, closeTo(-12.43, 1e-9));
       expect(r.savingWithGangwaysPercent, lessThan(0));
       final zero = calculateProject([
@@ -408,10 +464,17 @@ void main() {
       expect(r.rack!.withoutGangways, baseline.rack!.withoutGangways);
       expect(r.floor!.gangwayArea, closeTo(10 * 1.2 * (width / 1000), 1e-9));
       expect(r.rack!.gangwayArea, closeTo(5.7 * (width / 1000), 1e-9));
-      expect(r.floor!.withGangways,
-          closeTo(baseline.floor!.formulaStorageArea + r.floor!.gangwayArea, 1e-9));
-      expect(r.rack!.withGangways,
-          closeTo(baseline.rack!.withoutGangways + r.rack!.gangwayArea, 1e-9));
+      expect(
+        r.floor!.withGangways,
+        closeTo(
+          baseline.floor!.formulaStorageArea + r.floor!.gangwayArea,
+          1e-9,
+        ),
+      );
+      expect(
+        r.rack!.withGangways,
+        closeTo(baseline.rack!.withoutGangways + r.rack!.gangwayArea, 1e-9),
+      );
     }
     final r = calculate();
     expect(r.floor!.gangwayArea, closeTo(54, 1e-9));
@@ -428,7 +491,10 @@ void main() {
       {'consumptionPerShift': 1, 'doh': 7, 'stacking': 3},
       {'shiftsPerDay': 1, 'maxFloorRowDepth': 2500, 'floorPalletClearance': 50},
     );
-    expect(differentRows.floor!.withoutGangways, isNot(r.floor!.withoutGangways));
+    expect(
+      differentRows.floor!.withoutGangways,
+      isNot(r.floor!.withoutGangways),
+    );
     expect(differentRows.floor!.withGangways, r.floor!.withGangways);
     final noAisle = calculate(
       {'consumptionPerShift': 1, 'doh': 7, 'stacking': 3},

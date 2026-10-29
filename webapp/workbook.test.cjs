@@ -24,10 +24,10 @@ test('exact eight-column shift template drives required pallets and all four foo
  assert.equal(output.getWorksheet('Warehouse Comparison').getCell('B5').numFmt,'#,##0.00');
 });
 
-test('rounding occurs per shift before DOH and shifts; formula and intermediate values export',async()=>{
+test('selected shifts are combined before daily rounding and DOH; formula and intermediates export',async()=>{
  const row=sample();row[3]=1000;const input=await S.importBytes(await bytes([H,row])),c=calc(input.parts),p=c.results[0].planning;
- close(p.palletsPerShift,1.25);assert.equal(p.roundedPalletsPerShift,2);assert.equal(p.plannedPalletsPerDay,4);assert.equal(c.totalRequiredPallets,20);
- const sheet=(await exported(input.parts)).getWorksheet('Floor Pallet Calculations');close(cell(sheet,'Raw Pallets per Shift'),1.25);assert.equal(cell(sheet,'Rounded Pallets per Shift'),2);assert.equal(cell(sheet,'Required Pallets (nested rounding)'),20);assert.match(cell(sheet,'Required Pallets Formula'),/CEILING\(CEILING\(1000 \/ 20 \/ 40\).*5.*2/);
+ close(p.palletsPerShift,1.25);assert.equal(p.roundedPalletsPerShift,2);assert.equal(p.plannedPalletsPerDay,3);assert.equal(c.totalRequiredPallets,15);
+ const sheet=(await exported(input.parts)).getWorksheet('Floor Pallet Calculations');close(cell(sheet,'Raw Pallets per Shift'),1.25);assert.equal(cell(sheet,'Rounded Pallets per Shift (reference only)'),2);assert.equal(cell(sheet,'Required Pallets (daily rounding)'),15);assert.match(cell(sheet,'Required Pallets Formula'),/CEILING\(CEILING\(1000 \/ 20 \/ 40 × 2\) × 5\)/);
 });
 
 test('export records full gangway setting and full-width allocation for both storage methods',async()=>{
@@ -53,7 +53,7 @@ test('export records full gangway setting and full-width allocation for both sto
 
 test('floor export keeps Q/S fractional and records its independent formula base',async()=>{
  const input=await S.importBytes(await S.templateBytes());
- const parts=[{...input.parts[0],doh:7,stacking:3}],s={...defaults,shiftsPerDay:1};
+ const parts=[{...input.parts[0],doh:7,stacking:3}],s={...defaults,shiftsPerDay:1,stackabilityEnabled:true};
  const book=await exported(parts,s),f=book.getWorksheet('Floor Pallet Calculations');
  assert.equal(cell(f,'Required Pallets'),7);assert.equal(cell(f,'Floor Positions'),3);
  close(cell(f,'Formula Positions (Q / S, unrounded)'),7/3);
@@ -92,9 +92,37 @@ test('floor storage export includes rack-invalid rows and sums the displayed are
 
 test('selected shifts1–3 and DOH override drive counts while4 is invalid',async()=>{
  const input=await S.importBytes(await S.templateBytes());
- for(const shiftsPerDay of [1,2,3]){const s={...defaults,shiftsPerDay,coverageMode:'custom',customCoverageDays:7},c=calc(input.parts,s);assert.equal(c.totalRequiredPallets,7*shiftsPerDay);close(c.results[0].planning.dailyConsumption,500*shiftsPerDay);const f=(await exported(input.parts,s)).getWorksheet('Floor Pallet Calculations');assert.equal(cell(f,'Shifts per Day'),shiftsPerDay);assert.equal(cell(f,'Selected DOH (days)'),7);}
+ for(const shiftsPerDay of [1,2,3]){const s={...defaults,shiftsPerDay,coverageMode:'custom',customCoverageDays:7},c=calc(input.parts,s);assert.equal(c.totalRequiredPallets,Math.ceil(.625*shiftsPerDay)*7);close(c.results[0].planning.dailyConsumption,500*shiftsPerDay);const f=(await exported(input.parts,s)).getWorksheet('Floor Pallet Calculations');assert.equal(cell(f,'Shifts per Day'),shiftsPerDay);assert.equal(cell(f,'Selected DOH (days)'),7);}
  assert.ok(calc(input.parts,{...defaults,shiftsPerDay:4}).settingsErrors.length);
  const fractional={...defaults,shiftsPerDay:3,coverageMode:'custom',customCoverageDays:.25};assert.equal(calc(input.parts,fractional).totalRequiredPallets,1);
+});
+
+test('0.13 raw pallets round once after selecting one two or three shifts',async()=>{
+ const input=await S.importBytes(await S.templateBytes());
+ const parts=[{...input.parts[0],qtyBox:1,qtyOnPallet:100,consumptionPerShift:13,doh:5}];
+ for(const shiftsPerDay of [1,2,3]){
+  const s={...defaults,shiftsPerDay},c=calc(parts,s),f=(await exported(parts,s)).getWorksheet('Floor Pallet Calculations');
+  close(c.results[0].planning.palletsPerShift,.13);
+  close(cell(f,'Raw Pallets per Day (selected shifts)'),.13*shiftsPerDay);
+  assert.equal(cell(f,'Planned Pallets per Day'),1);assert.equal(cell(f,'Required Pallets'),5);
+  assert.match(cell(f,'Required Pallets Formula'),new RegExp('100 × '+shiftsPerDay+'\\) × 5'));
+ }
+});
+
+test('Stackability export records the checkbox and preserves dormant per-part factors',async()=>{
+ const input=await S.importBytes(await S.templateBytes()),parts=[{...input.parts[0],stacking:3}];
+ for(const stackabilityEnabled of [false,true]){
+  const s={...defaults,stackabilityEnabled},book=await exported(parts,s);
+  const settings=book.getWorksheet('Warehouse Settings');
+  const setting=settings.getRows(1,settings.rowCount).find(r=>r.getCell(1).value==='Stackability').getCell(2).value;
+  assert.equal(setting,stackabilityEnabled);
+  const floor=book.getWorksheet('Floor Pallet Calculations');
+  assert.equal(cell(floor,'Allowed Floor Stacking'),3);
+  assert.equal(cell(floor,'Effective Floor Stacking'),stackabilityEnabled?3:1);
+  close(cell(floor,'Without Gangways (m²)'),stackabilityEnabled?4.5:11.34);
+  const again=await S.importBytes(new Uint8Array(await book.xlsx.writeBuffer()),s);
+  assert.equal(again.parts[0].stacking,3);
+ }
 });
 
 test('heading aliases, ordering, case and leading blanks are supported',async()=>{
@@ -103,13 +131,13 @@ test('heading aliases, ordering, case and leading blanks are supported',async()=
 });
 
 test('optional stacking and stock survive export/re-import while template remains eight columns',async()=>{
- const input=await S.importBytes(await bytes([[...H,'Stacking','Current Stock'],[...sample(),3,5600]]));const c=calc(input.parts);close(c.floorWithoutGangways,4.5);close(c.floorWithGangways,21.2);
- const book=await exported(input.parts),again=await S.importBytes(new Uint8Array(await book.xlsx.writeBuffer()));assert.equal(again.parts.length,1);assert.equal(again.parts[0].stacking,3);assert.equal(again.parts[0].stockQty,5600);assert.deepEqual(WorkbookService.headers,H);
+ const input=await S.importBytes(await bytes([[...H,'Stacking','Current Stock'],[...sample(),3,5600]]));const s={...defaults,stackabilityEnabled:true},c=calc(input.parts,s);close(c.floorWithoutGangways,4.5);close(c.floorWithGangways,21.2);
+ const book=await exported(input.parts,s),again=await S.importBytes(new Uint8Array(await book.xlsx.writeBuffer()));assert.equal(again.parts.length,1);assert.equal(again.parts[0].stacking,3);assert.equal(again.parts[0].stockQty,5600);assert.deepEqual(WorkbookService.headers,H);
 });
 
 test('legacy daily conversion is explicit, fixed per shift and retains original source cells',async()=>{
  const headers=['Part Number','QTY Box','QTY Pallet','QTY on Pallet','Consumption','DOH','L (mm)','W (mm)','H (mm)','Stacking'],row=['OLD',20,7,40,1000,5,1200,800,1000,3];
- const input=await S.importBytes(await bytes([headers,row]));assert.equal(input.parts[0].consumptionPerShift,500);assert.equal(input.parts[0].stockQty,5600);assert.match(input.warnings.join(),/DAILY.*divided by 2 shifts/);assert.equal(calc(input.parts,{...defaults,shiftsPerDay:3}).totalRequiredPallets,15);
+ const input=await S.importBytes(await bytes([headers,row]));assert.equal(input.parts[0].consumptionPerShift,500);assert.equal(input.parts[0].stockQty,5600);assert.match(input.warnings.join(),/DAILY.*divided by 2 shifts/);assert.equal(calc(input.parts,{...defaults,shiftsPerDay:3}).totalRequiredPallets,10);
  const book=await exported(input.parts,defaults,input.rawInputRows),source=book.getWorksheet('Original Input Data'),marker=source.getRows(1,source.rowCount).findIndex(r=>String(r.getCell(1).value).startsWith('LOGEN ORIGINAL SOURCE DATA'));
  assert.ok(marker>=0);assert.deepEqual(source.getRow(marker+3).values.slice(1),row);assert.equal((await S.importBytes(new Uint8Array(await book.xlsx.writeBuffer()))).parts.length,1);
  const unknownStock=row.slice();unknownStock[2]=null;assert.equal((await S.importBytes(await bytes([headers,unknownStock]))).parts[0].stockQty,null);
@@ -117,7 +145,7 @@ test('legacy daily conversion is explicit, fixed per shift and retains original 
 
 test('legacy monthly conversion warns about inferred packaging and preserves its shift rate',async()=>{
  const h=['Part Number','Stock Quantity','Parts per Pallet','Monthly Consumption','Input Coverage (days)','L (mm)','W (mm)','H (mm)','Stacking'];
- const input=await S.importBytes(await bytes([h,['MONTH',5600,800,22000,5,1200,800,1000,3]])),p=input.parts[0];assert.equal(p.consumptionPerShift,500);assert.equal(p.qtyBox,800);assert.equal(p.qtyOnPallet,1);assert.equal(p.packagingInferred,true);assert.match(input.warnings.join(),/inferred packaging/);assert.equal(calc(input.parts,{...defaults,shiftsPerDay:3,workingDaysPerMonth:30}).totalRequiredPallets,15);
+ const input=await S.importBytes(await bytes([h,['MONTH',5600,800,22000,5,1200,800,1000,3]])),p=input.parts[0];assert.equal(p.consumptionPerShift,500);assert.equal(p.qtyBox,800);assert.equal(p.qtyOnPallet,1);assert.equal(p.packagingInferred,true);assert.match(input.warnings.join(),/inferred packaging/);assert.equal(calc(input.parts,{...defaults,shiftsPerDay:3,workingDaysPerMonth:30}).totalRequiredPallets,10);
 });
 
 test('invalid, blank and formula input rows stay visible in partial exports',async()=>{
@@ -145,5 +173,5 @@ test('rich-text headers and identifiers become serializable plain text',async()=
 test('invalid settings export unavailable totals; zero consumption has safe N/A values',async()=>{
  const input=await S.importBytes(await S.templateBytes()),bad=(await exported(input.parts,{...defaults,shiftsPerDay:4})).getWorksheet('Warehouse Comparison');assert.match(bad.getCell('B2').value,/Unavailable/);assert.match(bad.getCell('B7').value,/INVALID SETTINGS/);
  for(const row of bad.getRows(1,bad.rowCount))if(/^(Total (required|floor|rack)|Floor allocated|Rack allocated|Space saving)/.test(String(row.getCell(1).value)))assert.match(row.getCell(2).value,/Unavailable/);
- const zero=sample();zero[3]=0;const parts=(await S.importBytes(await bytes([H,zero]))).parts,book=await exported(parts),floor=book.getWorksheet('Floor Pallet Calculations');assert.equal(cell(floor,'Rounded Pallets per Shift'),0);assert.equal(cell(floor,'Current Stock (parts, optional)'),'Not provided');assert.equal(cell(floor,'Actual Coverage (days, optional)'),'No consumption');for(const row of book.getWorksheet('Warehouse Comparison').getRows(1,40))if(String(row.getCell(1).value).includes('(%)'))assert.match(row.getCell(2).value,/N\/A/);
+ const zero=sample();zero[3]=0;const parts=(await S.importBytes(await bytes([H,zero]))).parts,book=await exported(parts),floor=book.getWorksheet('Floor Pallet Calculations');assert.equal(cell(floor,'Rounded Pallets per Shift (reference only)'),0);assert.equal(cell(floor,'Current Stock (parts, optional)'),'Not provided');assert.equal(cell(floor,'Actual Coverage (days, optional)'),'No consumption');for(const row of book.getWorksheet('Warehouse Comparison').getRows(1,40))if(String(row.getCell(1).value).includes('(%)'))assert.match(row.getCell(2).value,/N\/A/);
 });

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 require('./domain.js');
 const D = globalThis.LogEnDomain;
-const settings = overrides => ({...D.createDefaultSettings(), ...overrides});
+const settings = overrides => ({...D.createDefaultSettings(), stackabilityEnabled:true, ...overrides});
 const part = overrides => ({partNumber:'SHIFT-001',qtyBox:20,qtyOnPallet:40,
   consumptionPerShift:500,doh:5,length:1200,width:800,height:1000,...overrides});
 const calculate = (p={},s={}) => D.calculatePart(part(p), settings(s));
@@ -27,19 +27,46 @@ test('manually permitted stacking changes floor occupancy but never rack capacit
  const capped=calculate({stacking:99}); assert.equal(capped.floor.effectiveStacking,5);
 });
 
-test('literal inner shift rounding is not replaced by ceiling total parts',()=>{
+test('selected-shift daily demand is rounded before multiplying by DOH',()=>{
  const r=calculate({consumptionPerShift:1000});
  assert.equal(r.planning.palletsPerShift,1.25); assert.equal(r.planning.roundedPalletsPerShift,2);
- assert.equal(r.requiredParts,10000); assert.equal(r.requiredPallets,20);
+ assert.equal(r.requiredParts,10000); assert.equal(r.planning.plannedPalletsPerDay,3); assert.equal(r.requiredPallets,15);
  assert.equal(Math.ceil(r.requiredParts/800),13); assert.notEqual(r.requiredPallets,13);
 });
 
 test('one through three shifts multiply daily consumption and rounded storage demand',()=>{
  for(const shifts of [1,2,3]){ const r=calculate({}, {shiftsPerDay:shifts});
   assert.equal(r.planning.consumptionPerShift,500); assert.equal(r.planning.shiftConsumption,500);
-  assert.equal(r.planning.dailyConsumption,500*shifts); assert.equal(r.requiredPallets,5*shifts);
+  assert.equal(r.planning.dailyConsumption,500*shifts); assert.equal(r.requiredPallets,[5,10,10][shifts-1]);
  }
  for(const shifts of [0,4,1.5,NaN]) assert.ok(D.validateSettings(settings({shiftsPerDay:shifts})).length);
+});
+
+test('0.13 pallets per shift rounds once after 1, 2 or 3 selected shifts',()=>{
+ for(const shifts of [1,2,3]) {
+  const r=calculate({consumptionPerShift:104,doh:1},{shiftsPerDay:shifts});
+  near(r.planning.palletsPerShift,.13);near(r.planning.palletsPerDay,.13*shifts);
+  assert.equal(r.planning.plannedPalletsPerDay,1);assert.equal(r.requiredPallets,1);
+  assert.equal(calculate({consumptionPerShift:104,doh:5},{shiftsPerDay:shifts}).requiredPallets,5);
+ }
+ const crossing=calculate({consumptionPerShift:320,doh:2},{shiftsPerDay:3});
+ near(crossing.planning.palletsPerDay,1.2);assert.equal(crossing.requiredPallets,4);
+ assert.equal(calculate({consumptionPerShift:0,doh:5},{shiftsPerDay:3}).requiredPallets,0);
+ assert.equal(calculate({consumptionPerShift:800.0000000000002,doh:1},{shiftsPerDay:2}).requiredPallets,3);
+});
+
+test('Stackability off uses one-high storage and keeps saved per-part factors',()=>{
+ assert.equal(D.createDefaultSettings().stackabilityEnabled,false);
+ const input=part({stacking:3});
+ const off=D.calculatePart(input,settings({stackabilityEnabled:false}));
+ const on=D.calculatePart(input,settings({stackabilityEnabled:true}));
+ assert.equal(off.floor.effectiveStacking,1);assert.equal(on.floor.effectiveStacking,3);
+ assert.equal(off.input.stacking,3);assert.equal(input.stacking,3);
+ near(off.floor.withGangways,63.6);near(on.floor.withGangways,21.2);
+ assert.equal(off.requiredPallets,on.requiredPallets);assert.equal(off.rack.withGangways,on.rack.withGangways);
+ const capped=calculate({stacking:99},{stackabilityEnabled:true});assert.equal(capped.floor.effectiveStacking,5);
+ assert.equal(calculate({height:5001},{stackabilityEnabled:false}).floor,null);
+ assert.ok(D.validateSettings(settings({stackabilityEnabled:'yes'})).length);
 });
 
 test('DOH is per part by default and project override recalculates both scenarios',()=>{
@@ -111,7 +138,7 @@ test('legacy daily data migrates once to a fixed per-shift rate',()=>{
  assert.equal(p.stockQty,5600); assert.equal(p.partsPerPallet,800); assert.equal(p.packagingInferred,false);
  const r=D.calculatePart(p,settings({shiftsPerDay:3}));
  assert.equal(r.planning.consumptionPerShift,500); assert.equal(r.planning.dailyConsumption,1500);
- assert.equal(r.requiredPallets,15); assert.equal(old.consumptionPerShift,undefined);
+ assert.equal(r.requiredPallets,10); assert.equal(old.consumptionPerShift,undefined);
 });
 
 test('old monthly direct-capacity data migrates with an explicit packaging inference flag',()=>{
@@ -121,7 +148,7 @@ test('old monthly direct-capacity data migrates with an explicit packaging infer
  assert.equal(p.packagingInferred,true); assert.equal(p.consumptionPerShift,500); assert.equal(p.doh,5);
  assert.equal(p.monthlyConsumption,22000); assert.equal(p.stockQty,5600);
  const r=D.calculatePart(p,settings({workingDaysPerMonth:20,shiftsPerDay:3}));
- assert.equal(r.planning.consumptionPerShift,500); assert.equal(r.requiredPallets,15);
+ assert.equal(r.planning.consumptionPerShift,500); assert.equal(r.requiredPallets,10);
 });
 
 test('legacy monthly missing stock stays unknown',()=>{
@@ -155,7 +182,7 @@ test('whole-pallet boundary precision does not erase meaningful fractional consu
  assert.equal(calculate({consumptionPerShift:800}).planning.roundedPalletsPerShift,1);
  assert.equal(calculate({consumptionPerShift:800.00001}).planning.roundedPalletsPerShift,2);
  assert.equal(calculate({consumptionPerShift:800.0000000000002}).planning.roundedPalletsPerShift,2);
- assert.equal(calculate({consumptionPerShift:1e-20}).requiredPallets,10);
+ assert.equal(calculate({consumptionPerShift:1e-20}).requiredPallets,5);
  assert.equal(calculate({consumptionPerShift:1e300}).isValid,false);
 });
 

@@ -7,10 +7,14 @@ Download the eight-column template or use LogEn_Shift_Inventory_Template.xlsx.
 Part Number | QTY in Box | QTY boxes per Pallet | Consumption per shift
 DOH (Days on hand) | L(mm) | W(mm) | H(mm)
 
-Required pallets = ROUNDUP(consumption per shift / QTY in Box /
-QTY boxes per Pallet, 0) x DOH x shifts per day.
-Round pallets per shift FIRST. Choose 1, 2 or 3 shifts per day and a DOH override,
-or use each part's DOH. All footprint results update automatically.
+Required pallets = ROUNDUP(ROUNDUP(consumption per shift / QTY in Box /
+QTY boxes per Pallet x selected shifts per day, 0) x DOH, 0).
+Multiply by 1, 2 or 3 selected shifts BEFORE rounding the daily demand.
+Then multiply by DOH. Raw consumption calculations keep their decimals.
+
+Check Stackability under Shifts & days on hand to edit a factor for each part.
+Unchecked uses one-high floor storage and keeps the saved factors.
+Height limits still apply. Rack calculations do not use floor stacking.
 
 Dimensions are loaded pallet dimensions. Floor stacking defaults to one high.
 Ground-depth limit 0 means unrestricted; floor m² uses actual occupied depth.

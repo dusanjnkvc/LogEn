@@ -58,6 +58,51 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets(
+    'Stackability enables per-part editing, preserves factors when off, and leaves racks unchanged',
+    (tester) async {
+      await ProjectStore().save([
+        WarehouseProject(
+          id: 'toggle-stacking',
+          name: 'Stacking controls',
+          settings: const WarehouseSettings(stackabilityEnabled: false),
+          parts: [
+            PartInput.fromJson({...sample.toJson(), 'stacking': 3}),
+          ],
+        ),
+      ]);
+      await launch(tester);
+      expect(find.text('Shifts & days on hand'), findsOneWidget);
+      expect(kpi(tester, 'kpi-floor-with'), '63.60 m²');
+      expect(find.byKey(const ValueKey('stacking-SAMPLE-001')), findsNothing);
+      final toggle = find.byKey(const Key('production-stackability'));
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(kpi(tester, 'kpi-floor-with'), '21.20 m²');
+      final factor = find.byKey(const ValueKey('stacking-SAMPLE-001'));
+      await tester.ensureVisible(factor);
+      await tester.enterText(factor, '2');
+      await tester.pumpAndSettle();
+      expect(kpi(tester, 'kpi-floor-with'), '31.80 m²');
+      expect(kpi(tester, 'kpi-rack-with'), '33.63 m²');
+      expect((await ProjectStore().load()).single.parts.single.stacking, 2);
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(kpi(tester, 'kpi-floor-with'), '63.60 m²');
+      expect((await ProjectStore().load()).single.parts.single.stacking, 2);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(kpi(tester, 'kpi-floor-with'), '31.80 m²');
+      expect(
+        (await ProjectStore().load()).single.settings.stackabilityEnabled,
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'shift-first sample drives all four footprints and saved gangways',
     (tester) async {
       await launch(tester);
@@ -66,7 +111,7 @@ void main() {
       expect(kpi(tester, 'kpi-rack-without'), '7.98 m²');
       expect(kpi(tester, 'kpi-rack-with'), '33.63 m²');
       expect(textValue(tester, 'raw-pallets-SAMPLE-001'), '0.625');
-      expect(textValue(tester, 'rounded-pallets-SAMPLE-001'), '1');
+      expect(textValue(tester, 'rounded-pallets-SAMPLE-001'), '2');
       expect(textValue(tester, 'required-SAMPLE-001'), '10');
       expect(find.text('MONTHLY\nCONSUMPTION'), findsNothing);
       await openSettings(tester);
@@ -179,6 +224,7 @@ void main() {
       await ProjectStore().save([
         WarehouseProject(
           id: 'formula-stacking',
+          settings: const WarehouseSettings(stackabilityEnabled: true),
           name: 'Formula stacking',
           parts: [
             PartInput.fromJson({...sample.toJson(), 'stacking': 3}),
@@ -214,8 +260,9 @@ void main() {
       await tester.pump();
       expect(find.text('1000 parts/shift'), findsOneWidget);
       expect(find.text('1.25 pallets/shift'), findsOneWidget);
-      expect(find.text('2 pallets/shift'), findsOneWidget);
-      expect(find.text('20 pallets'), findsOneWidget);
+      expect(find.text('2.5 pallets/day'), findsOneWidget);
+      expect(find.text('3 pallets/day'), findsOneWidget);
+      expect(find.text('15 pallets'), findsOneWidget);
       await tester.enterText(field('Consumption per shift'), '500');
       await tester.tap(find.widgetWithText(FilledButton, 'Add part number'));
       await tester.pumpAndSettle();
@@ -238,7 +285,7 @@ void main() {
       await tester.ensureVisible(find.text('EXTRA-001').last);
       await tester.tap(find.text('EXTRA-001').last);
       await tester.pumpAndSettle();
-      expect(find.text('Round up for one shift first'), findsOneWidget);
+      expect(find.text('Rounded pallets per day'), findsOneWidget);
       expect(find.text('D · Racks with allocated gangways'), findsOneWidget);
       expect(
         find.textContaining('Allocated gangway width = 4500 mm'),
@@ -268,7 +315,7 @@ void main() {
       await saveSettings(tester);
       expect(textValue(tester, 'shift-SAMPLE-001'), '500');
       expect(textValue(tester, 'daily-SAMPLE-001'), '1500');
-      expect(textValue(tester, 'required-SAMPLE-001'), '15');
+      expect(textValue(tester, 'required-SAMPLE-001'), '10');
       expect((await ProjectStore().load()).single.settings.shiftsPerDay, 3);
       expect(tester.takeException(), isNull);
     },
@@ -289,11 +336,11 @@ void main() {
         '0',
       );
       await saveSettings(tester);
-      expect(textValue(tester, 'required-SAMPLE-001'), '11');
+      expect(textValue(tester, 'required-SAMPLE-001'), '7');
       expect(textValue(tester, 'used-doh-SAMPLE-001'), '3.5');
-      expect(kpi(tester, 'kpi-floor-without'), '12.78 m²');
-      expect(kpi(tester, 'kpi-floor-with'), '69.96 m²');
-      expect(kpi(tester, 'kpi-rack-without'), '7.98 m²');
+      expect(kpi(tester, 'kpi-floor-without'), '8.10 m²');
+      expect(kpi(tester, 'kpi-floor-with'), '44.52 m²');
+      expect(kpi(tester, 'kpi-rack-without'), '3.99 m²');
       final saved = (await ProjectStore().load()).single.settings;
       expect(saved.shiftsPerDay, 3);
       expect(saved.coverageMode, 'custom');

@@ -25,16 +25,17 @@ Use **LogEn_Shift_Inventory_Template.xlsx**, also available from **Download temp
 
 QTY in Box means individual parts per box. QTY boxes per Pallet means boxes carried by a pallet. Consumption per shift is individual parts consumed in one shift. L, W and H describe a loaded pallet in millimeters. Replace the sample, save as `.xlsx`, import, and review the confirmation.
 
-The eight-column template does not specify floor stacking. New imports therefore default to **one pallet high**. The part editor has an advanced permitted-stacking field for cases where stacking is physically allowed. Exports include an optional Stacking column when needed to preserve a manually changed stacking value on re-import; the download template remains exactly eight columns.
+The eight-column template does not specify floor stacking. New projects start with **Stackability unchecked** and use one pallet high. Check **Stackability** in **Shifts & days on hand** to edit a stacking factor for each part in Shift consumption, Part details, or the part editor. Unchecking it uses one-high storage while keeping every saved factor. Height limits still apply. Exports include an optional Stacking column when needed to preserve manually changed factors on re-import; the template remains exactly eight columns. Existing projects without the checkbox setting enable it automatically if they already contain a factor greater than one.
 
 ## Required-pallet formula
 
 ```text
-Rounded pallets per shift = ROUNDUP(Consumption per shift / QTY in Box / QTY boxes per Pallet, 0)
-Required pallets = Rounded pallets per shift × DOH × shifts per day
+Raw pallets per day = Consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day
+Rounded pallets per day = ROUNDUP(Raw pallets per day, 0)
+Required pallets = ROUNDUP(Rounded pallets per day × DOH, 0)
 ```
 
-The rounding order is intentional: round one shift first, then multiply by DOH and shifts. For example, 1,000 parts/shift ÷ 20 parts/box ÷ 40 boxes/pallet = 1.25 pallets/shift, rounded to 2. With 5 DOH and 2 shifts/day, the answer is **20 pallets**, rather than 13 from rounding only the combined parts total. If fractional DOH produces a fractional final count, that count is rounded up to whole storage pallets.
+Multiply by the selected shifts **before rounding**. For example, 0.13 pallets/shift becomes 0.13, 0.26 or 0.39 for 1, 2 or 3 shifts; each rounds up to **1 pallet per day**. At 5 DOH, each requires 5 pallets. Another example: 1,000 parts/shift ÷ 20 parts/box ÷ 40 boxes/pallet = 1.25 pallets/shift. With 2 shifts, 2.5 pallets/day rounds up to 3; at 5 DOH, the answer is **15 pallets**. A final ceiling keeps storage pallets whole when DOH is fractional. Raw consumption values retain their decimals.
 
 Choose **1, 2 or 3 shifts per day** (default 2). Use **DOH from each part** or a project DOH override. Editing the override immediately applies it to all parts; choose the per-part source to return to the Excel values. Changing shifts multiplies daily usage while the entered consumption per shift remains fixed. All four space results update automatically.
 
@@ -66,7 +67,7 @@ Earlier daily/monthly workbooks and saved projects are migrated once to a fixed 
 
 ## Validation and source
 
-Calculation tests cover the inner rounding order, shifts 1–3, per-part and overridden DOH, fractional/zero values, migration, invalid rows, actual/unrestricted ground depths and rack fit. DOM tests exercise live controls, the exact template, imports, downloads and project recovery. Flutter has matching calculation, workbook, persistence and widget tests. The final app is also checked for external asset dependencies.
+Calculation tests cover selected-shift daily rounding, Stackability, shifts 1–3, per-part and overridden DOH, fractional/zero values, migration, invalid rows, actual/unrestricted ground depths and rack fit. DOM tests exercise live controls, the exact template, imports, downloads and project recovery. Flutter has matching calculation, workbook, persistence and widget tests. The final app is also checked for external asset dependencies.
 
 - `webapp/`: browser UI, calculation engine, editors, Excel services and tests; ExcelJS 4.4.0 is bundled with its MIT license.
 - `lib/`, `android/`, `test/`: Flutter implementation and tests. The ready-to-use deliverable is the Chrome HTML app; no Android APK is included.

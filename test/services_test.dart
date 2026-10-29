@@ -68,7 +68,7 @@ void main() {
     service.exportBytes(p, calculateProject(p.parts, p.settings)),
   );
   test(
-    'template has exactly eight shift headers and sample uses whole-shift rounding',
+    'template has exactly eight shift headers and sample uses selected-day rounding',
     () {
       expect(WorkbookService.headers, headings);
       final bytes = service.templateBytes(), b = Excel.decodeBytes(bytes);
@@ -94,14 +94,14 @@ void main() {
     },
   );
   test(
-    'export preserves the nested rounding formula and all five worksheets',
+    'export preserves selected-shift daily rounding formula and all five worksheets',
     () {
       final r = row();
       r[3] = 1000;
       final input = service.importBytes(source([headings, r])),
           p = project(input.parts, raw: input.rawInputRows),
           b = output(p);
-      expect(calculateProject(p.parts, p.settings).totalRequiredPallets, 20);
+      expect(calculateProject(p.parts, p.settings).totalRequiredPallets, 15);
       expect(b.tables.keys.toList(), [
         'Original Input Data',
         'Floor Pallet Calculations',
@@ -111,11 +111,11 @@ void main() {
       ]);
       final f = b['Floor Pallet Calculations'];
       expect(numeric(f, 'Raw Pallets per Shift'), 1.25);
-      expect(numeric(f, 'Rounded Pallets per Shift'), 2);
-      expect(numeric(f, 'Required Pallets (nested rounding)'), 20);
+      expect(numeric(f, 'Rounded Pallets per Shift (reference only)'), 2);
+      expect(numeric(f, 'Required Pallets (daily rounding)'), 15);
       expect(
         value(f, 'Required Pallets Formula'),
-        contains('CEILING(CEILING(1000.0 / 20.0 / 40.0)'),
+        contains('CEILING(CEILING(1000.0 / 20.0 / 40.0 × 2) × 5.0)'),
       );
     },
   );
@@ -183,7 +183,7 @@ void main() {
     final part = PartInput.fromJson({
       ...imported.parts.single.toJson(), 'doh': 7, 'stacking': 3,
     });
-    final settings = const WarehouseSettings(shiftsPerDay: 1);
+    final settings = const WarehouseSettings(shiftsPerDay: 1, stackabilityEnabled: true);
     final book = output(project([part], settings: settings));
     final floor = book['Floor Pallet Calculations'];
     expect(numeric(floor, 'Required Pallets'), 7);
@@ -230,7 +230,7 @@ void main() {
           p = project(input.parts, settings: s),
           c = calculateProject(p.parts, s),
           f = output(p)['Floor Pallet Calculations'];
-      expect(c.totalRequiredPallets, 7 * shifts);
+      expect(c.totalRequiredPallets, (.625 * shifts).ceil() * 7);
       expect(numeric(f, 'Shifts per Day'), shifts);
       expect(numeric(f, 'Selected DOH (days)'), 7);
     }
@@ -250,6 +250,34 @@ void main() {
       ).totalRequiredPallets,
       1,
     );
+  });
+  test('raw 0.13 pallets rounds once after the selected shifts then DOH', () {
+    final imported = service.importBytes(service.templateBytes());
+    final part = PartInput.fromJson({...imported.parts.single.toJson(),
+      'qtyBox': 1, 'qtyOnPallet': 100, 'consumptionPerShift': 13, 'doh': 5});
+    for (final shifts in [1, 2, 3]) {
+      final settings = WarehouseSettings(shiftsPerDay: shifts);
+      final floor = output(project([part], settings: settings))['Floor Pallet Calculations'];
+      expect(numeric(floor, 'Raw Pallets per Day (selected shifts)'), closeTo(.13 * shifts, 1e-9));
+      expect(numeric(floor, 'Planned Pallets per Day'), 1);
+      expect(numeric(floor, 'Required Pallets'), 5);
+      expect(value(floor, 'Required Pallets Formula'), contains('100.0 × $shifts) × 5.0'));
+    }
+  });
+  test('Stackability settings and dormant per-part factors export without loss', () {
+    final imported = service.importBytes(service.templateBytes());
+    final part = PartInput.fromJson({...imported.parts.single.toJson(), 'stacking': 3});
+    for (final enabled in [false, true]) {
+      final settings = WarehouseSettings(stackabilityEnabled: enabled);
+      final p = project([part], settings: settings), book = output(p);
+      final floor = book['Floor Pallet Calculations'];
+      expect(book['Warehouse Settings'].rows.firstWhere((r) => r.first?.value.toString() == 'Stackability')[1]!.value.toString(), '$enabled');
+      expect(numeric(floor, 'Allowed Floor Stacking'), 3);
+      expect(numeric(floor, 'Effective Floor Stacking'), enabled ? 3 : 1);
+      expect(numeric(floor, 'Without Gangways (m²)'), enabled ? 4.5 : 11.34);
+      final again = service.importBytes(service.exportBytes(p, calculateProject(p.parts, settings)));
+      expect(again.parts.single.stacking, 3);
+    }
   });
   test(
     'aliases, reversed columns, heading case and blank leading rows work',
@@ -324,7 +352,7 @@ void main() {
           input.parts,
           const WarehouseSettings(shiftsPerDay: 3),
         ).totalRequiredPallets,
-        15,
+        10,
       );
       final p = project(input.parts, raw: input.rawInputRows),
           bytes = service.exportBytes(p, calculateProject(p.parts, p.settings)),
@@ -374,7 +402,7 @@ void main() {
         input.parts,
         const WarehouseSettings(shiftsPerDay: 3, workingDaysPerMonth: 30),
       ).totalRequiredPallets,
-      15,
+      10,
     );
   });
   test(
@@ -452,7 +480,7 @@ void main() {
     final input = service.importBytes(source([headings, r])),
         b = output(project(input.parts)),
         f = b['Floor Pallet Calculations'];
-    expect(numeric(f, 'Rounded Pallets per Shift'), 0);
+    expect(numeric(f, 'Rounded Pallets per Shift (reference only)'), 0);
     expect(value(f, 'Current Stock (parts, optional)'), 'Not provided');
     expect(value(f, 'Actual Coverage (days, optional)'), 'No consumption');
     for (final r in b['Warehouse Comparison'].rows) {
@@ -570,10 +598,33 @@ void main() {
       expect(changed.parts.single.consumptionPerShift, 500);
       expect(
         calculateProject(changed.parts, changed.settings).totalRequiredPallets,
-        6,
+        4,
       );
     },
   );
+  test('legacy Stackability is inferred once and explicit disabled state preserves saved factors', () async {
+    final input = service.importBytes(service.templateBytes());
+    final stacked = PartInput.fromJson({...input.parts.single.toJson(), 'stacking': 3});
+    final raw = project([stacked]).toJson();
+    final legacySettings = Map<String, dynamic>.from(raw['settings'] as Map)..remove('stackabilityEnabled');
+    expect(() => WarehouseProject.fromJson({...raw,
+      'settings': {...legacySettings, 'stackabilityEnabled': 'false'}}), throwsFormatException);
+    final migrated = WarehouseProject.fromJson({...raw, 'settings': legacySettings});
+    expect(migrated.settings.stackabilityEnabled, isTrue);
+    expect(migrated.parts.single.stacking, 3);
+    final disabled = WarehouseProject.fromJson({...raw, 'settings': {...legacySettings, 'stackabilityEnabled': false}});
+    expect(disabled.settings.stackabilityEnabled, isFalse);
+    expect(disabled.parts.single.stacking, 3);
+    expect(calculateProject(disabled.parts, disabled.settings).floorWithoutGangways, 11.34);
+    SharedPreferences.setMockInitialValues({});
+    await ProjectStore().save([migrated, disabled.copyWith(id: 'disabled')]);
+    final reloaded = await ProjectStore().load();
+    expect(reloaded.first.settings.stackabilityEnabled, isTrue);
+    expect(reloaded.last.settings.stackabilityEnabled, isFalse);
+    expect(reloaded.last.parts.single.stacking, 3);
+    final enabled = reloaded.last.copyWith(settings: reloaded.last.settings.copyWith(stackabilityEnabled: true));
+    expect(calculateProject(enabled.parts, enabled.settings).floorWithoutGangways, 4.5);
+  });
   test(
     'corrupt persisted data stays intact and reports a recoverable error',
     () async {

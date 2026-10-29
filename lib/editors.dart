@@ -175,6 +175,7 @@ class _NumericField extends StatelessWidget {
     this.unit,
     this.whole = false,
     this.positive = false,
+    this.enabled = true,
   });
 
   final TextEditingController controller;
@@ -182,10 +183,12 @@ class _NumericField extends StatelessWidget {
   final String? unit;
   final bool whole;
   final bool positive;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) => TextFormField(
     controller: controller,
+    enabled: enabled,
     keyboardType: TextInputType.numberWithOptions(decimal: !whole),
     decoration: InputDecoration(labelText: label, suffixText: unit),
     autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -238,6 +241,7 @@ class _SettingsEditorState extends State<_SettingsEditor> {
   late int _shifts;
   late String _coverageMode;
   late bool _rotation;
+  late bool _stackability;
   List<String> _errors = [];
 
   static const _labels = <String, String>{
@@ -276,6 +280,7 @@ class _SettingsEditorState extends State<_SettingsEditor> {
         ? 'custom'
         : 'input';
     _rotation = widget.initial.allowRotation;
+    _stackability = widget.initial.stackabilityEnabled;
     for (final field in _fields.values) {
       field.addListener(_refreshPreview);
     }
@@ -325,6 +330,7 @@ class _SettingsEditorState extends State<_SettingsEditor> {
     return WarehouseSettings.fromJson(values).copyWith(
       shiftsPerDay: _shifts,
       allowRotation: _rotation,
+      stackabilityEnabled: _stackability,
       coverageMode: _coverageMode,
     );
   }
@@ -362,7 +368,7 @@ class _SettingsEditorState extends State<_SettingsEditor> {
           const _SectionHeading(
             'SHIFTS & DOH PLANNING',
             description:
-                'Round pallet demand up for one shift first, then multiply by DOH and the number of shifts.',
+                'Multiply raw pallet demand by the selected shifts, round that daily total up, then apply DOH.',
           ),
           DropdownButtonFormField<int>(
             key: const Key('settings-shifts'),
@@ -377,7 +383,7 @@ class _SettingsEditorState extends State<_SettingsEditor> {
           ),
           const SizedBox(height: 10),
           const Text(
-            'Required pallets = CEILING(CEILING(consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet) × selected DOH × shifts per day). The outer ceiling only affects fractional DOH.',
+            'Required pallets = CEILING(CEILING(consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet × shifts per day) × selected DOH). The outer ceiling only affects fractional DOH.',
             style: TextStyle(color: _muted, height: 1.6, fontSize: 12),
           ),
           const SizedBox(height: 18),
@@ -400,6 +406,19 @@ class _SettingsEditorState extends State<_SettingsEditor> {
           ),
           const SizedBox(height: 18),
           _field('customCoverageDays'),
+          Material(
+            type: MaterialType.transparency,
+            child: CheckboxListTile(
+              key: const Key('settings-stackability'),
+              title: const Text('Stackability'),
+              subtitle: const Text(
+                'Enable a stacking factor for each part. When off, floor storage uses one pallet high and saved factors are retained.',
+              ),
+              value: _stackability,
+              contentPadding: EdgeInsets.zero,
+              onChanged: (value) => setState(() => _stackability = value!),
+            ),
+          ),
           const SizedBox(height: 18),
           _PlanningPreview(
             planning: calculatePart(
@@ -571,12 +590,14 @@ class _PartEditorState extends State<_PartEditor> {
     String? unit,
     bool whole = false,
     bool positive = false,
+    bool enabled = true,
   }) => _NumericField(
     controller: _fields[key]!,
     label: label,
     unit: unit,
     whole: whole,
     positive: positive,
+    enabled: enabled,
   );
 
   @override
@@ -602,7 +623,7 @@ class _PartEditorState extends State<_PartEditor> {
           _SectionHeading(
             'PACKAGING & CONSUMPTION PER SHIFT',
             description:
-                '${_settings.shiftsPerDay} shifts/day. Round pallet demand for one shift before applying DOH.',
+                '${_settings.shiftsPerDay} shifts/day. Multiply raw pallet demand by selected shifts, round the daily total up, then apply DOH.',
           ),
           _FieldGrid([
             _field(
@@ -646,12 +667,13 @@ class _PartEditorState extends State<_PartEditor> {
           const _SectionHeading(
             'ADVANCED · FLOOR STACKING SAFETY',
             description:
-                'The eight-column template defaults to one pallet high. Increase this only where floor stacking is physically permitted.',
+                'Enable Stackability in Shifts & days on hand to edit this part’s factor. When off, floor storage uses one pallet high and the saved factor is retained.',
           ),
           _FieldGrid([
             _field(
               'stacking',
               'Allowed floor stacking',
+              enabled: _settings.stackabilityEnabled,
               unit: 'pallets',
               whole: true,
               positive: true,
@@ -707,13 +729,13 @@ class _PlanningPreview extends StatelessWidget {
               '${_number(p.palletsPerShift)} pallets/shift',
             ),
             (
-              'Rounded pallets per shift',
-              '${p.roundedPalletsPerShift} pallets/shift',
+              'Raw pallets for selected shifts',
+              '${_number(p.palletsPerDay)} pallets/day',
             ),
             ('Selected DOH', '${_number(p.targetCoverageDays)} days'),
             ('Shifts per day', '$shiftsPerDay shifts'),
             (
-              'Planned pallets per day',
+              'Rounded pallets per day',
               '${p.plannedPalletsPerDay} pallets/day',
             ),
             ('Daily consumption', '${_number(p.dailyConsumption)} parts/day'),
@@ -787,7 +809,7 @@ class _PlanningPreview extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'CEILING(${_number(p.consumptionPerShift)} ÷ ${_number(p.qtyBox)} ÷ ${_number(p.qtyOnPallet)}) × ${_number(p.targetCoverageDays)} DOH × $shiftsPerDay shifts = ${p.requiredPallets} required pallets. A final ceiling applies when DOH is fractional.',
+              'CEILING(${_number(p.consumptionPerShift)} ÷ ${_number(p.qtyBox)} ÷ ${_number(p.qtyOnPallet)} × $shiftsPerDay shifts) × ${_number(p.targetCoverageDays)} DOH = ${p.requiredPallets} required pallets. A final ceiling applies when DOH is fractional.',
               style: const TextStyle(color: _muted, fontSize: 12, height: 1.6),
             ),
             if (p.noConsumption) ...[
@@ -910,17 +932,17 @@ class _PartDetails extends StatelessWidget {
               result: '${n(planning.palletsPerShift)} pallets/shift',
             ),
             _DetailLine(
-              'Round up for one shift first',
-              'CEILING(${n(planning.palletsPerShift)})',
-              result: '${planning.roundedPalletsPerShift} pallets/shift',
+              'Raw pallets for selected shifts',
+              '${n(planning.palletsPerShift)} pallets/shift × ${settings.shiftsPerDay} shifts',
+              result: '${n(planning.palletsPerDay)} pallets/day',
             ),
             _DetailLine(
               'Selected DOH and shifts',
               '${settings.coverageMode == 'custom' ? 'Project DOH override' : 'DOH from this part'}: ${n(planning.targetCoverageDays)} days\nShifts per day: ${settings.shiftsPerDay} (maximum 3)',
             ),
             _DetailLine(
-              'Planned pallets per day',
-              '${planning.roundedPalletsPerShift} rounded pallets/shift × ${settings.shiftsPerDay} shifts',
+              'Rounded pallets per day',
+              'CEILING(${n(planning.palletsPerDay)})',
               result: '${planning.plannedPalletsPerDay} pallets/day',
             ),
             _DetailLine(
@@ -935,12 +957,12 @@ class _PartDetails extends StatelessWidget {
             ),
             _DetailLine(
               'Required pallets · shared by both scenarios',
-              'CEILING(CEILING(${n(planning.consumptionPerShift)} ÷ ${n(planning.qtyBox)} ÷ ${n(planning.qtyOnPallet)}) × ${n(planning.targetCoverageDays)} × ${settings.shiftsPerDay})\n'
-                  '= CEILING(${planning.roundedPalletsPerShift} × ${n(planning.targetCoverageDays)} × ${settings.shiftsPerDay})',
+              'CEILING(CEILING(${n(planning.consumptionPerShift)} ÷ ${n(planning.qtyBox)} ÷ ${n(planning.qtyOnPallet)} × ${settings.shiftsPerDay}) × ${n(planning.targetCoverageDays)})\n'
+                  '= CEILING(${planning.plannedPalletsPerDay} × ${n(planning.targetCoverageDays)})',
               result: '${result.requiredPallets} pallets',
             ),
             const _Notice(
-              'The pallet ceiling is applied per shift before multiplying by DOH and shifts. A final ceiling ensures whole pallets when DOH is fractional. Raw required parts are shown separately.',
+              'Raw pallet demand is multiplied by the selected shifts before rounding up once for the day. DOH is applied after this daily rounding. A final ceiling ensures whole pallets when DOH is fractional.',
             ),
             const SizedBox(height: 24),
             const _SectionHeading(
@@ -982,7 +1004,9 @@ class _PartDetails extends StatelessWidget {
             ),
             _DetailLine(
               'Effective stacking',
-              'MIN(Allowed stacking, Maximum stacking) = MIN(${n(part.stacking)}, ${floor.maximumStacking})',
+              settings.stackabilityEnabled
+                  ? 'MIN(Allowed stacking, Maximum stacking) = MIN(${n(part.stacking)}, ${floor.maximumStacking})'
+                  : 'Stackability is off: one pallet high, limited by loaded height. Saved factor ${n(part.stacking)} is retained.',
               result: '${floor.effectiveStacking} pallets',
             ),
             _DetailLine(

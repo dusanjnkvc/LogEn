@@ -61,9 +61,17 @@ class WarehouseProject {
   };
 
   factory WarehouseProject.fromJson(Map<String, dynamic> json) {
-    final settings = WarehouseSettings.fromJson(
-      Map<String, dynamic>.from(json['settings'] as Map),
-    );
+    final settingsJson = Map<String, dynamic>.from(json['settings'] as Map);
+    final rawParts = json['parts'] as List<dynamic>;
+    if (settingsJson.containsKey('stackabilityEnabled') &&
+        settingsJson['stackabilityEnabled'] is! bool) {
+      throw const FormatException('Saved Stackability setting must be a boolean.');
+    }
+    if (!settingsJson.containsKey('stackabilityEnabled')) {
+      settingsJson['stackabilityEnabled'] = rawParts.any((part) =>
+          part is Map && (double.tryParse('${part['stacking'] ?? 1}') ?? 1) > 1);
+    }
+    final settings = WarehouseSettings.fromJson(settingsJson);
     final migratedSettings = settings.copyWith(
       stockMode: StockMode.consumption,
       coverageMode: ['24h', '48h'].contains(settings.coverageMode)
@@ -78,7 +86,7 @@ class WarehouseProject {
     return WarehouseProject(
       id: json['id'] as String,
       name: json['name'] as String,
-      parts: (json['parts'] as List<dynamic>)
+      parts: rawParts
           .map(
             (value) => normalizePart(
               PartInput.fromJson(Map<String, dynamic>.from(value as Map)),
@@ -270,11 +278,12 @@ class WorkbookService {
     'Parts per Pallet',
     'Consumption per Shift (parts)',
     'Raw Pallets per Shift',
-    'Rounded Pallets per Shift',
+    'Rounded Pallets per Shift (reference only)',
     'Shifts per Day',
     'Selected DOH (days)',
+    'Raw Pallets per Day (selected shifts)',
     'Planned Pallets per Day',
-    'Required Pallets (nested rounding)',
+    'Required Pallets (daily rounding)',
     'Daily Consumption (parts/day)',
     'Current Stock (parts, optional)',
     'Current Pallet Equivalents (optional)',
@@ -302,14 +311,14 @@ class WorkbookService {
       'QTY in Box = individual parts in a box. QTY boxes per Pallet = boxes on one pallet.',
       'Consumption per shift = individual parts consumed in one shift. It is neither daily nor monthly consumption.',
       'DOH (Days on hand) = required coverage days for the part. Input DOH can be overridden by a custom project DOH.',
-      'Required pallets = CEILING(CEILING(Consumption per shift / QTY in Box / QTY boxes per Pallet) × selected DOH × shifts per day).',
-      'The inner CEILING rounds the pallet quantity for one shift up first. Do not replace it with one rounding of fractional daily demand.',
+      'Required pallets = CEILING(CEILING(Consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day) × selected DOH).',
+      'Multiply the raw pallet demand per shift by the selected 1, 2 or 3 shifts first, then round the combined daily pallet demand up once. Apply DOH after daily rounding.',
       'Shifts per day must be 1, 2 or 3; default 2. The project DOH override defaults to 5 days.',
       'L(mm), W(mm) and H(mm) are loaded pallet dimensions in millimeters.',
-      'Floor stacking defaults to 1 because the template has no Stacking column. An optional extra Stacking column is supported and stacking can be edited manually.',
+      'Floor stacking defaults to 1 because the template has no Stacking column. An optional extra Stacking column is supported. Enable Stackability in Shifts & days on hand to edit and apply saved per-part factors; unchecked uses effective stacking 1 while retaining saved values.',
       'Current stock is optional. Without it, actual stock coverage is unavailable; unknown stock is never treated as zero.',
       'Older monthly and daily templates remain supported. Their rates are converted once to consumption per shift using production settings selected at import.',
-      'Legacy direct pallet capacity without box quantities uses inferred packaging: one box containing that pallet capacity. Review inferred box quantities before relying on per-shift rounding.',
+      'Legacy direct pallet capacity without box quantities uses inferred packaging: one box containing that pallet capacity. Review inferred box quantities before relying on selected-shift daily rounding.',
       'Use numeric cells or decimal-point text. Formula cells are not evaluated; paste values before importing.',
       'Floor with gangways = (Q / S) × L × (W + G) / 1,000,000. Q = required pallets; S = effective floor stacking; L/W/G in mm. Keep Q / S unrounded and use full gangway width G.',
       'Floor without gangways retains actual occupied rows and clearances. Its project total sums independently valid floor storage results rounded to two decimals; rack fit errors do not remove valid floor areas. Rack gangways retain actual rack run frontage × full gangway width. These are allocated planning estimates, not optimized layouts.',
@@ -428,7 +437,7 @@ class WorkbookService {
     }
     if (kind == 'monthly') {
       warnings.add(
-        'Legacy monthly template converted once: Monthly Consumption was divided by ${settings.workingDaysPerMonth} working days per month and ${settings.shiftsPerDay} shifts per day. Direct pallet capacity requires inferred packaging; review box quantities before relying on per-shift rounding.',
+        'Legacy monthly template converted once: Monthly Consumption was divided by ${settings.workingDaysPerMonth} working days per month and ${settings.shiftsPerDay} shifts per day. Direct pallet capacity requires inferred packaging; review box quantities before relying on selected-shift daily rounding.',
       );
     }
     for (var rowIndex = headerIndex + 1; rowIndex < inputEnd; rowIndex++) {
@@ -803,7 +812,7 @@ class WorkbookService {
     }
     _append(comparison, [
       'Required-pallet formula',
-      'CEILING(CEILING(consumption per shift / parts per box / boxes per pallet) × selected DOH × shifts per day). Round one shift first; only a fractional final DOH total needs the outer ceiling.',
+      'CEILING(CEILING(consumption per shift / parts per box / boxes per pallet × selected shifts per day) × selected DOH). Round the combined daily shift demand once, then apply DOH. The outer ceiling handles fractional DOH.',
     ]);
     _append(comparison, [
       'Optional stock interpretation',
@@ -821,10 +830,11 @@ class WorkbookService {
       ['Exported at (UTC)', DateTime.now().toUtc().toIso8601String()],
       [
         'Stock formula',
-        'Nested per-shift pallet rounding',
+        'Round combined selected-shift daily demand, then apply DOH',
         'Always used for both floor and rack scenarios',
       ],
       ['Shifts per day', s.shiftsPerDay, 'integer: 1, 2 or 3'],
+      ['Stackability', s.stackabilityEnabled, 'enabled: saved per-part factor capped by height; disabled: effective stacking 1; saved factors retained'],
       [
         'DOH mode',
         s.coverageMode,
@@ -893,10 +903,10 @@ class WorkbookService {
     _append(settings, []);
     for (final line in [
       'Parts per pallet = QTY in Box × QTY boxes per Pallet. Raw pallets per shift = Consumption per shift / QTY in Box / QTY boxes per Pallet.',
-      'Rounded pallets per shift = CEILING(raw pallets per shift). Required pallets = CEILING(rounded pallets per shift × selected DOH × shifts per day). The inner ceiling is mandatory.',
-      'Daily consumption = Consumption per shift × shifts per day. Planned pallets per day = Rounded pallets per shift × shifts per day. Shifts must be 1, 2 or 3.',
-      'The template has exactly eight columns. Floor stacking defaults to 1 unless an optional Stacking column or manual value is supplied.',
-      'Floor positions = CEILING(required pallets / MIN(allowed stacking, FLOOR(maximum stacking height / loaded pallet H))).',
+      'Raw pallets per day = raw pallets per shift × selected shifts per day. Planned pallets per day = CEILING(raw pallets per day). Required pallets = CEILING(planned pallets per day × selected DOH). The rounded per-shift reference is not used for planning.',
+      'Daily consumption = Consumption per shift × shifts per day. Planned pallets per day = CEILING(raw pallets per shift × shifts per day). Shifts must be 1, 2 or 3.',
+      'The template has exactly eight columns. Stackability disabled uses floor stacking 1; enabled uses each saved factor capped by the height limit. Per-part factors are retained when disabled.',
+      'Floor positions = CEILING(required pallets / MIN(Stackability enabled ? allowed stacking : 1, FLOOR(maximum stacking height / loaded pallet H))).',
       'Pallets per row = FLOOR((maximum row-depth LIMIT + clearance) / (pallet L + clearance)); limit 0 means one unrestricted row per part.',
       'Floor without gangways = row width × total actual occupied row depth, including clearances between pallets. Unused row depth is not reserved.',
       'Floor with gangways = (required pallets / effective floor stacking) × pallet L × (pallet W + full gangway width) / 1,000,000. Do not round Q / S or add floor pallet clearances to this formula.',
@@ -952,6 +962,7 @@ class WorkbookService {
           p.roundedPalletsPerShift,
           settings.shiftsPerDay,
           p.targetCoverageDays,
+          p.palletsPerDay,
           p.plannedPalletsPerDay,
           p.requiredPallets,
           p.dailyConsumption,
@@ -963,7 +974,7 @@ class WorkbookService {
           input.doh,
           p.coverageDifferenceDays ?? 'N/A',
           input.packagingInferred,
-          'CEILING(CEILING(${input.consumptionPerShift} / ${input.qtyBox} / ${input.qtyOnPallet}) × ${p.targetCoverageDays} × ${settings.shiftsPerDay}) = ${p.requiredPallets}',
+          'CEILING(CEILING(${input.consumptionPerShift} / ${input.qtyBox} / ${input.qtyOnPallet} × ${settings.shiftsPerDay}) × ${p.targetCoverageDays}) = ${p.requiredPallets}',
         ];
 
   static Uint8List _encode(Excel workbook) {

@@ -14,7 +14,7 @@
       rackDepthClearance: 100, rackVerticalClearance: 100,
       allowRotation: false, stockMode: 'consumption',
       workingDaysPerMonth: 22, shiftsPerDay: 2,
-      coverageMode: 'input', customCoverageDays: 5
+      coverageMode: 'input', customCoverageDays: 5, stackabilityEnabled: false
     };
   }
 
@@ -58,6 +58,8 @@
       errors.push('Coverage mode must be input, 24h, 48h or custom.');
     if (typeof s.allowRotation !== 'boolean')
       errors.push('Pallet rotation must be enabled or disabled.');
+    if (typeof s.stackabilityEnabled !== 'boolean')
+      errors.push('Stackability must be enabled or disabled.');
     if (s.rackSlotLength + s.rackStructuralLength > s.maxRackRunLength)
       errors.push('Maximum rack run length must fit at least one effective rack bay.');
     if (s.rackFrontageClearance >= s.rackSlotLength)
@@ -176,10 +178,10 @@
       const shiftConsumption = consumptionPerShift;
       const dailyConsumption = consumptionPerShift * s.shiftsPerDay;
       const palletsPerShift = consumptionPerShift / input.qtyBox / input.qtyOnPallet;
+      // Kept for historical exports; required storage rounds the selected day.
       const roundedPalletsPerShift = ceil(palletsPerShift, false);
-      const plannedPalletsPerDay = roundedPalletsPerShift * s.shiftsPerDay;
-      if (!Number.isSafeInteger(plannedPalletsPerDay)) throw new Error('Planned pallets per day exceed supported numeric precision.');
       const palletsPerDay = palletsPerShift * s.shiftsPerDay;
+      const plannedPalletsPerDay = ceil(palletsPerDay, false);
       const knownStock = Number.isSafeInteger(input.stockQty) && input.stockQty >= 0;
       const currentPallets = knownStock ? input.stockQty / input.partsPerPallet : null;
       const noConsumption = dailyConsumption === 0;
@@ -210,7 +212,7 @@
         customCoverageDays: s.customCoverageDays
       };
       const maximumStacking = floor(s.maxFloorStackingHeight / input.height);
-      const effectiveStacking = Math.min(input.stacking, maximumStacking);
+      const effectiveStacking = Math.min(s.stackabilityEnabled ? input.stacking : 1, maximumStacking);
       const positions = effectiveStacking >= 1 ? ceilDivide(requiredPallets, effectiveStacking) : 0;
       const palletsPerRow = s.maxFloorRowDepth === 0 ? Math.max(positions, 1) :
         floor((s.maxFloorRowDepth + s.floorPalletClearance) /

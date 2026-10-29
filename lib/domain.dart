@@ -149,6 +149,7 @@ class WarehouseSettings {
     this.rackDepthClearance = 100,
     this.rackVerticalClearance = 100,
     this.allowRotation = false,
+    this.stackabilityEnabled = false,
     this.stockMode = StockMode.consumption,
     this.workingDaysPerMonth = 22,
     this.shiftsPerDay = 2,
@@ -159,6 +160,7 @@ class WarehouseSettings {
   final double maxFloorStackingHeight;
   final double maxFloorRowDepth;
   final double gangwayWidth;
+
   /// The allocated footprint uses the full configured physical aisle width.
   double get allocatedGangwayWidth => gangwayWidth;
   final double floorPalletClearance;
@@ -174,6 +176,7 @@ class WarehouseSettings {
   final double rackDepthClearance;
   final double rackVerticalClearance;
   final bool allowRotation;
+  final bool stackabilityEnabled;
   final StockMode stockMode;
   final int workingDaysPerMonth;
   final int shiftsPerDay;
@@ -197,6 +200,7 @@ class WarehouseSettings {
     double? rackDepthClearance,
     double? rackVerticalClearance,
     bool? allowRotation,
+    bool? stackabilityEnabled,
     StockMode? stockMode,
     int? workingDaysPerMonth,
     int? shiftsPerDay,
@@ -220,6 +224,7 @@ class WarehouseSettings {
     rackDepthClearance: rackDepthClearance ?? this.rackDepthClearance,
     rackVerticalClearance: rackVerticalClearance ?? this.rackVerticalClearance,
     allowRotation: allowRotation ?? this.allowRotation,
+    stackabilityEnabled: stackabilityEnabled ?? this.stackabilityEnabled,
     stockMode: stockMode ?? this.stockMode,
     workingDaysPerMonth: workingDaysPerMonth ?? this.workingDaysPerMonth,
     shiftsPerDay: shiftsPerDay ?? this.shiftsPerDay,
@@ -318,6 +323,7 @@ class WarehouseSettings {
     'rackDepthClearance': _jsonNumber(rackDepthClearance),
     'rackVerticalClearance': _jsonNumber(rackVerticalClearance),
     'allowRotation': allowRotation,
+    'stackabilityEnabled': stackabilityEnabled,
     'stockMode': stockMode.name,
     'workingDaysPerMonth': workingDaysPerMonth,
     'shiftsPerDay': shiftsPerDay,
@@ -343,6 +349,7 @@ class WarehouseSettings {
         rackDepthClearance: _number(json['rackDepthClearance'], 100),
         rackVerticalClearance: _number(json['rackVerticalClearance'], 100),
         allowRotation: json['allowRotation'] == true,
+        stackabilityEnabled: json['stackabilityEnabled'] == true,
         stockMode: json['stockMode'] == 'entered'
             ? StockMode.entered
             : StockMode.consumption,
@@ -440,6 +447,7 @@ class FloorCalculation {
   final int lastRowPallets;
   final double withoutGangways;
   double get storageArea => _storageAreaCents(withoutGangways) / 100;
+
   /// Unrounded Q/S used only for the independent with-gangways formula.
   final double formulaPositions;
   final double formulaStorageArea;
@@ -561,15 +569,19 @@ class PartCalculation {
   bool get isFloorValid => !excludedFromTotals && floor != null;
   bool get isRackValid => !excludedFromTotals && rack != null;
   bool get isPlanningValid => !excludedFromTotals && planning != null;
-  bool get isValid => !excludedFromTotals && errors.isEmpty && floor != null && rack != null;
+  bool get isValid =>
+      !excludedFromTotals && errors.isEmpty && floor != null && rack != null;
 }
 
 int _storageAreaCents(double value) {
   final scaled = value * 100;
   if (!scaled.isFinite || scaled.abs() > _maxExactInteger) {
-    throw const FormatException('Floor storage area exceeds supported numeric precision.');
+    throw const FormatException(
+      'Floor storage area exceeds supported numeric precision.',
+    );
   }
-  return (scaled + 2.220446049250313e-16 * math.max(1, scaled.abs()) * 4).round();
+  return (scaled + 2.220446049250313e-16 * math.max(1, scaled.abs()) * 4)
+      .round();
 }
 
 // Keep integer calculations exact on both Android and Flutter Web.
@@ -665,13 +677,11 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
       palletsPerShift,
       correctArithmeticNoise: false,
     );
-    if (roundedPalletsPerShift > _maxExactInteger ~/ settings.shiftsPerDay) {
-      throw const FormatException(
-        'Planned pallets per day exceed supported numeric precision.',
-      );
-    }
-    final plannedPalletsPerDay = roundedPalletsPerShift * settings.shiftsPerDay;
     final palletsPerDay = palletsPerShift * settings.shiftsPerDay;
+    final plannedPalletsPerDay = _ceil(
+      palletsPerDay,
+      correctArithmeticNoise: false,
+    );
     final stock = input.stockQty;
     final knownStock =
         stock != null &&
@@ -749,7 +759,10 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
     final maximumStacking = _floor(
       settings.maxFloorStackingHeight / input.height,
     );
-    final effectiveStacking = math.min(input.stacking.toInt(), maximumStacking);
+    final effectiveStacking = math.min(
+      settings.stackabilityEnabled ? input.stacking.toInt() : 1,
+      maximumStacking,
+    );
     final positions = effectiveStacking >= 1
         ? _ceilDivide(requiredPallets, effectiveStacking)
         : 0;
@@ -788,17 +801,31 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
               math.max(0, positions - rows) * settings.floorPalletClearance) /
           1000;
       final without = rowWidth * totalOccupiedDepth;
-      _storageAreaCents(without); // Validate the displayed storage contribution.
+      _storageAreaCents(
+        without,
+      ); // Validate the displayed storage contribution.
       // The with-gangways formula keeps Q/S fractional. Rounded floor positions
       // and row clearances continue to apply to the storage-only calculation.
       final formulaPositions = requiredPallets / effectiveStacking;
       final formulaStorageArea =
           formulaPositions * input.length * input.width / 1000000;
       final gangway =
-          formulaPositions * input.length * settings.allocatedGangwayWidth / 1000000;
-      final withGangways = formulaPositions * input.length *
-          (input.width + settings.allocatedGangwayWidth) / 1000000;
-      if (![without, formulaPositions, formulaStorageArea, gangway, withGangways].every((v) => v.isFinite)) {
+          formulaPositions *
+          input.length *
+          settings.allocatedGangwayWidth /
+          1000000;
+      final withGangways =
+          formulaPositions *
+          input.length *
+          (input.width + settings.allocatedGangwayWidth) /
+          1000000;
+      if (![
+        without,
+        formulaPositions,
+        formulaStorageArea,
+        gangway,
+        withGangways,
+      ].every((v) => v.isFinite)) {
         throw const FormatException(
           'Floor area exceeds supported numeric precision.',
         );
@@ -887,7 +914,10 @@ PartCalculation calculatePart(PartInput input, WarehouseSettings settings) {
       final gangway = frontageMetres * settings.allocatedGangwayWidth / 1000;
       // Combine storage and the full-width allocation before unit conversion.
       final withGangways =
-          bays * bayLength * (bayDepth + settings.allocatedGangwayWidth) / 1000000;
+          bays *
+          bayLength *
+          (bayDepth + settings.allocatedGangwayWidth) /
+          1000000;
       if (![
         without,
         gangway,
@@ -939,7 +969,8 @@ class ProjectCalculation {
 
   Iterable<PartCalculation> get _floor => results.where((r) => r.isFloorValid);
   Iterable<PartCalculation> get _rack => results.where((r) => r.isRackValid);
-  Iterable<PartCalculation> get _planned => results.where((r) => r.isPlanningValid);
+  Iterable<PartCalculation> get _planned =>
+      results.where((r) => r.isPlanningValid);
   int get invalidCount => results.where((r) => !r.isValid).length;
   int get validCount => results.length - invalidCount;
   int get floorValidCount => _floor.length;
@@ -952,7 +983,11 @@ class ProjectCalculation {
   int get totalRackBays => _rack.fold(0, (sum, r) => sum + r.rack!.bays);
   int get totalRackRuns => _rack.fold(0, (sum, r) => sum + r.rack!.runs);
   double get floorWithoutGangways =>
-      _floor.fold<int>(0, (sum, r) => sum + _storageAreaCents(r.floor!.withoutGangways)) / 100;
+      _floor.fold<int>(
+        0,
+        (sum, r) => sum + _storageAreaCents(r.floor!.withoutGangways),
+      ) /
+      100;
   double get floorWithGangways =>
       _floor.fold(0, (sum, r) => sum + r.floor!.withGangways);
   double get rackWithoutGangways =>

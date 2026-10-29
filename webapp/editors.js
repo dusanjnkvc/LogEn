@@ -182,7 +182,7 @@
     rackStructuralLength: 150, rackStructuralDepth: 200, rackStructuralHeight: 150,
     maxRackRunLength: 15000, rackFrontageClearance: 100,
     rackDepthClearance: 100, rackVerticalClearance: 100,
-    stockMode: 'consumption', allowRotation: false,
+    stockMode: 'consumption', allowRotation: false, stackabilityEnabled: false,
     workingDaysPerMonth: 22, shiftsPerDay: 2, coverageMode: 'input', customCoverageDays: 5
   };
   const sample = { partNumber: 'Preview example', qtyBox: 20, qtyOnPallet: 40,
@@ -227,10 +227,10 @@
       ['Parts per pallet', `${display(planning.partsPerPallet)} parts`],
       ['Consumption per shift', `${display(planning.consumptionPerShift)} parts/shift`],
       ['Raw pallets per shift', `${display(planning.palletsPerShift)} pallets/shift`],
-      ['Rounded pallets per shift', `${display(planning.roundedPalletsPerShift)} pallets/shift`],
+      ['Raw pallets per day', `${display(planning.palletsPerDay)} pallets/day`],
       ['Selected DOH', `${display(planning.targetCoverageDays)} days`],
       ['Shifts per day', `${display(settings.shiftsPerDay)} shifts`],
-      ['Planned pallets per day', `${display(planning.plannedPalletsPerDay)} pallets/day`],
+      ['Rounded pallets per day', `${display(planning.plannedPalletsPerDay)} pallets/day`],
       ['Daily consumption', `${display(planning.dailyConsumption)} parts/day`],
       ['Required parts · raw demand', `${display(planning.dailyConsumption * planning.targetCoverageDays)} parts`],
       ['Required pallets', `${display(planning.requiredPallets)} pallets`]
@@ -241,7 +241,7 @@
       grid.append(metric);
     }
     container.append(grid);
-    container.append($('p', 'muted formula-hint', `CEILING(${display(planning.consumptionPerShift)} ÷ ${display(planning.qtyBox)} ÷ ${display(planning.qtyOnPallet)}) × ${display(planning.targetCoverageDays)} DOH × ${display(settings.shiftsPerDay)} shifts = ${display(planning.requiredPallets)} required pallets. A final ceiling is applied if fractional DOH creates a fractional pallet.`));
+    container.append($('p', 'muted formula-hint', `CEILING(${display(planning.consumptionPerShift)} ÷ ${display(planning.qtyBox)} ÷ ${display(planning.qtyOnPallet)} × ${display(settings.shiftsPerDay)} shifts) × ${display(planning.targetCoverageDays)} DOH = ${display(planning.requiredPallets)} required pallets. A final ceiling is applied if fractional DOH creates a fractional pallet.`));
     if (planning.noConsumption) container.append(notice('Per-shift consumption is zero, so required pallets are zero. No current stock quantity is assumed.'));
   }
 
@@ -256,14 +256,18 @@
         const field = (grid, key, label, positive = false, integer = false, unit = 'mm') => {
           fields[key] = numberField(grid, key, label, current[key], { positive, integer, unit });
         };
-        const stock = section(body, 'Shifts & DOH planning', 'Round pallet demand up for one shift first, then multiply by DOH and the number of shifts.');
+        const stock = section(body, 'Shifts & DOH planning', 'Multiply raw pallet demand by the selected shifts, round up the daily demand once, then multiply by DOH.');
         const productionGrid = $('div', 'form-grid');
         stock.append(productionGrid);
         const shifts = selectField(productionGrid, 'shiftsPerDay', 'Shifts per day', String(current.shiftsPerDay), [['1', '1 shift'], ['2', '2 shifts'], ['3', '3 shifts']]);
         const coverage = selectField(productionGrid, 'coverageMode', 'DOH source', current.coverageMode === 'custom' ? 'custom' : 'input',
           [['input', 'DOH from each imported part'], ['custom', 'Project DOH override']]);
         field(productionGrid, 'customCoverageDays', 'Project DOH override', false, false, 'days');
-        stock.append($('p', 'muted formula-hint', 'Required pallets = CEILING(CEILING(consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet) × selected DOH × shifts per day). The outer ceiling only affects fractional DOH.'));
+        stock.append($('p', 'muted formula-hint', 'Required pallets = CEILING(CEILING(consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet × shifts per day) × selected DOH). The outer ceiling only affects fractional DOH.'));
+        const stackabilityLabel = $('label', 'checkbox-field');
+        const stackability = $('input'); stackability.type='checkbox'; stackability.name='stackabilityEnabled'; stackability.checked=Boolean(current.stackabilityEnabled); stackability.setAttribute('aria-label','Stackability');
+        const stackabilityCopy=$('span');stackabilityCopy.append($('strong','','Stackability'),$('small','muted','Enable per-part stacking factors. When off, floor calculations use one-high storage and keep saved factors.'));
+        stackabilityLabel.append(stackability,stackabilityCopy); stock.append(stackabilityLabel);
         const preview = $('div', 'planning-preview');
         stock.append(preview);
         const floor = section(body, 'Floor storage & gangways', 'Floor with gangways uses (Q / S) × L × (W + G) / 1,000,000, with unrounded Q / S and full gangway width G. Racks use actual run frontage × G.');
@@ -295,14 +299,14 @@
         rotationCopy.append($('strong', '', 'Allow 90° pallet rotation'), $('small', 'muted', 'Use the valid orientation with the highest rack slot capacity.'));
         rotationLabel.append(rotation, rotationCopy);
         body.append(rotationLabel, notice('Gangway-inclusive footprints are allocated planning estimates. Shared gangways must be counted once in a physical layout.'));
-        const draft = () => ({ ...current, ...draftNumbers(fields), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, allowRotation: rotation.checked });
+        const draft = () => ({ ...current, ...draftNumbers(fields), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, allowRotation: rotation.checked, stackabilityEnabled: stackability.checked });
         const update = () => {
           const settings = draft();
           planningPreview(preview, sample, settings, true);
           gangwayHint.textContent = `Allocated gangway width = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm (100% of configured width) for both floor and rack calculations.`;
         };
         for (const input of Object.values(fields)) input.input.addEventListener('input', update);
-        shifts.addEventListener('change', update); coverage.addEventListener('change', update); rotation.addEventListener('change', update);
+        shifts.addEventListener('change', update); coverage.addEventListener('change', update); rotation.addEventListener('change', update); stackability.addEventListener('change', update);
         update();
         return {
           focus: shifts,
@@ -328,7 +332,7 @@
       button: initial ? 'Save part number' : 'Add part number',
       build(body) {
         const name = textField(body, 'Part Number', current.partNumber, { placeholder: 'e.g. PN-001' });
-        const stock = section(body, 'Packaging & consumption per shift', `${display(settings.shiftsPerDay)} shifts/day. Round pallet demand for one shift before applying DOH.`);
+        const stock = section(body, 'Packaging & consumption per shift', `${display(settings.shiftsPerDay)} shifts/day. Multiply by selected shifts, round daily pallet demand up once, then apply DOH.`);
         const grid = $('div', 'form-grid'); stock.append(grid);
         const fields = {};
         const field = (target, key, label, unit, positive = false, integer = false) => {
@@ -345,9 +349,10 @@
         field(dimensionGrid, 'length', 'Length', 'mm', true);
         field(dimensionGrid, 'width', 'Width', 'mm', true);
         field(dimensionGrid, 'height', 'Height', 'mm', true);
-        const advanced = section(body, 'Advanced · floor stacking safety', 'The eight-column template defaults to one pallet high. Increase this only where floor stacking is physically permitted.');
+        const advanced = section(body, 'Advanced · floor stacking safety', 'Enable Stackability in Shifts & days on hand to edit this factor. When off, floor storage uses one pallet high; the saved factor is preserved. Height limits always apply.');
         const advancedGrid = $('div', 'form-grid'); advanced.append(advancedGrid);
         field(advancedGrid, 'stacking', 'Allowed floor stacking', 'pallets', true, true);
+        fields.stacking.input.disabled=!settings.stackabilityEnabled;
         body.append(notice('Consumption means individual parts per shift. QTY in Box is parts per box; QTY boxes per Pallet is boxes per pallet. Existing historical metadata is preserved when editing.'));
         const draft = () => ({ ...current, partNumber: name.input.value.trim() || 'Preview', ...draftNumbers(fields), providedCoverageDays: Number(fields.doh.input.value), packagingInferred: false, inputErrors: [] });
         const update = () => planningPreview(preview, draft(), settings);
@@ -392,13 +397,14 @@
         if (planning) {
           formula(stock, 'Parts per pallet', `${n(planning.qtyBox)} parts/box × ${n(planning.qtyOnPallet)} boxes/pallet`, `${n(planning.partsPerPallet)} parts/pallet`);
           formula(stock, 'Raw pallets per shift', `${n(planning.consumptionPerShift)} parts/shift ÷ ${n(planning.qtyBox)} parts/box ÷ ${n(planning.qtyOnPallet)} boxes/pallet`, `${n(planning.palletsPerShift)} pallets/shift`);
-          formula(stock, 'Round up for one shift first', `CEILING(${n(planning.palletsPerShift)})`, `${n(planning.roundedPalletsPerShift)} pallets/shift`);
+          formula(stock, 'Raw pallets for selected shifts', `${n(planning.palletsPerShift)} pallets/shift × ${n(settings.shiftsPerDay)} shifts`, `${n(planning.palletsPerDay)} pallets/day`);
+          formula(stock, 'Round up selected-shift demand', `CEILING(${n(planning.palletsPerDay)})`, `${n(planning.plannedPalletsPerDay)} pallets/day`);
           formula(stock, 'Selected DOH and shifts', `${settings.coverageMode === 'custom' ? 'Project DOH override' : 'DOH from this part'}: ${n(planning.targetCoverageDays)} days\nShifts per day: ${n(settings.shiftsPerDay)} (maximum 3)`);
-          formula(stock, 'Planned pallets per day', `${n(planning.roundedPalletsPerShift)} rounded pallets/shift × ${n(settings.shiftsPerDay)} shifts`, `${n(planning.plannedPalletsPerDay)} pallets/day`);
+          formula(stock, 'Planned pallets per day', `CEILING(${n(planning.palletsPerShift)} × ${n(settings.shiftsPerDay)})`, `${n(planning.plannedPalletsPerDay)} pallets/day`);
           formula(stock, 'Daily consumption · raw parts', `${n(planning.consumptionPerShift)} parts/shift × ${n(settings.shiftsPerDay)} shifts`, `${n(planning.dailyConsumption)} parts/day`);
           formula(stock, 'Required parts · raw demand', `${n(planning.dailyConsumption)} parts/day × ${n(planning.targetCoverageDays)} DOH`, n(result.requiredParts));
-          formula(stock, 'Required pallets · used in both scenarios', `CEILING(CEILING(${n(planning.consumptionPerShift)} ÷ ${n(planning.qtyBox)} ÷ ${n(planning.qtyOnPallet)}) × ${n(planning.targetCoverageDays)} × ${n(settings.shiftsPerDay)})\n= CEILING(${n(planning.roundedPalletsPerShift)} × ${n(planning.targetCoverageDays)} × ${n(settings.shiftsPerDay)})`, `${n(result.requiredPallets)} pallets`);
-          stock.append(notice('The pallet ceiling is applied per shift before multiplying by DOH and shifts. A final ceiling ensures a whole pallet when DOH is fractional. Raw required parts are shown separately.'));
+          formula(stock, 'Required pallets · used in both scenarios', `CEILING(CEILING(${n(planning.consumptionPerShift)} ÷ ${n(planning.qtyBox)} ÷ ${n(planning.qtyOnPallet)} × ${n(settings.shiftsPerDay)}) × ${n(planning.targetCoverageDays)})\n= CEILING(${n(planning.plannedPalletsPerDay)} × ${n(planning.targetCoverageDays)})`, `${n(result.requiredPallets)} pallets`);
+          stock.append(notice('Raw pallets per shift are multiplied by the selected shifts before the daily pallet ceiling. Daily whole pallets are then multiplied by DOH. A final ceiling ensures whole storage pallets when DOH is fractional.'));
           const history = section(body, 'Historical stock · optional metadata', 'The eight-column input does not provide current stock. Unavailable stock values remain N/A and do not affect required pallets.');
           formula(history, 'Current stock', planning.stockQty == null ? 'N/A · stock quantity was not provided.' : `${n(planning.stockQty)} stock parts ÷ ${n(planning.partsPerPallet)} parts/pallet`, planning.currentPallets == null ? 'N/A' : `${n(planning.currentPallets)} pallets`);
           formula(history, 'Actual stock coverage', planning.actualCoverageDays == null ? 'N/A · stock quantity or positive consumption is unavailable.' : `${n(planning.stockQty)} stock parts ÷ ${n(planning.dailyConsumption)} parts/day`, planning.actualCoverageDays == null ? 'N/A' : `${n(planning.actualCoverageDays)} days`);
@@ -407,7 +413,7 @@
         if (!floor) floorSection.append(notice('Floor storage cannot be calculated. Review the validation errors above.', true));
         else {
           formula(floorSection, 'Maximum stacking by height', `FLOOR(${n(settings.maxFloorStackingHeight)} mm ÷ ${n(input.height)} mm)`, `${n(floor.maximumStacking)} pallets`);
-          formula(floorSection, 'Effective stacking', `MIN(${n(input.stacking)} allowed, ${n(floor.maximumStacking)} by height)`, `${n(floor.effectiveStacking)} pallets`);
+          formula(floorSection, 'Effective stacking', settings.stackabilityEnabled ? `MIN(${n(input.stacking)} allowed, ${n(floor.maximumStacking)} by height)` : 'Stackability is off: use 1 pallet high. The saved per-part factor is retained.', `${n(floor.effectiveStacking)} pallets`);
           formula(floorSection, 'Floor pallet positions', `CEILING(${n(result.requiredPallets)} pallets ÷ ${n(floor.effectiveStacking)})`, `${n(floor.positions)} positions`);
           formula(floorSection, 'Pallets per row · depth limit', settings.maxFloorRowDepth === 0
             ? 'Unrestricted row depth: one dedicated row holds all floor positions.'

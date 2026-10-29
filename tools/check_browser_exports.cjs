@@ -26,13 +26,17 @@ async function main() {
   assert.equal(setting('Gangway width'),4500);
   assert.equal(setting('Gangway allocation factor'),1);
   assert.equal(setting('Allocated gangway width (100%)'),4500);
+  assert.equal(setting('Stackability'),false);
   assert.equal(input.parts[0].qtyBox,20);assert.equal(input.parts[0].qtyOnPallet,40);
   assert.equal(input.parts[0].consumptionPerShift,500);assert.equal(input.parts[0].doh,5);
   assert.equal(input.parts[0].stockQty,null);assert.equal(input.parts[0].stacking,1);
   const floor=workbook.getWorksheet('Floor Pallet Calculations');
   const headers=floor.getRow(1).values.slice(1);
   const cell=name=>floor.getRow(2).getCell(headers.indexOf(name)+1).value;
-  assert.equal(cell('Rounded Pallets per Shift'),1);assert.equal(cell('Required Pallets'),10);
+  assert.equal(cell('Rounded Pallets per Shift (reference only)'),1);assert.equal(cell('Required Pallets'),10);
+  assert.equal(cell('Raw Pallets per Day (selected shifts)'),1.25);
+  assert.equal(cell('Planned Pallets per Day'),2);
+  assert.match(cell('Required Pallets Formula'),/40 × 2\) × 5\)/);
   assert.equal(cell('Formula Positions (Q / S, unrounded)'),10);
   assert.ok(Math.abs(cell('Formula Storage Base (m²)')-9.6)<1e-9);
   assert.equal(cell('Allocated Gangway Area (m²)'),54);
@@ -41,6 +45,6 @@ async function main() {
   floor.eachRow((row,index)=>{const value=row.getCell(floorStorageColumn).value;if(index>1&&typeof value==='number')floorStorageCents+=Math.round(value*100);});
   assert.ok(Math.abs(floorStorageCents/100-comparison.getCell('B2').value)<1e-9,'Floor storage column must sum to the without-gangways KPI');
   assert.match(cell('Floor With Gangways Formula'),/SQM/);
-  console.log('Chrome downloads verified: exact eight-column shift template; five result sheets; per-shift rounding; 10 pallets; footprints 11.34, 63.60, 7.98, 33.63 m².');
+  console.log('Chrome downloads verified: exact eight-column shift template; five result sheets; selected-shift daily rounding; 10 pallets; footprints 11.34, 63.60, 7.98, 33.63 m².');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

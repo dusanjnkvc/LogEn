@@ -245,6 +245,24 @@ class _DashboardState extends State<_Dashboard> {
     await _saveProject(current.copyWith(parts: parts));
   }
 
+  Future<void> _stacking(int index, String value) async {
+    final factor = int.tryParse(value.trim());
+    if (factor == null || factor < 1 || factor > 9007199254740991) {
+      return;
+    }
+    final current = _project;
+    if (!current.settings.stackabilityEnabled ||
+        current.parts[index].stacking == factor) {
+      return;
+    }
+    final parts = [...current.parts];
+    parts[index] = PartInput.fromJson({
+      ...parts[index].toJson(),
+      'stacking': factor,
+    });
+    await _saveProject(current.copyWith(parts: parts));
+  }
+
   Future<void> _newProject() async {
     final form = GlobalKey<FormState>();
     final controller = TextEditingController();
@@ -751,9 +769,81 @@ class _DashboardState extends State<_Dashboard> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Required pallets = ROUNDUP(Consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet, 0) × DOH × shifts per day. '
-                'Round one shift first. Fractional final pallet totals are rounded up.',
+                'Required pallets = ROUNDUP(Consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet × shifts per day, 0) × DOH. '
+                'Round the selected shifts’ combined daily demand once, then apply DOH. Fractional final pallet totals are rounded up.',
                 style: TextStyle(color: _muted, fontSize: 11, height: 1.6),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        _Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Shifts & days on hand',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Multiply raw pallet demand by the selected shifts, round the daily total up, then apply DOH.',
+                style: TextStyle(color: _muted, fontSize: 12),
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<int>(
+                isExpanded: true,
+                key: ValueKey(
+                  'production-shifts-${project.id}-${project.settings.shiftsPerDay}',
+                ),
+                initialValue: project.settings.shiftsPerDay.clamp(1, 3),
+                decoration: const InputDecoration(
+                  labelText: 'Number of shifts per day',
+                ),
+                items: [
+                  for (final shifts in [1, 2, 3])
+                    DropdownMenuItem(
+                      value: shifts,
+                      child: Text(
+                        '$shifts ${shifts == 1 ? 'shift' : 'shifts'} per day',
+                      ),
+                    ),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) => _saveProject(
+                        project.copyWith(
+                          settings: project.settings.copyWith(
+                            shiftsPerDay: value,
+                          ),
+                        ),
+                      ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'DOH: ${_coverageLabel(project.settings)}',
+                style: const TextStyle(color: _muted, fontSize: 12),
+              ),
+              Material(
+                type: MaterialType.transparency,
+                child: CheckboxListTile(
+                  key: const Key('production-stackability'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Stackability'),
+                  subtitle: const Text(
+                    'Enable a stacking factor for every part. When off, use one pallet high; saved factors are retained.',
+                  ),
+                  value: project.settings.stackabilityEnabled,
+                  onChanged: _busy
+                      ? null
+                      : (value) => _saveProject(
+                          project.copyWith(
+                            settings: project.settings.copyWith(
+                              stackabilityEnabled: value,
+                            ),
+                          ),
+                        ),
+                ),
               ),
             ],
           ),
@@ -902,6 +992,8 @@ class _DashboardState extends State<_Dashboard> {
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DataTable(
+                    dataRowMinHeight: 64,
+                    dataRowMaxHeight: 94,
                     headingRowColor: const WidgetStatePropertyAll(
                       Color(0xFF212427),
                     ),
@@ -918,7 +1010,10 @@ class _DashboardState extends State<_Dashboard> {
                         label: Text('REQUIRED\nPALLETS'),
                         numeric: true,
                       ),
-                      DataColumn(label: Text('FLOOR\nSTACKING'), numeric: true),
+                      DataColumn(
+                        label: Text('STACKING\nFACTOR'),
+                        numeric: true,
+                      ),
                       DataColumn(
                         label: Text('FLOOR\nPOSITIONS'),
                         numeric: true,
@@ -989,11 +1084,46 @@ class _DashboardState extends State<_Dashboard> {
                           count(
                             row.isPlanningValid ? row.requiredPallets : null,
                           ),
-                          count(
-                            row.isFloorValid
-                                ? row.floor?.effectiveStacking
-                                : null,
-                          ),
+                          project.settings.stackabilityEnabled
+                              ? DataCell(
+                                  SizedBox(
+                                    width: 112,
+                                    child: TextFormField(
+                                      key: ValueKey(
+                                        'stacking-${row.input.partNumber}',
+                                      ),
+                                      initialValue: _quantity(
+                                        row.input.stacking,
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      decoration: InputDecoration(
+                                        labelText: 'Stacking factor',
+                                        helperText:
+                                            'Effective: ${row.floor?.effectiveStacking ?? '—'}',
+                                        contentPadding: const EdgeInsets.all(8),
+                                      ),
+                                      autovalidateMode:
+                                          AutovalidateMode.onUserInteraction,
+                                      validator: (value) {
+                                        final factor = int.tryParse(
+                                          value?.trim() ?? '',
+                                        );
+                                        return factor == null ||
+                                                factor < 1 ||
+                                                factor > 9007199254740991
+                                            ? 'Positive whole number'
+                                            : null;
+                                      },
+                                      onChanged: (value) =>
+                                          _stacking(entry.$1, value),
+                                    ),
+                                  ),
+                                )
+                              : count(
+                                  row.isFloorValid
+                                      ? row.floor?.effectiveStacking
+                                      : null,
+                                ),
                           count(row.isFloorValid ? row.floor?.positions : null),
                           count(row.isFloorValid ? row.floor?.rows : null),
                           size(
@@ -1071,8 +1201,8 @@ class _DashboardState extends State<_Dashboard> {
       ),
       const SizedBox(height: 8),
       const Text(
-        'Raw pallet demand stays decimal for reference. Round it up for one shift first, '
-        'then multiply by the selected DOH and shifts per day. The resulting whole pallets '
+        'Raw pallet demand stays decimal for reference. Multiply by selected shifts, round the daily total up, '
+        'then multiply by the selected DOH. The resulting whole pallets '
         'are used for both floor and rack storage.',
         style: TextStyle(color: _muted, fontSize: 12, height: 1.6),
       ),
@@ -1095,7 +1225,10 @@ class _DashboardState extends State<_Dashboard> {
             DataColumn(label: Text('PARTS PER PALLET'), numeric: true),
             DataColumn(label: Text('CONSUMPTION PER SHIFT'), numeric: true),
             DataColumn(label: Text('RAW PALLETS PER SHIFT'), numeric: true),
-            DataColumn(label: Text('ROUNDUP PALLETS PER SHIFT'), numeric: true),
+            DataColumn(
+              label: Text('RAW PALLETS FOR SELECTED SHIFTS'),
+              numeric: true,
+            ),
             DataColumn(label: Text('SHIFTS PER DAY'), numeric: true),
             DataColumn(label: Text('INPUT DOH'), numeric: true),
             DataColumn(label: Text('USED DOH'), numeric: true),
@@ -1117,12 +1250,12 @@ class _DashboardState extends State<_Dashboard> {
                 metric(p?.partsPerPallet),
                 metric(p?.consumptionPerShift, 'shift-$number'),
                 metric(p?.palletsPerShift, 'raw-pallets-$number'),
-                metric(p?.roundedPalletsPerShift, 'rounded-pallets-$number'),
+                metric(p?.palletsPerDay, 'daily-pallets-$number'),
                 metric(_project.settings.shiftsPerDay),
                 metric(row.input.doh),
                 metric(p?.targetCoverageDays, 'used-doh-$number'),
                 metric(p?.dailyConsumption, 'daily-$number'),
-                metric(p?.plannedPalletsPerDay),
+                metric(p?.plannedPalletsPerDay, 'rounded-pallets-$number'),
                 metric(
                   row.isPlanningValid ? row.requiredPallets : null,
                   'required-$number',
