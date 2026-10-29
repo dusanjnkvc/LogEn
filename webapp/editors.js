@@ -504,8 +504,33 @@
     }).then(() => undefined);
   }
 
+  function rackFitSummary(body, calculation) {
+    const sectionEl=section(body,'Required pallets · rack fit');
+    if(calculation.settingsErrors?.length) sectionEl.append(notice('Warehouse settings are invalid. Fit quantities are unavailable until they are corrected.',true));
+    const rows=calculation.results;
+    const fits=rows.filter(r=>r.isPlanningValid && r.isRackValid);
+    const nonFits=rows.filter(r=>r.rackFit==='NO');
+    const review=rows.filter(r=>!r.isPlanningValid || (!r.isRackValid && r.rackFit!=='NO'));
+    const sum=rs=>rs.reduce((n,r)=>n+(r.isPlanningValid?r.requiredPallets:0),0);
+    sectionEl.append($('p','rack-fit-quantities',`${display(sum(fits))} required pallets fit · ${display(sum(nonFits))} required pallets do not fit · ${display(sum(review))} known pallets need review`));
+    sectionEl.append($('p','muted',`${review.filter(r=>!r.isPlanningValid).length} input rows have unavailable quantities or duplicate part numbers. They are excluded from confirmed pallet counts. This checks required pallets against usable shelf dimensions, not extra free capacity in allocated racks.`));
+    const listed=nonFits.concat(review.filter(r=>r.rackFit!=='NO'));
+    if(!listed.length){sectionEl.append(notice('All required pallets with valid input fit the racks.'));return;}
+    sectionEl.append($('h4','','Non-fitting parts and inputs needing review'));
+    const viewport=$('div','table-scroll');viewport.style.maxHeight='340px';viewport.style.overflow='auto';
+    const table=$('table','data-table'),head=$('thead'),header=$('tr');
+    for(const name of ['Part Number','Required pallets','Rack status','Reason'])header.append($('th','',name));head.append(header);table.append(head);
+    const tbody=$('tbody');
+    for(const r of listed){const tr=$('tr');tr.append($('td','',r.input.partNumber||'(blank)'),$('td','',r.isPlanningValid?display(r.requiredPallets):'Unavailable'),$('td','',r.rackFit==='NO'?'Does not fit':'Needs review'),$('td','',r.errors.join(' ')||'Correct missing or invalid dimensions.'));tbody.append(tr);}
+    table.append(tbody);viewport.append(table);sectionEl.append(viewport);
+  }
+  function requiredPallets(calculation) {
+    return modal({title:'Required storage pallets · rack fit',subtitle:'Required pallet quantities, grouped by rack eligibility.',button:'Done',build(body){rackFitSummary(body,calculation);return {read:()=>true};}});
+  }
+
   function rackOverview(calculation, settings) {
     return modal({title:'Shared rack shelf overview', subtitle:'Different part numbers can share a shelf and a vertical bay.', button:'Done', build(body){
+      rackFitSummary(body,calculation);
       const plan=calculation.sharedRack;
       if(!plan?.available){body.append(notice(plan?.error||'Rack layout unavailable.',true));return {read:()=>true};}
       body.append($('p','',`${display(plan.quantity)} units · ${display(plan.bays)} vertical bays · ${display(settings.rackLevels)} levels · ${area(plan.withoutGangways)} without gangways`));
@@ -558,5 +583,5 @@
     });
   }
 
-  globalThis.LogEnEditors = Object.freeze({ settings, part, details, projectName, rackOverview });
+  globalThis.LogEnEditors = Object.freeze({ settings, part, details, projectName, rackOverview, requiredPallets });
 }());

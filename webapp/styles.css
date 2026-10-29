@@ -22,3 +22,5 @@
 #parts-table thead th {position: sticky; top: 0; z-index: 2; background: #191b1f;}
 #parts-table tfoot th, #parts-table tfoot td {position: sticky; bottom: 0; z-index: 2; background: #24262a; padding: 15px; white-space: nowrap; font-weight: 700;}
 #parts-table .table-footer {background: #191b1f;}
+
+.metric-drilldown{display:block;width:100%;text-align:left;background:transparent;border:0;color:inherit;padding:0;cursor:pointer;font:inherit}.metric-drilldown:hover span{text-decoration:underline}.metric-drilldown:focus-visible{outline:2px solid var(--yellow,#ffce24);outline-offset:5px;border-radius:3px}

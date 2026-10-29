@@ -32,6 +32,8 @@
 #parts-table thead th {position: sticky; top: 0; z-index: 2; background: #191b1f;}
 #parts-table tfoot th, #parts-table tfoot td {position: sticky; bottom: 0; z-index: 2; background: #24262a; padding: 15px; white-space: nowrap; font-weight: 700;}
 #parts-table .table-footer {background: #191b1f;}
+
+.metric-drilldown{display:block;width:100%;text-align:left;background:transparent;border:0;color:inherit;padding:0;cursor:pointer;font:inherit}.metric-drilldown:hover span{text-decoration:underline}.metric-drilldown:focus-visible{outline:2px solid var(--yellow,#ffce24);outline-offset:5px;border-radius:3px}
 </style>
 </head>
 <body>
@@ -1398,8 +1400,33 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }).then(() => undefined);
   }
 
+  function rackFitSummary(body, calculation) {
+    const sectionEl=section(body,'Required pallets · rack fit');
+    if(calculation.settingsErrors?.length) sectionEl.append(notice('Warehouse settings are invalid. Fit quantities are unavailable until they are corrected.',true));
+    const rows=calculation.results;
+    const fits=rows.filter(r=>r.isPlanningValid && r.isRackValid);
+    const nonFits=rows.filter(r=>r.rackFit==='NO');
+    const review=rows.filter(r=>!r.isPlanningValid || (!r.isRackValid && r.rackFit!=='NO'));
+    const sum=rs=>rs.reduce((n,r)=>n+(r.isPlanningValid?r.requiredPallets:0),0);
+    sectionEl.append($('p','rack-fit-quantities',`${display(sum(fits))} required pallets fit · ${display(sum(nonFits))} required pallets do not fit · ${display(sum(review))} known pallets need review`));
+    sectionEl.append($('p','muted',`${review.filter(r=>!r.isPlanningValid).length} input rows have unavailable quantities or duplicate part numbers. They are excluded from confirmed pallet counts. This checks required pallets against usable shelf dimensions, not extra free capacity in allocated racks.`));
+    const listed=nonFits.concat(review.filter(r=>r.rackFit!=='NO'));
+    if(!listed.length){sectionEl.append(notice('All required pallets with valid input fit the racks.'));return;}
+    sectionEl.append($('h4','','Non-fitting parts and inputs needing review'));
+    const viewport=$('div','table-scroll');viewport.style.maxHeight='340px';viewport.style.overflow='auto';
+    const table=$('table','data-table'),head=$('thead'),header=$('tr');
+    for(const name of ['Part Number','Required pallets','Rack status','Reason'])header.append($('th','',name));head.append(header);table.append(head);
+    const tbody=$('tbody');
+    for(const r of listed){const tr=$('tr');tr.append($('td','',r.input.partNumber||'(blank)'),$('td','',r.isPlanningValid?display(r.requiredPallets):'Unavailable'),$('td','',r.rackFit==='NO'?'Does not fit':'Needs review'),$('td','',r.errors.join(' ')||'Correct missing or invalid dimensions.'));tbody.append(tr);}
+    table.append(tbody);viewport.append(table);sectionEl.append(viewport);
+  }
+  function requiredPallets(calculation) {
+    return modal({title:'Required storage pallets · rack fit',subtitle:'Required pallet quantities, grouped by rack eligibility.',button:'Done',build(body){rackFitSummary(body,calculation);return {read:()=>true};}});
+  }
+
   function rackOverview(calculation, settings) {
     return modal({title:'Shared rack shelf overview', subtitle:'Different part numbers can share a shelf and a vertical bay.', button:'Done', build(body){
+      rackFitSummary(body,calculation);
       const plan=calculation.sharedRack;
       if(!plan?.available){body.append(notice(plan?.error||'Rack layout unavailable.',true));return {read:()=>true};}
       body.append($('p','',`${display(plan.quantity)} units · ${display(plan.bays)} vertical bays · ${display(settings.rackLevels)} levels · ${area(plan.withoutGangways)} without gangways`));
@@ -1452,7 +1479,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
   }
 
-  globalThis.LogEnEditors = Object.freeze({ settings, part, details, projectName, rackOverview });
+  globalThis.LogEnEditors = Object.freeze({ settings, part, details, projectName, rackOverview, requiredPallets });
 }());
 
 ;
@@ -1614,7 +1641,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const sum=key=>valid.reduce((total,p)=>total+(Number.isFinite(p[key])?p[key]:0),0);
     const field=(key,label,unit)=>`<label class="field"><span>${label}</span><div class="input-unit"><input type="text" inputmode="decimal" id="production-${key}" data-production="${key}" aria-label="${label}" value="${escape(productionDrafts[key] ?? (Number.isFinite(s[key])?String(s[key]):''))}" autocomplete="off"><span class="field-unit muted">${unit}</span></div></label>`;
     const totals=[['Consumption per shift',sum('shiftConsumption'),'parts / shift'],['Daily consumption',sum('dailyConsumption'),'parts / day'],['Planning demand',sum('plannedPalletsPerDay'),'pallets / day'],['Pallets per shift',sum('palletsPerShift'),'pallets / shift'],['Required storage pallets',c.totalRequiredPallets,'pallets']];
-    return `<section class="panel production-panel"><div class="panel-head"><div><h2>Shifts & days on hand</h2><p>Keep decimals through shifts and DOH; round up only the final pallets</p></div><button class="text-link" data-action="consumption">View calculation details ${icon('arrow')}</button></div><div class="production-controls shift-controls"><label class="field"><span>Number of shifts per day</span><select id="production-shiftsPerDay" data-production="shiftsPerDay" aria-label="Number of shifts per day">${![1,2,3].includes(s.shiftsPerDay)?`<option selected disabled value="${escape(s.shiftsPerDay)}">Invalid: choose 1–3</option>`:''}${[1,2,3].map(n=>`<option value="${n}" ${s.shiftsPerDay===n?'selected':''}>${n} ${n===1?'shift':'shifts'} per day</option>`).join('')}</select></label><label class="field"><span>DOH source</span><select id="production-coverageMode" data-production-coverage aria-label="DOH source">${[['input','Use DOH from each part'],['custom','Use DOH override for all parts']].map(([value,label])=>`<option value="${value}" ${s.coverageMode===value?'selected':''}>${label}</option>`).join('')}</select></label>${field('customCoverageDays','DOH override','days')}</div><div class="stackability-controls"><label class="toggle-label"><input id="production-stackabilityEnabled" type="checkbox" data-stackability aria-label="Stackability" ${s.stackabilityEnabled?'checked':''}>Stackability</label><span class="muted">${s.stackabilityEnabled?'Edit each part’s stacking factor in Shift consumption or Part details. Height limits still apply.':'Floor stacking is one pallet high. Enable Stackability to edit a factor for each part.'}</span><button class="text-link" data-action="parts">Edit stacking factors ${icon('arrow')}</button></div><div class="production-note"><strong>Required pallets = ROUNDUP(Consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet × shifts per day × DOH, 0).</strong><br>Editing the DOH override applies it to every part. Per-shift and daily demand retain decimals; only the final required quantity rounds up. L, W and H then determine the floor and rack space.</div><div class="production-totals">${totals.map(([label,value,unit],i)=>`<div><span>${label}</span><strong>${c.settingsErrors?.length?'—':i>=2?count(value):decimal(value)}</strong><small>${unit}</small></div>`).join('')}</div></section>`;
+    return `<section class="panel production-panel"><div class="panel-head"><div><h2>Shifts & days on hand</h2><p>Keep decimals through shifts and DOH; round up only the final pallets</p></div><button class="text-link" data-action="consumption">View calculation details ${icon('arrow')}</button></div><div class="production-controls shift-controls"><label class="field"><span>Number of shifts per day</span><select id="production-shiftsPerDay" data-production="shiftsPerDay" aria-label="Number of shifts per day">${![1,2,3].includes(s.shiftsPerDay)?`<option selected disabled value="${escape(s.shiftsPerDay)}">Invalid: choose 1–3</option>`:''}${[1,2,3].map(n=>`<option value="${n}" ${s.shiftsPerDay===n?'selected':''}>${n} ${n===1?'shift':'shifts'} per day</option>`).join('')}</select></label><label class="field"><span>DOH source</span><select id="production-coverageMode" data-production-coverage aria-label="DOH source">${[['input','Use DOH from each part'],['custom','Use DOH override for all parts']].map(([value,label])=>`<option value="${value}" ${s.coverageMode===value?'selected':''}>${label}</option>`).join('')}</select></label>${field('customCoverageDays','DOH override','days')}</div><div class="stackability-controls"><label class="toggle-label"><input id="production-stackabilityEnabled" type="checkbox" data-stackability aria-label="Stackability" ${s.stackabilityEnabled?'checked':''}>Stackability</label><span class="muted">${s.stackabilityEnabled?'Edit each part’s stacking factor in Shift consumption or Part details. Height limits still apply.':'Floor stacking is one pallet high. Enable Stackability to edit a factor for each part.'}</span><button class="text-link" data-action="parts">Edit stacking factors ${icon('arrow')}</button></div><div class="production-note"><strong>Required pallets = ROUNDUP(Consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet × shifts per day × DOH, 0).</strong><br>Editing the DOH override applies it to every part. Per-shift and daily demand retain decimals; only the final required quantity rounds up. L, W and H then determine the floor and rack space.</div><div class="production-totals">${totals.map(([label,value,unit],i)=>`<div>${label==='Required storage pallets'?'<button class="metric-drilldown" data-action="required-pallets" aria-label="Show required pallets rack fit">':''}<span>${label}</span><strong>${c.settingsErrors?.length?'—':i>=2?count(value):decimal(value)}</strong><small>${unit}</small>${label==='Required storage pallets'?'</button>':''}</div>`).join('')}</div></section>`;
   }
   function coverageCell(p) {
     if(!p)return '—';
@@ -1795,6 +1822,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   document.addEventListener('click',async event=>{
     const b=event.target.closest('button');if(!b||busy)return;
     try{
+      if(b.dataset.action==='required-pallets')return E.requiredPallets(calc());
       if(b.dataset.action==='rack-overview')return E.rackOverview(calc(),project().settings);
       if(b.dataset.view)return go(b.dataset.view);
       if(b.dataset.mode){update({settings:{...project().settings,stockMode:b.dataset.mode}});return;}

@@ -81,3 +81,5 @@ Rack warehouse floor m² includes structural length and depth: bays × (usable s
 Rack with gangways follows the floor allocation rule: rack storage area plus a half-shared gangway strip along total bay frontage. Legacy rack pitch is no longer used.
 
 Click a unit in the shared rack shelf diagram (or focus it and press Enter/Space) to show its PN, bay, shelf, box number, coordinates and placed dimensions. This only selects a diagram position and does not change inventory.
+
+Click Required storage pallets to inspect required pallet counts that fit racks, do not fit, or need input review. The rack icon overview includes the same summary and a PN/quantity list for non-fitting and unresolved inputs. Unknown quantities and duplicate inputs are flagged instead of counted as zero or confirmed fit.
