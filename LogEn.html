@@ -438,6 +438,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return resultFor(input, errors, requiredParts, requiredPallets, floorResult, rack, planning);
   }
 
+  function sharedRackPlan(results, s) {
+    const shelves=[];
+    const rows=results.filter(r=>r.isRackValid).sort((a,b)=>b.input.length*b.input.width-a.input.length*a.input.width);
+    const quantity=rows.reduce((n,r)=>n+r.requiredPallets,0);
+    if(quantity>10000) return {available:false,error:'Shared rack preview supports up to 10,000 units.'};
+    for(const r of rows) for(let unit=0;unit<r.requiredPallets;unit++) {
+      let best=null;
+      for(let shelf=0;shelf<shelves.length;shelf++) shelves[shelf].free.forEach((rect,index)=>{
+        for(const [w,d] of [[r.input.length,r.input.width],[r.input.width,r.input.length]])
+          if(w<=rect.w && d<=rect.d) { const score=rect.w*rect.d-w*d; if(!best||score<best.score)best={shelf,index,w,d,score}; }
+      });
+      if(!best){shelves.push({free:[{x:0,y:0,w:s.rackSlotLength,d:s.rackSlotDepth}],placements:[]});best={shelf:shelves.length-1,index:0,w:r.input.length,d:r.input.width};if(best.w>s.rackSlotLength||best.d>s.rackSlotDepth)[best.w,best.d]=[best.d,best.w];}
+      const sh=shelves[best.shelf],rect=sh.free.splice(best.index,1)[0];
+      sh.placements.push({partNumber:r.input.partNumber,x:rect.x,y:rect.y,length:best.w,depth:best.d});
+      if(rect.w>best.w)sh.free.push({x:rect.x+best.w,y:rect.y,w:rect.w-best.w,d:best.d});
+      if(rect.d>best.d)sh.free.push({x:rect.x,y:rect.y+best.d,w:rect.w,d:rect.d-best.d});
+    }
+    const bays=ceilDivide(shelves.length,s.rackLevels),bayArea=s.rackSlotLength*s.rackSlotDepth/1000000;
+    const occupied=rows.reduce((n,r)=>n+r.requiredPallets*r.input.length*r.input.width/1000000,0),available=bays*bayArea*s.rackLevels;
+    return {available:true,shelves,bays,quantity,withoutGangways:bays*bayArea,withGangways:bays*s.rackPitch*s.gangwayWidth/2000000,occupied,availableShelfArea:available,unused:Math.max(0,available-occupied),utilization:available>0?occupied/available*100:null};
+  }
   function calculateProject(parts, settings) {
     const s = { ...createDefaultSettings(), ...settings };
     const settingsErrors = validateSettings(s);
@@ -487,6 +508,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     };
     project.rackUtilizationPercent = project.rackAvailableShelfArea > 0 ? project.rackOccupiedShelfArea / project.rackAvailableShelfArea * 100 : null;
     project.rackUnusedPercent = project.rackUtilizationPercent === null ? null : 100-project.rackUtilizationPercent;
+    const shared = settingsErrors.length ? {available:false,error:'Correct warehouse settings first.'} : sharedRackPlan(results,s);
+    project.sharedRack = shared;
+    if(shared.available){
+      project.totalRackBays=shared.bays;
+      project.totalRackRuns=ceilDivide(shared.bays, floor(s.maxRackRunLength/(s.rackSlotLength+s.rackStructuralLength)));
+      project.rackWithoutGangways=shared.withoutGangways;project.rackWithGangways=shared.withGangways;project.rackGangwayArea=shared.withGangways;
+      project.rackAvailableShelfArea=shared.availableShelfArea;project.rackOccupiedShelfArea=shared.occupied;
+      project.rackUnusedShelfArea=shared.unused;project.rackUnusedPerLevel=shared.unused/s.rackLevels;
+      project.rackUtilizationPercent=shared.utilization;project.rackUnusedPercent=shared.utilization===null?null:100-shared.utilization;
+    }
     project.savingWithoutGangways = project.floorWithoutGangways - project.rackWithoutGangways;
     project.savingWithGangways = project.floorWithGangways - project.rackWithGangways;
     project.savingWithoutGangwaysPercent = project.floorWithoutGangways === 0 ? null :
@@ -721,6 +752,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       });
 
 
+      add(rack, []);
+      add(rack, ['Shared rack allocation', calculation.sharedRack?.available ? 'Dashboard totals use shared PN shelves; the preceding part rows are standalone estimates.' : 'Shared allocation unavailable; standalone totals used.'], 'header');
+      if (calculation.sharedRack?.available) {
+        add(rack, ['Physical bays', calculation.sharedRack.bays]);
+        add(rack, ['Shared rack net m²', calculation.sharedRack.withoutGangways]);
+        add(rack, ['Bay', 'Shelf', 'Part Number', 'X (mm)', 'Y (mm)', 'Unit length (mm)', 'Unit depth (mm)'], 'header');
+        calculation.sharedRack.shelves.forEach((shelf,i) => shelf.placements.forEach(p => add(rack, [Math.floor(i/project.settings.rackLevels)+1, i%project.settings.rackLevels+1,p.partNumber,p.x,p.y,p.length,p.depth])));
+      }
       const comparison = workbook.addWorksheet('Warehouse Comparison');
       add(comparison, ['LogEn — ' + project.name, 'Footprint (m²)'], 'header');
       const available = !calculation.settingsErrors?.length;
@@ -884,7 +923,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function rackDiagram(result, settings) {
     const rack = result.rack, input = result.input;
     const wrapper = $('div', 'rack-diagram');
-    wrapper.append($('h4', '', 'Rack views · gangways excluded'));
+    wrapper.append($('h4', '', 'Standalone part rack views · gangways excluded'));
     wrapper.append($('p', 'muted', `${display(result.requiredPallets)} units · ${display(rack.bays)} vertical bays · ${display(rack.levels)} usable levels · ${area(rack.withoutGangways)} floor footprint`));
     if (!rack.bays) { wrapper.append($('p', 'muted', 'No rack bays required.')); return wrapper; }
     const bays = Math.min(rack.bays, 3), levels = Math.min(rack.levels, 8);
@@ -1289,7 +1328,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return modal({
       eyebrow: 'PART CALCULATION',
       title: input.partNumber || 'Unnamed part number',
-      subtitle: 'Dedicated floor rows and rack bays · both scenarios use the same inventory.',
+      subtitle: 'Per-part standalone estimate. Dashboard rack totals use shared shelves across PNs.',
       button: 'Done',
       cancel: false,
       build(body) {
@@ -1354,6 +1393,25 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }).then(() => undefined);
   }
 
+  function rackOverview(calculation, settings) {
+    return modal({title:'Shared rack shelf overview', subtitle:'Different part numbers can share a shelf and a vertical bay.', button:'Done', build(body){
+      const plan=calculation.sharedRack;
+      if(!plan?.available){body.append(notice(plan?.error||'Rack layout unavailable.',true));return {read:()=>true};}
+      body.append($('p','',`${display(plan.quantity)} units · ${display(plan.bays)} vertical bays · ${display(settings.rackLevels)} levels · ${area(plan.withoutGangways)} without gangways`));
+      body.append(notice('Feasible shelf packing estimate, not a guaranteed optimum. All units fit usable length/depth/height. No stacking inside a shelf. Part-level diagrams show standalone estimates; this overview and dashboard use shared allocation.'));
+      const limit=Math.min(plan.shelves.length,100);
+      for(let i=0;i<limit;i++){
+        const shelf=plan.shelves[i],card=$('section','editor-section');
+        card.append($('h3','',`Bay ${Math.floor(i/settings.rackLevels)+1} · shelf ${i%settings.rackLevels+1}`));
+        const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${settings.rackSlotLength} ${settings.rackSlotDepth}`);svg.setAttribute('role','img');svg.setAttribute('aria-label','Top view of shared shelf '+(i+1));svg.style.cssText='width:100%;max-height:240px;background:#202329;border:2px solid #ffce24';
+        for(const box of shelf.placements){const rect=document.createElementNS(svg.namespaceURI,'rect');for(const [k,v] of Object.entries({x:box.x,y:box.y,width:box.length,height:box.depth,fill:'#ffce24',stroke:'#111','stroke-width':10}))rect.setAttribute(k,String(v));const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=box.partNumber;rect.append(title);svg.append(rect);}
+        card.append(svg);const counts=new Map();shelf.placements.forEach(p=>counts.set(p.partNumber,(counts.get(p.partNumber)||0)+1));card.append($('p','muted',[...counts].map(([pn,n])=>pn+' × '+n).join(' · ')));body.append(card);
+      }
+      body.append($('p','muted',`Top views, gangways excluded. Showing ${limit} of ${plan.shelves.length} occupied shelves; totals include all units. Unused shelf surface: ${area(plan.unused)}; utilization: ${display(plan.utilization)}%. Empty levels in the final bay remain reserved.`));
+      return {read:()=>true};
+    }});
+  }
+
   function projectName(initial = '') {
     return modal({
       title: initial ? 'Rename warehouse project' : 'New warehouse project',
@@ -1366,7 +1424,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
   }
 
-  globalThis.LogEnEditors = Object.freeze({ settings, part, details, projectName });
+  globalThis.LogEnEditors = Object.freeze({ settings, part, details, projectName, rackOverview });
 }());
 
 ;
@@ -1507,7 +1565,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return '';
   }
   function kpi(title, value, rack, allocated, unavailable) {
-    return `<article class="kpi-card ${!rack ? 'accent' : ''}"><div class="kpi-top"><span class="kpi-icon ${rack ? 'rack' : ''}">${icon(rack ? 'rack' : 'box')}</span><span class="kpi-tag">${allocated ? 'ALLOCATED FOOTPRINT' : 'STORAGE ONLY'}</span></div><h2>${title}</h2><div class="kpi-value">${unavailable ? '—' : area(value)}<small>m²</small></div><div class="kpi-description">${allocated ? (rack ? 'Rack quantity × pitch × gangway metres ÷ 2000' : 'GS net + half-shared gangway allocation') : rack ? 'Ground area · all rack levels included' : 'Sum of Floor storage m²'}</div></article>`;
+    return `<article class="kpi-card ${!rack ? 'accent' : ''}"><div class="kpi-top"><button class="kpi-icon ${rack ? 'rack' : ''}" data-action="${rack?'rack-overview':'parts'}" aria-label="${rack?'Open shared rack shelf overview':'Open part details'}">${icon(rack ? 'rack' : 'box')}</button><span class="kpi-tag">${allocated ? 'ALLOCATED FOOTPRINT' : 'STORAGE ONLY'}</span></div><h2>${title}</h2><div class="kpi-value">${unavailable ? '—' : area(value)}<small>m²</small></div><div class="kpi-description">${allocated ? (rack ? 'Rack quantity × pitch × gangway metres ÷ 2000' : 'GS net + half-shared gangway allocation') : rack ? 'Ground area · all rack levels included' : 'Sum of Floor storage m²'}</div></article>`;
   }
   function savingsItem(label, value, percent) {
     const unavailable = typeof value !== 'number' || !Number.isFinite(value);
@@ -1568,7 +1626,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       `<div class="context-strip"><div class="source-info"><span class="file-icon">${p.sourceName?.endsWith('.xlsx') ? 'XLSX' : 'DATA'}</span><div><strong>${escape(source)} ${source === 'Example inventory' ? '<span class="badge" style="margin-left:7px">SAMPLE DATA</span>' : ''}</strong><small>${count(p.parts.length)} part numbers · Updated ${escape(date)} · ${escape(p.name)}</small></div></div><span class="source-check">${icon(c.invalidCount ? 'info' : 'check')}${c.invalidCount ? `${c.invalidCount} need attention` : 'All parts validated'}</span><button class="btn btn-ghost" data-action="export">${icon('download')}Export results</button></div>` +
       coverageBanner(c)+
       `<div class="mode-toolbar"><div class="section-label">Footprint comparison<span>Same required pallets for floor and racks</span></div><span class="badge">${count(p.settings.shiftsPerDay)} shifts/day · ${escape(coverageTargetLabel(p.settings))}</span></div>` +
-      `<div class="kpi-grid">${kpi('PALLETS — WITHOUT GANGWAYS',values[0],false,false,unavailable)}${kpi('PALLETS — WITH GANGWAYS',values[1],false,true,unavailable)}${kpi('RACKS — WITHOUT GANGWAYS',values[2],true,false,unavailable)}${kpi('RACKS — WITH GANGWAYS',values[3],true,true,unavailable)}</div>` +productionPanel(c)+
+      `<div class="kpi-grid">${kpi('PALLETS — WITHOUT GANGWAYS',values[0],false,false,unavailable)}${kpi('PALLETS — WITH GANGWAYS',values[1],false,true,unavailable)}${kpi('RACKS — WITHOUT GANGWAYS',values[2],true,false,unavailable)}${kpi('RACKS — WITH GANGWAYS',values[3],true,true,unavailable)}</div>` +productionPanel(c)+(c.sharedRack&&!c.sharedRack.available?`<div class="notice error">${escape(c.sharedRack.error)} Rack figures use standalone estimates.</div>`:'')+
       `<div class="two-col"><section class="panel"><div class="panel-head"><div><h2>Floor vs. rack storage</h2><p>Compare the four footprint scenarios</p></div><span class="unit-tag">m²</span></div><div class="chart" role="img" aria-label="Footprint comparison: ${values.map(area).join(', ')} square meters"><div style="display:${unavailable ? 'block' : 'none'}" class="notice error">Correct warehouse settings to calculate footprints.</div>${chartLabels.map((r,i) => `<div class="chart-row"><div class="chart-label">${r[0]}<small>${r[1]}</small></div><div class="chart-track"><div class="chart-bar ${r[2]}" style="width:${unavailable ? 0 : values[i]/max*100}%"></div></div><span class="chart-number">${unavailable ? '—' : area(values[i])}</span></div>`).join('')}</div><div class="chart-legend"><span><i class="legend-dot"></i>Floor pallets</span><span><i class="legend-dot rack"></i>Pallet racks</span><span>Striped = allocated gangways included</span></div></section><section class="panel savings-panel"><div class="panel-head"><div><h2>Space savings with racks</h2><p>Floor footprint minus rack footprint</p></div>${icon('chart')}</div>${c.results.some(r=>r.isFloorValid!==r.isRackValid)?'<div class="notice">Floor and rack totals cover different parts; savings compare partial inventories.</div>':''}<div class="saving-items">${savingsItem('WITHOUT GANGWAYS',unavailable ? null : c.savingWithoutGangways,unavailable ? null : c.savingWithoutGangwaysPercent)}${savingsItem('WITH ALLOCATED GANGWAYS',unavailable ? null : c.savingWithGangways,unavailable ? null : c.savingWithGangwaysPercent)}</div></section></div>` +
       `<section class="panel stats-panel"><div class="panel-head"><h2>Warehouse at a glance</h2><button class="text-link" data-action="settings">Configure warehouse ${icon('settings')}</button></div><div class="stats-grid">${stats.map(([label,value,unit],i) => `<div class="stat"><span class="stat-label">${label}</span><span class="stat-value">${unavailable && i > 0 ? '—' : unit ? area(value) : count(value)}${unit ? `<small>${unit}</small>` : ''}</span>${i===0 && c.invalidCount ? `<span class="badge error">${c.invalidCount} invalid</span>` : ''}</div>`).join('')}</div></section>` +
       `<div class="allocation-note">${icon('info')}<span>GS net reserves lane depth × lane width × lane count. Lane depth is the deepest occupied row; row count, stacking and the depth limit (0 = unrestricted) are preserved. Physical gangway width: ${count(p.settings.gangwayWidth)} mm. GS allocated adds half a shared gangway. PR net uses whole vertical bays × usable shelf length × depth; PR allocated uses rack quantity × pitch × gangway metres / 2000 without adding PR net. These are Excel-style allocations, not a physical aisle layout.</span></div>` +
@@ -1594,7 +1652,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const rows = indexed.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
     if (!c.results.length) { $('parts-table').innerHTML=emptyInventory(); return; }
     const headers = ['Part number','Required pallets','Floor stacking','Floor positions','Floor rows','Floor storage m²','Floor allocated m²','Rack Fit','Boxes per Rack Slot','Rack levels','Required Rack Bays','Rack runs','Rack SQM Without Gangways','Rack allocated m²','Unused Rack Surface (m²)','Rack Utilization (%)','Input details','Validation','Actions'];
-    $('parts-table').innerHTML = `<div class="rack-fit-summary notice">Rack shelf fit check: ${count(c.nonFittingPallets)} required rack units across ${count(c.nonFittingPartCount)} part numbers do NOT fit. ${count(c.nonFittingUnknownQuantity)} non-fitting part numbers have unavailable pallet quantities. Fit checks usable shelf length, depth and height in both horizontal orientations. Each Required storage pallet is one rack unit. Missing dimensions show N/A.<br>Unused shelf surface: ${area(c.rackUnusedShelfArea)} m² · Available: ${area(c.rackAvailableShelfArea)} m² · Occupied: ${area(c.rackOccupiedShelfArea)} m² · Overall utilization: ${area(c.rackUtilizationPercent)}%. Shelf waste is not warehouse floor space.</div><div class="table-scroll"><table class="data-table"><thead><tr>${headers.map((h,i)=>`<th class="${i>0&&i<13?'numeric':''}">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(({r,index}) => {
+    $('parts-table').innerHTML = `<div class="rack-fit-summary notice">Rack shelf fit check: ${count(c.nonFittingPallets)} required rack units across ${count(c.nonFittingPartCount)} part numbers do NOT fit. ${count(c.nonFittingUnknownQuantity)} non-fitting part numbers have unavailable pallet quantities. Fit checks usable shelf length, depth and height in both horizontal orientations. Each Required storage pallet is one rack unit. Missing dimensions show N/A.<br>Unused shelf surface: ${area(c.rackUnusedShelfArea)} m² · Available: ${area(c.rackAvailableShelfArea)} m² · Occupied: ${area(c.rackOccupiedShelfArea)} m² · Overall utilization: ${area(c.rackUtilizationPercent)}%. Shelf waste is not warehouse floor space. ${c.sharedRack?.available?'Rack totals share shelves across PNs; part rows show standalone rack estimates.':'Shared layout unavailable; totals use standalone estimates. Open the rack overview for details.'}</div><div class="table-scroll"><table class="data-table"><thead><tr>${headers.map((h,i)=>`<th class="${i>0&&i<13?'numeric':''}">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(({r,index}) => {
       const numbers = [count(r.isPlanningValid?r.requiredPallets:null),count(r.isFloorValid?r.floor?.effectiveStacking:null),count(r.isFloorValid?r.floor?.positions:null),count(r.isFloorValid?r.floor?.rows:null),area(r.isFloorValid?r.floor?.storageArea:null),area(r.isFloorValid?r.floor?.withGangways:null),r.rackFit||'N/A',count(r.isRackValid?r.rack?.palletsPerSlot:r.rackFit==='NO'?0:null),count(r.isRackValid?r.rack?.levels:null),count(r.isRackValid?r.rack?.bays:r.rackFit==='NO'?0:null),count(r.isRackValid?r.rack?.runs:null),area(r.isRackValid?r.rack?.withoutGangways:null),area(r.isRackValid?r.rack?.withGangways:null),area(r.isRackValid?r.rack?.unusedShelfArea:null),area(r.isRackValid?r.rack?.utilizationPercent:null)];
       return `<tr><td><button class="part-link" data-detail="${index}">${icon('box')}${escape(r.input.partNumber || '(blank part number)')}</button></td>${numbers.map((n,i)=>`<td class="numeric">${i===1?stackingControl(r,index):n}</td>`).join('')}<td><span>${count(r.input.qtyBox)} parts/box × ${count(r.input.qtyOnPallet)} boxes/pallet</span><br><small class="muted">${decimal(r.input.consumptionPerShift)} parts/shift · ${decimal(r.input.doh)} input DOH<br>${count(r.input.length)} × ${count(r.input.width)} × ${count(r.input.height)} mm</small></td><td class="${r.isValid?'':'invalid-cell'}">${r.isValid ? '<span class="badge good">Validated</span>' : escape(r.errors.join(' '))}</td><td><button class="icon-btn" data-edit="${index}" title="Edit ${escape(r.input.partNumber)}" aria-label="Edit ${escape(r.input.partNumber)}">${icon('edit')}</button><button class="icon-btn" data-delete="${index}" title="Delete ${escape(r.input.partNumber)}" aria-label="Delete ${escape(r.input.partNumber)}">${icon('trash')}</button></td></tr>`;
     }).join('') || '<tr><td colspan="19" style="text-align:center;padding:35px">No matching part numbers.</td></tr>'}</tbody><tfoot><tr><th>Whole project totals</th><td>${count(c.totalRequiredPallets)}</td><td></td><td>${count(c.totalFloorPositions)}</td><td>${count(c.totalFloorRows)}</td><td>${area(c.floorWithoutGangways)}</td><td>${area(c.floorWithGangways)}</td><td></td><td></td><td></td><td>${count(c.totalRackBays)}</td><td>${count(c.totalRackRuns)}</td><td>${area(c.rackWithoutGangways)}</td><td>${area(c.rackWithGangways)}</td><td>${area(c.rackUnusedShelfArea)}</td><td>${area(c.rackUtilizationPercent)}</td><td colspan="3"></td></tr></tfoot></table></div><div class="table-footer"><span>${count(indexed.length)} matching part numbers · All areas in m², shown to two decimals</span><span class="project-floor-total">Whole project Floor storage m²: ${c.settingsErrors?.length?'—':area(c.floorWithoutGangways)} m²</span><div class="pagination"><button data-page="-1" ${page===0?'disabled':''}>Previous</button><span>${page+1} / ${pages}</span><button data-page="1" ${page===pages-1?'disabled':''}>Next</button></div></div>`;
@@ -1709,6 +1767,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   document.addEventListener('click',async event=>{
     const b=event.target.closest('button');if(!b||busy)return;
     try{
+      if(b.dataset.action==='rack-overview')return E.rackOverview(calc(),project().settings);
       if(b.dataset.view)return go(b.dataset.view);
       if(b.dataset.mode){update({settings:{...project().settings,stockMode:b.dataset.mode}});return;}
       if(b.dataset.detail!==undefined)return E.details(calc().results[Number(b.dataset.detail)],project().settings);

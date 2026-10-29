@@ -31,7 +31,7 @@
   function rackDiagram(result, settings) {
     const rack = result.rack, input = result.input;
     const wrapper = $('div', 'rack-diagram');
-    wrapper.append($('h4', '', 'Rack views · gangways excluded'));
+    wrapper.append($('h4', '', 'Standalone part rack views · gangways excluded'));
     wrapper.append($('p', 'muted', `${display(result.requiredPallets)} units · ${display(rack.bays)} vertical bays · ${display(rack.levels)} usable levels · ${area(rack.withoutGangways)} floor footprint`));
     if (!rack.bays) { wrapper.append($('p', 'muted', 'No rack bays required.')); return wrapper; }
     const bays = Math.min(rack.bays, 3), levels = Math.min(rack.levels, 8);
@@ -436,7 +436,7 @@
     return modal({
       eyebrow: 'PART CALCULATION',
       title: input.partNumber || 'Unnamed part number',
-      subtitle: 'Dedicated floor rows and rack bays · both scenarios use the same inventory.',
+      subtitle: 'Per-part standalone estimate. Dashboard rack totals use shared shelves across PNs.',
       button: 'Done',
       cancel: false,
       build(body) {
@@ -501,6 +501,25 @@
     }).then(() => undefined);
   }
 
+  function rackOverview(calculation, settings) {
+    return modal({title:'Shared rack shelf overview', subtitle:'Different part numbers can share a shelf and a vertical bay.', button:'Done', build(body){
+      const plan=calculation.sharedRack;
+      if(!plan?.available){body.append(notice(plan?.error||'Rack layout unavailable.',true));return {read:()=>true};}
+      body.append($('p','',`${display(plan.quantity)} units · ${display(plan.bays)} vertical bays · ${display(settings.rackLevels)} levels · ${area(plan.withoutGangways)} without gangways`));
+      body.append(notice('Feasible shelf packing estimate, not a guaranteed optimum. All units fit usable length/depth/height. No stacking inside a shelf. Part-level diagrams show standalone estimates; this overview and dashboard use shared allocation.'));
+      const limit=Math.min(plan.shelves.length,100);
+      for(let i=0;i<limit;i++){
+        const shelf=plan.shelves[i],card=$('section','editor-section');
+        card.append($('h3','',`Bay ${Math.floor(i/settings.rackLevels)+1} · shelf ${i%settings.rackLevels+1}`));
+        const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${settings.rackSlotLength} ${settings.rackSlotDepth}`);svg.setAttribute('role','img');svg.setAttribute('aria-label','Top view of shared shelf '+(i+1));svg.style.cssText='width:100%;max-height:240px;background:#202329;border:2px solid #ffce24';
+        for(const box of shelf.placements){const rect=document.createElementNS(svg.namespaceURI,'rect');for(const [k,v] of Object.entries({x:box.x,y:box.y,width:box.length,height:box.depth,fill:'#ffce24',stroke:'#111','stroke-width':10}))rect.setAttribute(k,String(v));const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=box.partNumber;rect.append(title);svg.append(rect);}
+        card.append(svg);const counts=new Map();shelf.placements.forEach(p=>counts.set(p.partNumber,(counts.get(p.partNumber)||0)+1));card.append($('p','muted',[...counts].map(([pn,n])=>pn+' × '+n).join(' · ')));body.append(card);
+      }
+      body.append($('p','muted',`Top views, gangways excluded. Showing ${limit} of ${plan.shelves.length} occupied shelves; totals include all units. Unused shelf surface: ${area(plan.unused)}; utilization: ${display(plan.utilization)}%. Empty levels in the final bay remain reserved.`));
+      return {read:()=>true};
+    }});
+  }
+
   function projectName(initial = '') {
     return modal({
       title: initial ? 'Rename warehouse project' : 'New warehouse project',
@@ -513,5 +532,5 @@
     });
   }
 
-  globalThis.LogEnEditors = Object.freeze({ settings, part, details, projectName });
+  globalThis.LogEnEditors = Object.freeze({ settings, part, details, projectName, rackOverview });
 }());

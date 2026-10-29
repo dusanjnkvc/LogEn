@@ -219,6 +219,14 @@
       });
 
 
+      add(rack, []);
+      add(rack, ['Shared rack allocation', calculation.sharedRack?.available ? 'Dashboard totals use shared PN shelves; the preceding part rows are standalone estimates.' : 'Shared allocation unavailable; standalone totals used.'], 'header');
+      if (calculation.sharedRack?.available) {
+        add(rack, ['Physical bays', calculation.sharedRack.bays]);
+        add(rack, ['Shared rack net m²', calculation.sharedRack.withoutGangways]);
+        add(rack, ['Bay', 'Shelf', 'Part Number', 'X (mm)', 'Y (mm)', 'Unit length (mm)', 'Unit depth (mm)'], 'header');
+        calculation.sharedRack.shelves.forEach((shelf,i) => shelf.placements.forEach(p => add(rack, [Math.floor(i/project.settings.rackLevels)+1, i%project.settings.rackLevels+1,p.partNumber,p.x,p.y,p.length,p.depth])));
+      }
       const comparison = workbook.addWorksheet('Warehouse Comparison');
       add(comparison, ['LogEn — ' + project.name, 'Footprint (m²)'], 'header');
       const available = !calculation.settingsErrors?.length;

@@ -312,6 +312,27 @@
     return resultFor(input, errors, requiredParts, requiredPallets, floorResult, rack, planning);
   }
 
+  function sharedRackPlan(results, s) {
+    const shelves=[];
+    const rows=results.filter(r=>r.isRackValid).sort((a,b)=>b.input.length*b.input.width-a.input.length*a.input.width);
+    const quantity=rows.reduce((n,r)=>n+r.requiredPallets,0);
+    if(quantity>10000) return {available:false,error:'Shared rack preview supports up to 10,000 units.'};
+    for(const r of rows) for(let unit=0;unit<r.requiredPallets;unit++) {
+      let best=null;
+      for(let shelf=0;shelf<shelves.length;shelf++) shelves[shelf].free.forEach((rect,index)=>{
+        for(const [w,d] of [[r.input.length,r.input.width],[r.input.width,r.input.length]])
+          if(w<=rect.w && d<=rect.d) { const score=rect.w*rect.d-w*d; if(!best||score<best.score)best={shelf,index,w,d,score}; }
+      });
+      if(!best){shelves.push({free:[{x:0,y:0,w:s.rackSlotLength,d:s.rackSlotDepth}],placements:[]});best={shelf:shelves.length-1,index:0,w:r.input.length,d:r.input.width};if(best.w>s.rackSlotLength||best.d>s.rackSlotDepth)[best.w,best.d]=[best.d,best.w];}
+      const sh=shelves[best.shelf],rect=sh.free.splice(best.index,1)[0];
+      sh.placements.push({partNumber:r.input.partNumber,x:rect.x,y:rect.y,length:best.w,depth:best.d});
+      if(rect.w>best.w)sh.free.push({x:rect.x+best.w,y:rect.y,w:rect.w-best.w,d:best.d});
+      if(rect.d>best.d)sh.free.push({x:rect.x,y:rect.y+best.d,w:rect.w,d:rect.d-best.d});
+    }
+    const bays=ceilDivide(shelves.length,s.rackLevels),bayArea=s.rackSlotLength*s.rackSlotDepth/1000000;
+    const occupied=rows.reduce((n,r)=>n+r.requiredPallets*r.input.length*r.input.width/1000000,0),available=bays*bayArea*s.rackLevels;
+    return {available:true,shelves,bays,quantity,withoutGangways:bays*bayArea,withGangways:bays*s.rackPitch*s.gangwayWidth/2000000,occupied,availableShelfArea:available,unused:Math.max(0,available-occupied),utilization:available>0?occupied/available*100:null};
+  }
   function calculateProject(parts, settings) {
     const s = { ...createDefaultSettings(), ...settings };
     const settingsErrors = validateSettings(s);
@@ -361,6 +382,16 @@
     };
     project.rackUtilizationPercent = project.rackAvailableShelfArea > 0 ? project.rackOccupiedShelfArea / project.rackAvailableShelfArea * 100 : null;
     project.rackUnusedPercent = project.rackUtilizationPercent === null ? null : 100-project.rackUtilizationPercent;
+    const shared = settingsErrors.length ? {available:false,error:'Correct warehouse settings first.'} : sharedRackPlan(results,s);
+    project.sharedRack = shared;
+    if(shared.available){
+      project.totalRackBays=shared.bays;
+      project.totalRackRuns=ceilDivide(shared.bays, floor(s.maxRackRunLength/(s.rackSlotLength+s.rackStructuralLength)));
+      project.rackWithoutGangways=shared.withoutGangways;project.rackWithGangways=shared.withGangways;project.rackGangwayArea=shared.withGangways;
+      project.rackAvailableShelfArea=shared.availableShelfArea;project.rackOccupiedShelfArea=shared.occupied;
+      project.rackUnusedShelfArea=shared.unused;project.rackUnusedPerLevel=shared.unused/s.rackLevels;
+      project.rackUtilizationPercent=shared.utilization;project.rackUnusedPercent=shared.utilization===null?null:100-shared.utilization;
+    }
     project.savingWithoutGangways = project.floorWithoutGangways - project.rackWithoutGangways;
     project.savingWithGangways = project.floorWithGangways - project.rackWithGangways;
     project.savingWithoutGangwaysPercent = project.floorWithoutGangways === 0 ? null :
