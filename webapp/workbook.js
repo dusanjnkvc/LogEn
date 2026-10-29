@@ -224,8 +224,8 @@
       if (calculation.sharedRack?.available) {
         add(rack, ['Physical bays', calculation.sharedRack.bays]);
         add(rack, ['Shared rack net m²', calculation.sharedRack.withoutGangways]);
-        add(rack, ['Bay', 'Shelf', 'Part Number', 'X (mm)', 'Y (mm)', 'Unit length (mm)', 'Unit depth (mm)'], 'header');
-        calculation.sharedRack.shelves.forEach((shelf,i) => shelf.placements.forEach(p => add(rack, [Math.floor(i/project.settings.rackLevels)+1, i%project.settings.rackLevels+1,p.partNumber,p.x,p.y,p.length,p.depth])));
+        add(rack, ['Bay', 'Shelf', 'Part Number', 'Y (mm)', 'Unit length (mm)', 'Unit depth (mm)'], 'header');
+        calculation.sharedRack.shelves.forEach((shelf,i) => shelf.placements.forEach(p => add(rack, [Math.floor(i/project.settings.rackLevels)+1, i%project.settings.rackLevels+1,p.partNumber,p.y,p.length,p.depth])));
       }
       const comparison = workbook.addWorksheet('Warehouse Comparison');
       add(comparison, ['LogEn — ' + project.name, 'Footprint (m²)'], 'header');
@@ -348,17 +348,17 @@
       const plan = calculation.sharedRack;
       add(layout, ['LogEn — shared rack layout: ' + project.name], 'header');
       add(layout, ['Required rack bays', plan?.available ? plan.bays : 'Unavailable', 'Rack storage m²', plan?.available ? plan.withoutGangways : null]);
-      add(layout, ['Shelf units use Required storage pallets. Coordinates are mm from the shelf origin. Different PNs may share shelves.']);
+      add(layout, ['Shelf units use Required storage pallets. Y is the depth position in mm from the shelf origin. Different PNs may share shelves.']);
       add(layout, ['Usable shelf L / D / H (mm)', s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, 'Levels', s.rackLevels, 'Between boxes allowance (mm)', s.betweenBoxesAllowance ?? 0]);
       add(layout, ['Feasible packing estimate; not a guaranteed optimum. Usable placement coordinates exclude structural allowances and gangways.']);
-      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'X (mm)', 'Y (mm)', 'Placed length (mm)', 'Placed depth (mm)'], 'header');
+      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'Y (mm)', 'Placed length (mm)', 'Placed depth (mm)'], 'header');
       if (plan?.available) {
-        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[Math.floor(i/s.rackLevels)+1,i%s.rackLevels+1,j+1,p.partNumber,1,p.x,p.y,p.length,p.depth])));
-        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:9}};
+        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[Math.floor(i/s.rackLevels)+1,i%s.rackLevels+1,j+1,p.partNumber,1,p.y,p.length,p.depth])));
+        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:8}};
       } else add(layout, [plan?.error || 'Rack layout unavailable. Correct settings and input errors.']);
       add(layout, []);add(layout, ['Non-fitting PNs and rows requiring review', 'Required pallets', 'Status'], 'header');
       calculation.results.filter(r=>!r.isRackValid||!r.isPlanningValid).forEach(r=>add(layout,[r.input.partNumber,r.isPlanningValid?r.requiredPallets:'Unavailable',r.rackFit==='NO'?'Does not fit':'Needs review',r.errors.join(' | ')]));
-      for(let i=1;i<=9;i++)layout.getColumn(i).width=i===4?30:24;
+      for(let i=1;i<=8;i++)layout.getColumn(i).width=i===4?30:24;
       workbook.views = [{ activeTab: 3, firstSheet: 0, visibility: 'visible' }];
       return new Uint8Array(await workbook.xlsx.writeBuffer());
     }
