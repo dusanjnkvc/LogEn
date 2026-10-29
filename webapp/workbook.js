@@ -205,7 +205,7 @@
       }
       for (let column = 1; column <= original.columnCount; column++) original.getColumn(column).width = column === 1 ? 27 : 22;
 
-      const floorHeaders = [...HEADERS, 'Allowed Floor Stacking', 'Status', 'Validation Errors', 'Required Parts', 'Required Pallets', 'Maximum Stacking by Height', 'Effective Floor Stacking', 'Floor Positions', 'Pallets Per Row', 'Required Floor Rows', 'Row Width (m)', 'Deepest Actual Occupied Row Depth (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', 'Full Row Actual Depth (m)', 'Last Row Actual Depth (m)', 'Last Row Pallets', 'Total Occupied Row Depth (m)', ...PLANNING_HEADERS, 'Formula Positions (Q / S, unrounded)', 'Formula Storage Base (m²)', 'Floor With Gangways Formula'];
+      const floorHeaders = [...HEADERS, 'Allowed Floor Stacking', 'Status', 'Validation Errors', 'Required Parts', 'Required Pallets', 'Maximum Stacking by Height', 'Effective Floor Stacking', 'Floor Positions', 'Pallets Per Row', 'Required Floor Rows', 'Row Width (m)', 'Deepest Actual Occupied Row Depth (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', 'Full Row Actual Depth (m)', 'Last Row Actual Depth (m)', 'Last Row Pallets', 'Total Occupied Row Depth (m)', ...PLANNING_HEADERS, 'Floor positions (whole)', 'Formula Storage Base (m²)', 'Floor With Gangways Formula'];
       const floor = table(workbook, 'Floor Pallet Calculations', floorHeaders, floorHeaders.map((header, index) => /\(m²\)|\(days\)|Consumption|Pallets per Day|equivalent/.test(header) ? index : -1).filter(index => index >= 0));
       calculation.results.forEach(result => {
         const value = result.floor;
@@ -265,7 +265,7 @@
         'Allocated footprints are planning estimates, not optimized physical warehouse designs. Count shared gangways once in an actual layout.',
         'Floor and rack totals include independently calculable rows. A rack fit error does not exclude a valid floor result, and a floor fit error does not exclude a valid rack result. Duplicate and invalid input rows remain listed but do not contribute.',
         'Negative savings mean racks require more floor area. N/A percentages have a zero floor denominator.',
-        'Pallets without gangways equals the sum of the two-decimal Floor storage m² contributions exported as Without Gangways (m²). This sums integer area cents; raw dimensions and formula intermediates retain precision.',
+        'Pallets without gangways equals the full-precision sum of Floor storage m² contributions exported as Without Gangways (m²). Full precision is summed internally; only displayed values round to two decimals.',
       ].forEach(line => add(comparison, [line]));
       add(comparison, []);
       add(comparison, ['Part shift rounding and DOH planning'], 'header');
