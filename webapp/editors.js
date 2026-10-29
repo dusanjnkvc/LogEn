@@ -521,9 +521,23 @@
       for(let i=start;i<end;i++){
         const shelf=plan.shelves[i],card=$('section','editor-section');
         card.append($('h3','',`Bay ${Math.floor(i/settings.rackLevels)+1} · shelf ${i%settings.rackLevels+1}`));
-        const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${settings.rackSlotLength} ${settings.rackSlotDepth}`);svg.setAttribute('role','img');svg.setAttribute('aria-label','Top view of shared shelf '+(i+1));svg.style.cssText='width:100%;max-height:240px;background:#202329;border:2px solid #ffce24';
-        for(const box of shelf.placements){const rect=document.createElementNS(svg.namespaceURI,'rect');for(const [k,v] of Object.entries({x:box.x,y:box.y,width:box.length,height:box.depth,fill:'#ffce24',stroke:'#111','stroke-width':10}))rect.setAttribute(k,String(v));const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=box.partNumber;rect.append(title);svg.append(rect);}
-        card.append(svg);const counts=new Map();shelf.placements.forEach(p=>counts.set(p.partNumber,(counts.get(p.partNumber)||0)+1));card.append($('p','muted',[...counts].map(([pn,n])=>pn+' × '+n).join(' · ')));shelfViews.append(card);
+        const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${settings.rackSlotLength} ${settings.rackSlotDepth}`);svg.setAttribute('role','img');svg.setAttribute('aria-label','Top view of shared shelf '+(i+1));svg.setAttribute('role','group');svg.style.cssText='width:100%;max-height:240px;background:#202329;border:2px solid #ffce24';
+        const selectedInfo=$('div','notice rack-box-info','Click a box to see its PN and shelf position.');
+        selectedInfo.setAttribute('role','status');selectedInfo.setAttribute('aria-live','polite');
+        let selectedRect=null;
+        for(const [boxIndex,box] of shelf.placements.entries()){
+          const rect=document.createElementNS(svg.namespaceURI,'rect');
+          for(const [k,v] of Object.entries({x:box.x,y:box.y,width:box.length,height:box.depth,fill:'#ffce24',stroke:'#111','stroke-width':10,role:'button',tabindex:0,'aria-label':`PN ${box.partNumber}, bay ${Math.floor(i/settings.rackLevels)+1}, shelf ${i%settings.rackLevels+1}, box ${boxIndex+1}`,'aria-pressed':'false'}))rect.setAttribute(k,String(v));
+          rect.style.cursor='pointer';
+          const selectBox=()=>{
+            if(selectedRect){selectedRect.setAttribute('stroke','#111');selectedRect.setAttribute('aria-pressed','false');}
+            selectedRect=rect;rect.setAttribute('stroke','#fff');rect.setAttribute('aria-pressed','true');
+            selectedInfo.textContent=`PN: ${box.partNumber} · Bay ${Math.floor(i/settings.rackLevels)+1} · Shelf ${i%settings.rackLevels+1} · Box ${boxIndex+1} · Position X ${display(box.x)} mm, Y ${display(box.y)} mm · ${display(box.length)} × ${display(box.depth)} mm`;
+          };
+          rect.addEventListener('click',selectBox);rect.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectBox();}});
+          const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=box.partNumber;rect.append(title);svg.append(rect);
+        }
+        card.append(svg,selectedInfo);const counts=new Map();shelf.placements.forEach(p=>counts.set(p.partNumber,(counts.get(p.partNumber)||0)+1));card.append($('p','muted',[...counts].map(([pn,n])=>pn+' × '+n).join(' · ')));shelfViews.append(card);
       }
       }
       baySelect.addEventListener('change',showBay);showBay();

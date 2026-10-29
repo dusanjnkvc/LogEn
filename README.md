@@ -79,3 +79,5 @@ Warehouse Settings → Rack structural allowances → Between boxes allowance (m
 Rack warehouse floor m² includes structural length and depth: bays × (usable shelf length + structural length allowance) × (usable shelf depth + structural depth allowance) / 1,000,000. Shelf capacity, utilization and unused shelf surface continue to use usable dimensions only. Example: 2700 × 1100 usable plus 150 × 200 structure = 2850 × 1300 = 3.705 m² per bay.
 
 Rack with gangways follows the floor allocation rule: rack storage area plus a half-shared gangway strip along total bay frontage. Legacy rack pitch is no longer used.
+
+Click a unit in the shared rack shelf diagram (or focus it and press Enter/Space) to show its PN, bay, shelf, box number, coordinates and placed dimensions. This only selects a diagram position and does not change inventory.
