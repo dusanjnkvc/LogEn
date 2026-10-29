@@ -24,3 +24,13 @@ assert.match(w.document.querySelector('.rack-fit-summary').textContent,/7 requir
 (async()=>{global.ExcelJS=w.ExcelJS;const S=require('../webapp/workbook.js');const bytes=await new S().exportBytes({name:'QA',parts:[p],settings:s},c);const book=new global.ExcelJS.Workbook();await book.xlsx.load(bytes);assert.ok(book.getWorksheet('Warehouse Comparison'));w.close();console.log('Targeted checks passed: four references, exact rack fit/rotation/N/A, exclusion/counts, table footer/Rack column, workbook export.');})().catch(e=>{console.error(e);process.exitCode=1;});
 
 for(const [shifts,doh,expected] of [[1,1,1],[2,1,1],[3,1,1],[2,10,4],[3,10,5]]) { const r=D.calculatePart({...p,consumptionPerShift:128,doh},{...s,shiftsPerDay:shifts});assert.equal(r.planning.palletsPerShift,0.16);assert.ok(Math.abs(r.planning.palletsPerDay-0.16*shifts)<1e-12);assert.equal(r.requiredPallets,expected); }
+
+{ const p={partNumber:'CLEARANCE',qtyBox:20,qtyOnPallet:40,consumptionPerShift:500,doh:5,length:1200,width:800,height:1000,stacking:1};
+const s=D.createDefaultSettings(),r=D.calculatePart(p,s),z=D.calculatePart(p,{...s,floorPalletClearance:0});
+assert.equal(r.floor.floorLength,1300);assert.equal(r.floor.floorWidth,900);
+assert.equal(r.floor.palletsPerRow,3);assert.equal(r.floor.rowWidth,0.9);assert.equal(r.floor.rowDepth,3.9);
+assert.equal(r.floor.withoutGangways,10.53);assert.equal(r.floor.withGangways,16.605);
+assert.deepEqual(r.rack,z.rack);assert.equal(r.requiredPallets,7);
+const u=D.calculatePart(p,{...s,maxFloorRowDepth:0});assert.equal(u.floor.rowDepth,9.1);
+assert.equal(D.calculatePart(p,{...s,maxFloorRowDepth:1299}).isFloorValid,false);
+console.log('Full-clearance checks passed: adjusted dimensions, row capacity, areas, unrestricted depth, fit boundary, unchanged racks/pallet demand.'); }

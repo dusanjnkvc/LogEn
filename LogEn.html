@@ -354,22 +354,23 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const maximumStacking = floor(s.maxFloorStackingHeight / input.height);
       const effectiveStacking = Math.min(s.stackabilityEnabled ? input.stacking : 1, maximumStacking);
       const positions = effectiveStacking >= 1 ? ceilDivide(requiredPallets, effectiveStacking) : 0;
+      const floorLength = input.length + s.floorPalletClearance;
+      const floorWidth = input.width + s.floorPalletClearance;
       const palletsPerRow = s.maxFloorRowDepth === 0 ? Math.max(positions, 1) :
-        floor((s.maxFloorRowDepth + s.floorPalletClearance) /
-        (input.length + s.floorPalletClearance));
+        floor(s.maxFloorRowDepth / floorLength);
       if (maximumStacking < 1)
         errors.push('Floor: loaded pallet height exceeds maximum floor stacking height.');
       if (palletsPerRow < 1)
         errors.push('Floor: pallet length cannot fit within the maximum row depth.');
       if (effectiveStacking >= 1 && palletsPerRow >= 1) {
         const rows = ceilDivide(positions, palletsPerRow);
-        const rowWidth = (input.width + s.floorPalletClearance) / 1000;
-        const occupiedDepth = n => n > 0 ? (n * input.length + (n - 1) * s.floorPalletClearance) / 1000 : 0;
+        const rowWidth = floorWidth / 1000;
+        const occupiedDepth = n => n > 0 ? n * floorLength / 1000 : 0;
         const lastRowPallets = rows > 0 ? positions - (rows - 1) * palletsPerRow : 0;
         const fullRowDepth = occupiedDepth(Math.min(positions, palletsPerRow));
         const lastRowDepth = occupiedDepth(lastRowPallets);
         const rowDepth = fullRowDepth;
-        const totalOccupiedDepth = (positions * input.length + Math.max(0, positions - rows) * s.floorPalletClearance) / 1000;
+        const totalOccupiedDepth = positions * floorLength / 1000;
         const withoutGangways = rowDepth * rowWidth * rows;
         const storageArea = withoutGangways;
         const formulaPositions = positions;
@@ -378,7 +379,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const withGangways = withoutGangways + gangwayArea;
         if (![withoutGangways, formulaPositions, formulaStorageArea, gangwayArea, withGangways].every(Number.isFinite))
           throw new Error('Floor area exceeds supported numeric precision.');
-        floorResult = { maximumStacking, effectiveStacking, positions,
+        floorResult = { floorLength, floorWidth, maximumStacking, effectiveStacking, positions,
           palletsPerRow, rows, rowWidth, rowDepth, totalOccupiedDepth, fullRowDepth,
           lastRowDepth, lastRowPallets, withoutGangways,
           storageArea, formulaPositions,
@@ -784,7 +785,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         ['Gangway width', s.gangwayWidth, 'mm; full configured width'],
         ['Gangway allocation factor', 1, '100% for both floor and rack footprints'],
         ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
-        ['Floor pallet clearance', s.floorPalletClearance, 'mm'],
+        ['Floor pallet clearance', s.floorPalletClearance, 'mm; full clearance added to both pallet L and W for ground storage only'],
         ['Floor storage total rounding', 'Sum of row areas rounded to two decimals', 'm²; independently valid floor rows, including rows with rack fit errors'],
         ['Rack surface allowance', s.rackSurfaceAllowance ?? 4.125, 'm²'], ['Rack pitch', s.rackPitch ?? 3300, 'mm'], ['Rack levels', s.rackLevels, 'levels'], ['Rack usable slot length', s.rackSlotLength, 'mm'],
         ['Rack usable slot depth', s.rackSlotDepth, 'mm'], ['Rack usable slot height', s.rackSlotHeight, 'mm'],
@@ -803,7 +804,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         'DOH mode input uses each part’s DOH; custom uses the project DOH override. No current stock quantity is required by the eight-column template.',
         'Stackability disabled uses floor stacking 1. When enabled, each part uses its saved stacking factor capped by the height limit. Saved per-part factors are retained when disabled.',
         'Floor stacking = MIN(Stackability enabled ? saved Stacking : 1, FLOOR(maximum floor stacking height / loaded pallet H)). Floor positions = CEILING(required pallets / effective stacking).',
-        'Pallets per row = FLOOR((maximum row depth LIMIT + clearance) / (pallet L + clearance)). Limit 0 means one unrestricted row per part. Rows = CEILING(floor positions / pallets per row).',
+        'Ground length = pallet L + clearance; ground width = pallet W + clearance. Pallets per row = FLOOR(maximum row depth LIMIT / ground length). Limit 0 means one unrestricted row per part. Rows = CEILING(floor positions / pallets per row).',
         'GS net = deepest occupied lane depth (mm) * lane width (mm) * lane count / 1000000; partial lanes reserve the same depth.',
         'GS with gangway = GS net + lane width (mm) * lanes * physical gangway (m) / 2000.',
         'Rack pallets per slot = FLOOR((slot length - frontage clearance) / (pallet frontage + frontage clearance)).',
@@ -1108,6 +1109,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         field(floorGrid, 'maxFloorRowDepth', 'Maximum floor row depth · 0 = unrestricted');
         field(floorGrid, 'gangwayWidth', 'Gangway width');
         field(floorGrid, 'floorPalletClearance', 'Floor pallet clearance');
+        floor.append($('p', 'muted formula-hint', 'Ground storage adds the full clearance to both pallet length and pallet width. Example: 100 mm changes 1200 × 800 to 1300 × 900 mm. Rack fit uses original dimensions.'));
         const gangwayHint = $('p', 'muted formula-hint');
         floor.append(gangwayHint);
         const rack = section(body, 'Pallet rack capacity', 'Usable slot dimensions exclude the rack structure. Clearances are checked independently.');
@@ -1251,9 +1253,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           formula(floorSection, 'Floor pallet positions', `CEILING(${n(result.requiredPallets)} pallets ÷ ${n(floor.effectiveStacking)})`, `${n(floor.positions)} positions`);
           formula(floorSection, 'Pallets per row · depth limit', settings.maxFloorRowDepth === 0
             ? 'Unrestricted row depth: one dedicated row holds all floor positions.'
-            : `FLOOR((${n(settings.maxFloorRowDepth)} + ${n(settings.floorPalletClearance)}) ÷ (${n(input.length)} + ${n(settings.floorPalletClearance)}))`, n(floor.palletsPerRow));
+            : `FLOOR(${n(settings.maxFloorRowDepth)} ÷ (${n(input.length)} + ${n(settings.floorPalletClearance)}))`, n(floor.palletsPerRow));
           formula(floorSection, 'Dedicated floor rows', `CEILING(${n(floor.positions)} ÷ ${n(floor.palletsPerRow)})`, `${n(floor.rows)} rows`);
-          formula(floorSection, 'Actual occupied floor row depth', `Sum of occupied row depths = (${n(floor.positions)} positions × ${n(input.length)} mm + (${n(floor.positions)} − ${n(floor.rows)}) gaps × ${n(settings.floorPalletClearance)} mm) / 1000\nDeepest row: ${n(floor.rowDepth)} m · last row: ${n(floor.lastRowPallets)} pallets / ${n(floor.lastRowDepth)} m`, `${n(floor.totalOccupiedDepth)} m total occupied row depth`);
+          formula(floorSection, 'Adjusted ground dimensions and occupied depth', `Length: ${n(input.length)} + ${n(settings.floorPalletClearance)} = ${n(floor.floorLength)} mm; width: ${n(input.width)} + ${n(settings.floorPalletClearance)} = ${n(floor.floorWidth)} mm. Total occupied depth = ${n(floor.positions)} × ${n(floor.floorLength)} / 1000 m`, `${n(floor.totalOccupiedDepth)} m`);
           formula(floorSection, 'A · Ground storage without gangway', `${n(floor.rowDepth * 1000)} mm lane depth × ${n(floor.rowWidth * 1000)} mm lane width × ${n(floor.rows)} lanes / 1,000,000`, area(floor.withoutGangways));
           formula(floorSection, 'B · Ground storage with gangway', `${n(floor.withoutGangways)} + (${n(floor.rowWidth * 1000)} × ${n(floor.rows)} × ${n(settings.gangwayWidth / 1000)}) / 2000`, area(floor.withGangways));
           floorSection.append(notice('Each lane reserves the deepest occupied row depth, including a partial last row. Half a shared physical gangway is allocated. A ground depth limit of zero remains unrestricted.'));

@@ -228,22 +228,23 @@
       const maximumStacking = floor(s.maxFloorStackingHeight / input.height);
       const effectiveStacking = Math.min(s.stackabilityEnabled ? input.stacking : 1, maximumStacking);
       const positions = effectiveStacking >= 1 ? ceilDivide(requiredPallets, effectiveStacking) : 0;
+      const floorLength = input.length + s.floorPalletClearance;
+      const floorWidth = input.width + s.floorPalletClearance;
       const palletsPerRow = s.maxFloorRowDepth === 0 ? Math.max(positions, 1) :
-        floor((s.maxFloorRowDepth + s.floorPalletClearance) /
-        (input.length + s.floorPalletClearance));
+        floor(s.maxFloorRowDepth / floorLength);
       if (maximumStacking < 1)
         errors.push('Floor: loaded pallet height exceeds maximum floor stacking height.');
       if (palletsPerRow < 1)
         errors.push('Floor: pallet length cannot fit within the maximum row depth.');
       if (effectiveStacking >= 1 && palletsPerRow >= 1) {
         const rows = ceilDivide(positions, palletsPerRow);
-        const rowWidth = (input.width + s.floorPalletClearance) / 1000;
-        const occupiedDepth = n => n > 0 ? (n * input.length + (n - 1) * s.floorPalletClearance) / 1000 : 0;
+        const rowWidth = floorWidth / 1000;
+        const occupiedDepth = n => n > 0 ? n * floorLength / 1000 : 0;
         const lastRowPallets = rows > 0 ? positions - (rows - 1) * palletsPerRow : 0;
         const fullRowDepth = occupiedDepth(Math.min(positions, palletsPerRow));
         const lastRowDepth = occupiedDepth(lastRowPallets);
         const rowDepth = fullRowDepth;
-        const totalOccupiedDepth = (positions * input.length + Math.max(0, positions - rows) * s.floorPalletClearance) / 1000;
+        const totalOccupiedDepth = positions * floorLength / 1000;
         const withoutGangways = rowDepth * rowWidth * rows;
         const storageArea = withoutGangways;
         const formulaPositions = positions;
@@ -252,7 +253,7 @@
         const withGangways = withoutGangways + gangwayArea;
         if (![withoutGangways, formulaPositions, formulaStorageArea, gangwayArea, withGangways].every(Number.isFinite))
           throw new Error('Floor area exceeds supported numeric precision.');
-        floorResult = { maximumStacking, effectiveStacking, positions,
+        floorResult = { floorLength, floorWidth, maximumStacking, effectiveStacking, positions,
           palletsPerRow, rows, rowWidth, rowDepth, totalOccupiedDepth, fullRowDepth,
           lastRowDepth, lastRowPallets, withoutGangways,
           storageArea, formulaPositions,
