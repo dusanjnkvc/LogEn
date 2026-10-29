@@ -16,3 +16,9 @@
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 .stackability-controls{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:0 22px 18px}.stackability-controls>.muted{font-size:12px;flex:1;min-width:220px}.stacking-control{display:flex;flex-direction:column;gap:4px;min-width:120px}.stacking-control input{width:90px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 9px;font:inherit}.stacking-control input:disabled{opacity:.5;cursor:not-allowed}.stacking-control input[aria-invalid=true]{border-color:var(--red)}.stacking-control small{font-size:10px;max-width:170px;white-space:normal}.stackability-controls .toggle-label{font-weight:600;color:var(--text)}
+
+/* One bounded viewport keeps columns, sticky totals and native scrollbar aligned. */
+#parts-table .table-scroll {max-height: min(62vh, 650px); overflow: auto; scrollbar-gutter: stable;}
+#parts-table thead th {position: sticky; top: 0; z-index: 2; background: #191b1f;}
+#parts-table tfoot th, #parts-table tfoot td {position: sticky; bottom: 0; z-index: 2; background: #24262a; padding: 15px; white-space: nowrap; font-weight: 700;}
+#parts-table .table-footer {background: #191b1f;}

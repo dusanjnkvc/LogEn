@@ -7,7 +7,7 @@
     return {
       maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
       gangwayWidth: 4500, floorPalletClearance: 100,
-      rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
+      rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
       rackSlotHeight: 1100, rackStructuralLength: 150,
       rackStructuralDepth: 200, rackStructuralHeight: 150,
       maxRackRunLength: 15000, rackFrontageClearance: 100,
@@ -19,6 +19,7 @@
   }
 
   const positiveSettings = {
+    rackSurfaceAllowance: 'Rack surface allowance', rackPitch: 'Rack pitch',
     maxFloorStackingHeight: 'Maximum floor stacking height',
     rackSlotLength: 'Rack usable slot length',
     rackSlotDepth: 'Rack usable slot depth',
@@ -167,6 +168,19 @@
     };
   }
 
+  function rackFit(input, settings) {
+    const {length:l, width:w} = input;
+    const {rackSlotLength:rl, rackSlotDepth:rw} = settings;
+    if (![l,w,rl,rw].every(v => Number.isFinite(v) && v > 0)) return 'N/A';
+    return (l <= rl && w <= rw) || (settings.allowRotation && w <= rl && l <= rw) ? 'YES' : 'NO';
+  }
+  function surfaceAreas(depth, width, lanes, quantity, allowance, pitch, gangwayMetres) {
+    if (![depth,width,lanes,quantity,allowance,pitch,gangwayMetres].every(v => Number.isFinite(v) && v >= 0))
+      throw new Error('Surface allocation inputs must be finite and non-negative.');
+    const gsNet = depth * width * lanes / 1000000;
+    return {gsNet, gsWith: gsNet + width * lanes * gangwayMetres / 2000,
+      prNet: quantity * allowance, prWith: quantity * pitch * gangwayMetres / 2000};
+  }
   function calculatePart(input, settings) {
     const s = { ...createDefaultSettings(), ...settings };
     input = normalizePart(input, s);
@@ -230,15 +244,12 @@
         const lastRowDepth = occupiedDepth(lastRowPallets);
         const rowDepth = fullRowDepth;
         const totalOccupiedDepth = (positions * input.length + Math.max(0, positions - rows) * s.floorPalletClearance) / 1000;
-        const withoutGangways = rowWidth * totalOccupiedDepth;
-        const storageArea = storageAreaCents(withoutGangways) / 100;
-        // Floor area with gangways uses the user's independent Q/S formula.
-        // Q/S stays fractional; rounded positions/rows apply to storage-only area.
-        const formulaPositions = requiredPallets / effectiveStacking;
-        const formulaStorageArea = formulaPositions * input.length * input.width / 1000000;
-        const gangwayArea = formulaPositions * input.length * allocatedGangwayWidth(s) / 1000000;
-        const withGangways = formulaPositions * input.length *
-          (input.width + allocatedGangwayWidth(s)) / 1000000;
+        const withoutGangways = rowDepth * rowWidth * rows;
+        const storageArea = withoutGangways;
+        const formulaPositions = positions;
+        const formulaStorageArea = withoutGangways;
+        const gangwayArea = rowWidth * rows * s.gangwayWidth / 2000;
+        const withGangways = withoutGangways + gangwayArea;
         if (![withoutGangways, formulaPositions, formulaStorageArea, gangwayArea, withGangways].every(Number.isFinite))
           throw new Error('Floor area exceeds supported numeric precision.');
         floorResult = { maximumStacking, effectiveStacking, positions,
@@ -258,7 +269,7 @@
       const rotatedCapacity = s.allowRotation ? orientationCapacity(input.width, input.length) : 0;
       const rotated = rotatedCapacity > originalCapacity;
       const palletsPerSlot = Math.max(originalCapacity, rotatedCapacity);
-      if (palletsPerSlot < 1) {
+      if (rackFit(input, s) !== 'YES' || palletsPerSlot < 1) {
         errors.push(input.height + s.rackVerticalClearance > s.rackSlotHeight
           ? 'Rack: loaded pallet height plus vertical clearance exceeds usable slot height.'
           : 'Rack: pallet cannot fit the usable slot frontage/depth with the configured clearances' +
@@ -277,13 +288,11 @@
           throw new Error('Rack run count exceeds the supported project size (1,000,000 runs per part).');
         const baysPerRun = Array.from({ length: runs }, (_, index) =>
           Math.min(maxBaysPerRun, bays - index * maxBaysPerRun));
-        const withoutGangways = bays * effectiveBayLength * effectiveBayDepth / 1000000;
+        const withoutGangways = bays * s.rackSurfaceAllowance;
         const totalFrontageMetres = baysPerRun.reduce((total, count) =>
           total + count * effectiveBayLength / 1000, 0);
-        const gangwayArea = totalFrontageMetres * allocatedGangwayWidth(s) / 1000;
-        // Combine storage and the full-width allocation before unit conversion.
-        const withGangways = bays * effectiveBayLength *
-          (effectiveBayDepth + allocatedGangwayWidth(s)) / 1000000;
+        const gangwayArea = bays * s.rackPitch * (s.gangwayWidth / 1000) / 2000;
+        const withGangways = gangwayArea;
         if (![withoutGangways, gangwayArea, withGangways, effectiveBayHeight].every(Number.isFinite))
           throw new Error('Rack area exceeds supported numeric precision.');
         rack = { palletsPerSlot, levels: s.rackLevels, capacityPerBay, bays,
@@ -304,6 +313,7 @@
       if (settingsErrors.length)
         return resultFor(normalizePart(input, s), ['Warehouse settings are invalid. Correct the settings to calculate this part.']);
       const result = calculatePart(input, s);
+      result.rackFit = rackFit(result.input, s);
       if (counts.get(keyFor(input)) > 1) {
         result.errors.push('Duplicate Part Number. Consolidate this part into one input row.');
         result.isValid = false;
@@ -326,7 +336,10 @@
       totalRackBays: total(racks, r => r.rack.bays),
       totalRackRuns: total(racks, r => r.rack.runs),
       // Sum the exact two-decimal contributions displayed in Floor storage m².
-      floorWithoutGangways: total(floors, r => storageAreaCents(r.floor.withoutGangways)) / 100,
+      floorWithoutGangways: total(floors, r => r.floor.withoutGangways),
+      nonFittingPartCount: new Set(results.filter(r => r.rackFit === 'NO').map(r => keyFor(r.input))).size,
+      nonFittingPallets: total(planned.filter(r => r.rackFit === 'NO'), r => r.requiredPallets),
+      nonFittingUnknownQuantity: results.filter(r => r.rackFit === 'NO' && !r.isPlanningValid).length,
       floorWithGangways: total(floors, r => r.floor.withGangways),
       rackWithoutGangways: total(racks, r => r.rack.withoutGangways),
       rackWithGangways: total(racks, r => r.rack.withGangways),
@@ -342,5 +355,5 @@
     return project;
   }
 
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
 })(globalThis);

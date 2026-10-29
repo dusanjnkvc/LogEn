@@ -45,17 +45,18 @@ The default template sample (20 parts/box, 40 boxes/pallet, 500 parts/shift, 5 D
 
 Both storage methods use the same required whole-pallet count. Each part receives dedicated floor rows and rack bays; part numbers are not mixed within them. Height and pallet dimensions drive floor stacking and rack fit independently.
 
-Ground storage-only area uses actual occupied depths of full and partial rows, including between-pallet clearances. The configured ground depth is a row-capacity limit; **0 means unrestricted**. Rack depth and fit rules are independent.
+Current Chrome surface formulas (full precision internally, m² displayed to two decimals):
 
-**PALLETS — WITHOUT GANGWAYS** is the sum of the two-decimal **Floor storage m²** values across the whole project, before searching or pagination. Floor totals include every calculable floor row even when that part does not fit the racks. Rack totals independently include calculable rack rows. Input errors and duplicate part numbers remain visible and are excluded from affected totals; a validation notice reports the floor and rack contribution counts. Raw occupied-depth calculations are retained for formula details, while the floor storage column and its total use the same rounded area contributions.
+- GS net = deepest occupied lane depth × lane width × lane count / 1,000,000 (mm).
+- GS allocated = GS net + lane width × lanes × physical gangway metres / 2000.
+- PR net = required whole rack bays × rack surface allowance (default 4.125 m²).
+- PR allocated = required whole rack bays × rack pitch (default 3300 mm) × physical gangway metres / 2000. PR net is not added.
 
-Floor area with gangways uses **SQM = (Q / S) × L × (W + G) / 1,000,000**. Q is required pallets, S is effective floor stacking (allowed stacking capped by the loaded-pallet height limit), and L/W/G are pallet length, pallet width and full gangway width in mm. **Q / S is not rounded**; the formula excludes pallet clearances and row-depth reservations. For Q=7, S=3, L=1200, W=800 and G=4500, it gives **14.84 m²**.
+Lanes use existing row count, row width (pallet width + clearance), and deepest occupied row depth. A partial final row reserves a complete lane. Depth limit 0 remains unrestricted. Bay quantity retains existing CEILING(required pallets / capacity per bay); the allocation formula itself supports fractional quantities but does not change existing bay sizing. These are half-shared-gangway allocations, not physical layouts. Gangway input remains in mm, default 4500.
 
-The floor formula base is (Q/S) × L × W / 1,000,000 and its gangway component is (Q/S) × L × G / 1,000,000. The independent storage-only floor result still uses rounded floor positions and occupied-row clearances, so adding that result to the formula gangway component does not reproduce the with-gangways value.
+Part Details includes Rack YES/NO/N/A from exact pallet length/width versus usable rack slot length/depth. The existing rotation setting defaults off and is preserved. Height and clearance restrictions remain independent eligibility checks. Non-fitting pallet totals use required pallets, count duplicate part numbers only once by excluding duplicate planning rows, and flag unavailable quantities. Missing dimensions show N/A. The bounded table viewport has sticky headers/totals and one synchronized native horizontal scrollbar.
 
-Racks retain the existing bay dimensions, rack levels and run-frontage calculation. Rack gangway area = actual rack run frontage × (gangway width / 1000). Both scenarios use the full configured gangway width: **4500 mm uses 4500 mm**. These are allocated planning estimates rather than optimized physical layouts; shared gangways count once in a physical design.
-
-Use **Shift consumption** for raw and rounded per-shift demand, input and used DOH, daily demand, required pallets and space. Click a part number for substituted formulas. **Export results** creates Original Input Data, Floor Pallet Calculations, Rack Calculations, Warehouse Comparison and Warehouse Settings. Original legacy source cells are retained in a separate source-data section of the input sheet.
+The Chrome/offline implementation is the delivered app. Flutter source under lib/ is a retained legacy implementation and has not been migrated to these new surface formulas.
 
 ## Saved data and project management
 

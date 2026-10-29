@@ -178,7 +178,7 @@
   const defaults = {
     maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
     gangwayWidth: 4500, floorPalletClearance: 100,
-    rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200, rackSlotHeight: 1100,
+    rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200, rackSlotHeight: 1100,
     rackStructuralLength: 150, rackStructuralDepth: 200, rackStructuralHeight: 150,
     maxRackRunLength: 15000, rackFrontageClearance: 100,
     rackDepthClearance: 100, rackVerticalClearance: 100,
@@ -270,7 +270,7 @@
         stackabilityLabel.append(stackability,stackabilityCopy); stock.append(stackabilityLabel);
         const preview = $('div', 'planning-preview');
         stock.append(preview);
-        const floor = section(body, 'Floor storage & gangways', 'Floor with gangways uses (Q / S) × L × (W + G) / 1,000,000, with unrounded Q / S and full gangway width G. Racks use actual run frontage × G.');
+        const floor = section(body, 'Floor storage & gangways', 'Excel-style allocations reserve half a shared gangway; the physical width below remains unchanged.');
         const floorGrid = $('div', 'form-grid'); floor.append(floorGrid);
         field(floorGrid, 'maxFloorStackingHeight', 'Maximum floor stacking height', true);
         field(floorGrid, 'maxFloorRowDepth', 'Maximum floor row depth · 0 = unrestricted');
@@ -280,6 +280,8 @@
         floor.append(gangwayHint);
         const rack = section(body, 'Pallet rack capacity', 'Usable slot dimensions exclude the rack structure. Clearances are checked independently.');
         const rackGrid = $('div', 'form-grid'); rack.append(rackGrid);
+        field(rackGrid, 'rackSurfaceAllowance', 'Rack surface allowance', true, false, 'm²');
+        field(rackGrid, 'rackPitch', 'Rack pitch', true);
         field(rackGrid, 'rackLevels', 'Rack levels', true, true, 'levels');
         field(rackGrid, 'maxRackRunLength', 'Maximum rack run length', true);
         field(rackGrid, 'rackSlotLength', 'Usable slot length', true);
@@ -303,7 +305,7 @@
         const update = () => {
           const settings = draft();
           planningPreview(preview, sample, settings, true);
-          gangwayHint.textContent = `Allocated gangway width = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm (100% of configured width) for both floor and rack calculations.`;
+          gangwayHint.textContent = `Allocated gangway width = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm physical width. Both allocations use half a shared gangway.`;
         };
         for (const input of Object.values(fields)) input.input.addEventListener('input', update);
         shifts.addEventListener('change', update); coverage.addEventListener('change', update); rotation.addEventListener('change', update); stackability.addEventListener('change', update);
@@ -420,12 +422,10 @@
             : `FLOOR((${n(settings.maxFloorRowDepth)} + ${n(settings.floorPalletClearance)}) ÷ (${n(input.length)} + ${n(settings.floorPalletClearance)}))`, n(floor.palletsPerRow));
           formula(floorSection, 'Dedicated floor rows', `CEILING(${n(floor.positions)} ÷ ${n(floor.palletsPerRow)})`, `${n(floor.rows)} rows`);
           formula(floorSection, 'Actual occupied floor row depth', `Sum of occupied row depths = (${n(floor.positions)} positions × ${n(input.length)} mm + (${n(floor.positions)} − ${n(floor.rows)}) gaps × ${n(settings.floorPalletClearance)} mm) / 1000\nDeepest row: ${n(floor.rowDepth)} m · last row: ${n(floor.lastRowPallets)} pallets / ${n(floor.lastRowDepth)} m`, `${n(floor.totalOccupiedDepth)} m total occupied row depth`);
-          formula(floorSection, 'A · Pallets without gangways', `(${n(input.width)} + ${n(settings.floorPalletClearance)}) / 1000 m row width × ${n(floor.totalOccupiedDepth)} m total occupied depth`, area(floor.withoutGangways));
-          formula(floorSection, 'Unrounded formula positions · Q / S', `Q / S = ${n(result.requiredPallets)} ÷ ${n(floor.effectiveStacking)} (unrounded)`, n(floor.formulaPositions));
-          formula(floorSection, 'Floor formula storage component', `(${n(result.requiredPallets)} ÷ ${n(floor.effectiveStacking)}) × ${n(input.length)} × ${n(input.width)} ÷ 1,000,000`, area(floor.formulaStorageArea));
-          formula(floorSection, 'Allocated floor gangway', `(${n(result.requiredPallets)} ÷ ${n(floor.effectiveStacking)}) × ${n(input.length)} × ${n(settings.gangwayWidth)} ÷ 1,000,000\nAllocated gangway width = ${n(settings.gangwayWidth)} mm`, area(floor.gangwayArea));
-          formula(floorSection, 'B · Pallets with allocated gangways', `SQM = (Q / S) × L × (W + G) / 1,000,000\n= (${n(result.requiredPallets)} ÷ ${n(floor.effectiveStacking)}) × ${n(input.length)} × (${n(input.width)} + ${n(settings.gangwayWidth)}) ÷ 1,000,000`, area(floor.withGangways));
-          floorSection.append(notice('Q is required pallets; S is effective floor stacking limited by loaded height. Q / S stays unrounded in this formula. L and W are loaded pallet dimensions; G is the full gangway width. Floor without gangways separately uses occupied rows and pallet clearances.'));
+          formula(floorSection, 'A · Ground storage without gangway', `${n(floor.rowDepth * 1000)} mm lane depth × ${n(floor.rowWidth * 1000)} mm lane width × ${n(floor.rows)} lanes / 1,000,000`, area(floor.withoutGangways));
+          formula(floorSection, 'B · Ground storage with gangway', `${n(floor.withoutGangways)} + (${n(floor.rowWidth * 1000)} × ${n(floor.rows)} × ${n(settings.gangwayWidth / 1000)}) / 2000`, area(floor.withGangways));
+          floorSection.append(notice('Each lane reserves the deepest occupied row depth, including a partial last row. Half a shared physical gangway is allocated. A ground depth limit of zero remains unrestricted.'));
+
         }
         const rackSection = section(body, 'C / D · Pallet rack storage');
         if (!rack) rackSection.append(notice('Rack storage cannot be calculated. Review the validation errors above.', true));
@@ -438,14 +438,13 @@
           formula(rackSection, 'Capacity per rack bay', `${n(rack.palletsPerSlot)} pallets per slot × ${n(rack.levels)} rack levels`, `${n(rack.capacityPerBay)} pallets`);
           formula(rackSection, 'Required dedicated rack bays', `CEILING(${n(result.requiredPallets)} ÷ ${n(rack.capacityPerBay)})`, `${n(rack.bays)} bays`);
           formula(rackSection, 'Effective rack bay dimensions', `Length: ${n(settings.rackSlotLength)} + ${n(settings.rackStructuralLength)} = ${n(rack.effectiveBayLength)} mm\nDepth: ${n(settings.rackSlotDepth)} + ${n(settings.rackStructuralDepth)} = ${n(rack.effectiveBayDepth)} mm\nHeight per level: ${n(settings.rackSlotHeight)} + ${n(settings.rackStructuralHeight)} = ${n(rack.effectiveBayHeight)} mm`);
-          formula(rackSection, 'C · Racks without gangways', `${n(rack.bays)} bays × ${n(rack.effectiveBayLength)} mm × ${n(rack.effectiveBayDepth)} mm ÷ 1,000,000`, area(rack.withoutGangways));
+          formula(rackSection, 'C · Racks without gangways', `${n(rack.bays)} rack quantity × ${n(settings.rackSurfaceAllowance)} m² allowance`, area(rack.withoutGangways));
           formula(rackSection, 'Maximum bays per run', `FLOOR(${n(settings.maxRackRunLength)} ÷ ${n(rack.effectiveBayLength)})`, `${n(rack.maxBaysPerRun)} bays`);
           const baysPerRun = rack.baysPerRun ?? [];
           formula(rackSection, 'Required rack runs', `CEILING(${n(rack.bays)} ÷ ${n(rack.maxBaysPerRun)})\nBays per run: ${baysPerRun.length ? baysPerRun.map(n).join(', ') : 'none'}\nRun lengths: ${baysPerRun.length ? baysPerRun.map(bays => `${n(bays * rack.effectiveBayLength / 1000)} m`).join(', ') : 'none'}`, `${n(rack.runs)} runs`);
-          formula(rackSection, 'Allocated rack gangway', `Total run frontage × full gangway width = (${n(rack.bays)} × ${n(rack.effectiveBayLength)} / 1000 m) × ${n(settings.gangwayWidth)} / 1000 m; allocated width = ${n(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm`, area(rack.gangwayArea));
-          formula(rackSection, 'D · Racks with allocated gangways', `${n(rack.withoutGangways)} + ${n(rack.gangwayArea)} m²`, area(rack.withGangways));
+          formula(rackSection, 'D · Racks with allocated gangway', `${n(rack.bays)} rack quantity × ${n(settings.rackPitch)} mm pitch × ${n(settings.gangwayWidth / 1000)} m physical gangway / 2000 (PR net is not added)`, area(rack.withGangways));
         }
-        body.append(notice('Floor stacking is not applied to racks. Rack levels increase capacity, not ground footprint. Structural height is recorded per level and does not affect area. Both scenarios use 100% of the configured gangway width. These are planning estimates; a physical layout must count shared gangways once.'));
+        body.append(notice('Floor stacking is not applied to racks. Rack levels increase capacity, not ground footprint. Structural height is recorded per level and does not affect area. Both scenarios allocate half a shared gangway. PR allocated is independent of PR net. Whole-bay rack quantity rounding is preserved. These are planning estimates; a physical layout must count shared gangways once.'));
         return { read: () => true };
       }
     }).then(() => undefined);
