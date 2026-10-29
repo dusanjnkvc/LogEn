@@ -881,6 +881,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       settings.getColumn(1).width = 115;
       settings.getColumn(2).width = 35;
       settings.getColumn(3).width = 65;
+      const layout = workbook.addWorksheet('Rack Layout', {views:[{state:'frozen',ySplit:6}]});
+      const plan = calculation.sharedRack;
+      add(layout, ['LogEn — shared rack layout: ' + project.name], 'header');
+      add(layout, ['Required rack bays', plan?.available ? plan.bays : 'Unavailable', 'Rack storage m²', plan?.available ? plan.withoutGangways : null]);
+      add(layout, ['Shelf units use Required storage pallets. Coordinates are mm from the shelf origin. Different PNs may share shelves.']);
+      add(layout, ['Usable shelf L / D / H (mm)', s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, 'Levels', s.rackLevels, 'Between boxes allowance (mm)', s.betweenBoxesAllowance ?? 0]);
+      add(layout, ['Feasible packing estimate; not a guaranteed optimum. Usable placement coordinates exclude structural allowances and gangways.']);
+      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'X (mm)', 'Y (mm)', 'Placed length (mm)', 'Placed depth (mm)'], 'header');
+      if (plan?.available) {
+        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[Math.floor(i/s.rackLevels)+1,i%s.rackLevels+1,j+1,p.partNumber,1,p.x,p.y,p.length,p.depth])));
+        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:9}};
+      } else add(layout, [plan?.error || 'Rack layout unavailable. Correct settings and input errors.']);
+      add(layout, []);add(layout, ['Non-fitting PNs and rows requiring review', 'Required pallets', 'Status'], 'header');
+      calculation.results.filter(r=>!r.isRackValid||!r.isPlanningValid).forEach(r=>add(layout,[r.input.partNumber,r.isPlanningValid?r.requiredPallets:'Unavailable',r.rackFit==='NO'?'Does not fit':'Needs review',r.errors.join(' | ')]));
+      for(let i=1;i<=9;i++)layout.getColumn(i).width=i===4?30:24;
       workbook.views = [{ activeTab: 3, firstSheet: 0, visibility: 'visible' }];
       return new Uint8Array(await workbook.xlsx.writeBuffer());
     }
@@ -1208,10 +1223,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           [['input', 'DOH from each imported part'], ['custom', 'Project DOH override']]);
         field(productionGrid, 'customCoverageDays', 'Project DOH override', false, false, 'days');
         stock.append($('p', 'muted formula-hint', 'Required pallets = consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH, then round up only the final result.'));
-        const stackabilityLabel = $('label', 'checkbox-field');
-        const stackability = $('input'); stackability.type='checkbox'; stackability.name='stackabilityEnabled'; stackability.checked=Boolean(current.stackabilityEnabled); stackability.setAttribute('aria-label','Stackability');
-        const stackabilityCopy=$('span');stackabilityCopy.append($('strong','','Stackability'),$('small','muted','Enable per-part stacking factors. When off, floor calculations use one-high storage and keep saved factors.'));
-        stackabilityLabel.append(stackability,stackabilityCopy); stock.append(stackabilityLabel);
+        stock.append($('p','muted','Floor stacking is read-only; existing saved factors and height limits are preserved.'));
         const preview = $('div', 'planning-preview');
         stock.append(preview);
         const floor = section(body, 'Floor storage & gangways', 'Excel-style allocations reserve half a shared gangway; the physical width below remains unchanged.');
@@ -1248,14 +1260,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         rotationCopy.append($('strong', '', 'Allow 90° pallet rotation'), $('small', 'muted', 'Both horizontal orientations are always checked for the highest shelf capacity. No vertical rotation or stacking inside a slot.'));
         rotationLabel.append(rotation, rotationCopy);
         body.append(rotationLabel, notice('Gangway-inclusive footprints are allocated planning estimates. Shared gangways must be counted once in a physical layout.'));
-        const draft = () => ({ ...current, ...draftNumbers(fields), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, allowRotation: rotation.checked, stackabilityEnabled: stackability.checked });
+        const draft = () => ({ ...current, ...draftNumbers(fields), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, allowRotation: rotation.checked, stackabilityEnabled: current.stackabilityEnabled });
         const update = () => {
           const settings = draft();
           planningPreview(preview, sample, settings, true);
           gangwayHint.textContent = `Allocated gangway width = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm physical width. Both allocations use half a shared gangway.`;
         };
         for (const input of Object.values(fields)) input.input.addEventListener('input', update);
-        shifts.addEventListener('change', update); coverage.addEventListener('change', update); rotation.addEventListener('change', update); stackability.addEventListener('change', update);
+        shifts.addEventListener('change', update); coverage.addEventListener('change', update); rotation.addEventListener('change', update);
         update();
         return {
           focus: shifts,
@@ -1277,7 +1289,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const current = initial ? globalThis.LogEnDomain.normalizePart(initial, settings) : { ...sample, partNumber: '' };
     return modal({
       title: initial ? 'Edit part number' : 'Add part number',
-      subtitle: 'The eight Excel columns, plus an optional floor-stacking safety limit.',
+      subtitle: 'The eight Excel columns. Saved floor stacking is read-only.',
       button: initial ? 'Save part number' : 'Add part number',
       build(body) {
         const name = textField(body, 'Part Number', current.partNumber, { placeholder: 'e.g. PN-001' });
@@ -1298,10 +1310,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         field(dimensionGrid, 'length', 'Length', 'mm', true);
         field(dimensionGrid, 'width', 'Width', 'mm', true);
         field(dimensionGrid, 'height', 'Height', 'mm', true);
-        const advanced = section(body, 'Advanced · floor stacking safety', 'Enable Stackability in Shifts & days on hand to edit this factor. When off, floor storage uses one pallet high; the saved factor is preserved. Height limits always apply.');
-        const advancedGrid = $('div', 'form-grid'); advanced.append(advancedGrid);
-        field(advancedGrid, 'stacking', 'Allowed floor stacking', 'pallets', true, true);
-        fields.stacking.input.disabled=!settings.stackabilityEnabled;
+        body.append($('p','muted',`Saved floor stacking factor: ${display(current.stacking)} (read-only). Height limits still apply.`));
         body.append(notice('Consumption means individual parts per shift. QTY in Box is parts per box; QTY boxes per Pallet is boxes per pallet. Existing historical metadata is preserved when editing.'));
         const draft = () => ({ ...current, partNumber: name.input.value.trim() || 'Preview', ...draftNumbers(fields), providedCoverageDays: Number(fields.doh.input.value), packagingInferred: false, inputErrors: [] });
         const update = () => planningPreview(preview, draft(), settings);
@@ -1641,15 +1650,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const sum=key=>valid.reduce((total,p)=>total+(Number.isFinite(p[key])?p[key]:0),0);
     const field=(key,label,unit)=>`<label class="field"><span>${label}</span><div class="input-unit"><input type="text" inputmode="decimal" id="production-${key}" data-production="${key}" aria-label="${label}" value="${escape(productionDrafts[key] ?? (Number.isFinite(s[key])?String(s[key]):''))}" autocomplete="off"><span class="field-unit muted">${unit}</span></div></label>`;
     const totals=[['Consumption per shift',sum('shiftConsumption'),'parts / shift'],['Daily consumption',sum('dailyConsumption'),'parts / day'],['Planning demand',sum('plannedPalletsPerDay'),'pallets / day'],['Pallets per shift',sum('palletsPerShift'),'pallets / shift'],['Required storage pallets',c.totalRequiredPallets,'pallets']];
-    return `<section class="panel production-panel"><div class="panel-head"><div><h2>Shifts & days on hand</h2><p>Keep decimals through shifts and DOH; round up only the final pallets</p></div><button class="text-link" data-action="consumption">View calculation details ${icon('arrow')}</button></div><div class="production-controls shift-controls"><label class="field"><span>Number of shifts per day</span><select id="production-shiftsPerDay" data-production="shiftsPerDay" aria-label="Number of shifts per day">${![1,2,3].includes(s.shiftsPerDay)?`<option selected disabled value="${escape(s.shiftsPerDay)}">Invalid: choose 1–3</option>`:''}${[1,2,3].map(n=>`<option value="${n}" ${s.shiftsPerDay===n?'selected':''}>${n} ${n===1?'shift':'shifts'} per day</option>`).join('')}</select></label><label class="field"><span>DOH source</span><select id="production-coverageMode" data-production-coverage aria-label="DOH source">${[['input','Use DOH from each part'],['custom','Use DOH override for all parts']].map(([value,label])=>`<option value="${value}" ${s.coverageMode===value?'selected':''}>${label}</option>`).join('')}</select></label>${field('customCoverageDays','DOH override','days')}</div><div class="stackability-controls"><label class="toggle-label"><input id="production-stackabilityEnabled" type="checkbox" data-stackability aria-label="Stackability" ${s.stackabilityEnabled?'checked':''}>Stackability</label><span class="muted">${s.stackabilityEnabled?'Edit each part’s stacking factor in Shift consumption or Part details. Height limits still apply.':'Floor stacking is one pallet high. Enable Stackability to edit a factor for each part.'}</span><button class="text-link" data-action="parts">Edit stacking factors ${icon('arrow')}</button></div><div class="production-note"><strong>Required pallets = ROUNDUP(Consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet × shifts per day × DOH, 0).</strong><br>Editing the DOH override applies it to every part. Per-shift and daily demand retain decimals; only the final required quantity rounds up. L, W and H then determine the floor and rack space.</div><div class="production-totals">${totals.map(([label,value,unit],i)=>`<div>${label==='Required storage pallets'?'<button class="metric-drilldown" data-action="required-pallets" aria-label="Show required pallets rack fit">':''}<span>${label}</span><strong>${c.settingsErrors?.length?'—':i>=2?count(value):decimal(value)}</strong><small>${unit}</small>${label==='Required storage pallets'?'</button>':''}</div>`).join('')}</div></section>`;
+    return `<section class="panel production-panel"><div class="panel-head"><div><h2>Shifts & days on hand</h2><p>Keep decimals through shifts and DOH; round up only the final pallets</p></div><button class="text-link" data-action="consumption">View calculation details ${icon('arrow')}</button></div><div class="production-controls shift-controls"><label class="field"><span>Number of shifts per day</span><select id="production-shiftsPerDay" data-production="shiftsPerDay" aria-label="Number of shifts per day">${![1,2,3].includes(s.shiftsPerDay)?`<option selected disabled value="${escape(s.shiftsPerDay)}">Invalid: choose 1–3</option>`:''}${[1,2,3].map(n=>`<option value="${n}" ${s.shiftsPerDay===n?'selected':''}>${n} ${n===1?'shift':'shifts'} per day</option>`).join('')}</select></label><label class="field"><span>DOH source</span><select id="production-coverageMode" data-production-coverage aria-label="DOH source">${[['input','Use DOH from each part'],['custom','Use DOH override for all parts']].map(([value,label])=>`<option value="${value}" ${s.coverageMode===value?'selected':''}>${label}</option>`).join('')}</select></label>${field('customCoverageDays','DOH override','days')}</div><div class="production-note"><strong>Required pallets = ROUNDUP(Consumption per shift ÷ QTY in Box ÷ QTY boxes per Pallet × shifts per day × DOH, 0).</strong><br>Editing the DOH override applies it to every part. Per-shift and daily demand retain decimals; only the final required quantity rounds up. L, W and H then determine the floor and rack space.</div><div class="production-totals">${totals.map(([label,value,unit],i)=>`<div>${label==='Required storage pallets'?'<button class="metric-drilldown" data-action="required-pallets" aria-label="Show required pallets rack fit">':''}<span>${label}</span><strong>${c.settingsErrors?.length?'—':i>=2?count(value):decimal(value)}</strong><small>${unit}</small>${label==='Required storage pallets'?'</button>':''}</div>`).join('')}</div></section>`;
   }
   function coverageCell(p) {
     if(!p)return '—';
     if(p.noConsumption)return '<span class="badge">No consumption</span>';
     return `<span class="${p.coverageMismatch?'coverage-difference':''}">${signed(p.coverageDifferenceDays)}</span>${p.coverageMismatch?'<small class="difference-caption">actual − input</small>':'<span class="badge good">Match</span>'}`;
   }
-  function stackingControl(result,index) {
-    return `<div class="stacking-control"><input id="stacking-part-${index}" type="number" min="1" step="1" inputmode="numeric" data-stacking-index="${index}" aria-label="Stacking factor for ${escape(result.input.partNumber)}" value="${escape(result.input.stacking)}" ${project().settings.stackabilityEnabled?'':'disabled'}><small class="stacking-error error" hidden></small><small class="muted">${result.isFloorValid?`Used: ${count(result.floor.effectiveStacking)}`:'Review input'}</small></div>`;
+  function stackingControl(result) {
+    return `<span>${count(result.isFloorValid ? result.floor?.effectiveStacking : null)}</span>`;
   }
   function renderConsumption(c) {
     $('main').innerHTML=heading('PER-SHIFT DEMAND, DECIMAL PALLETS','Shift consumption planning','Packaging quantities, consumption per shift and DOH determine the pallets used in both storage scenarios.',`<button class="btn btn-secondary" data-action="export">${icon('download')}Export results</button><button class="btn btn-primary" data-action="add">${icon('plus')}Add part number</button>`)+validationBanner(c)+coverageBanner(c)+productionPanel(c)+
@@ -1794,20 +1803,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     } catch(error){toast(error.message||'This backup could not be read.',true);}
   }
   async function help() {
-    await modal({title:'From shift consumption to warehouse space',eyebrow:'HOW LOGEN WORKS',body:`<div class="help-steps"><div class="help-step"><strong>01 / PREPARE</strong><h3>Download the eight-column template</h3><p>Part Number, QTY in Box, QTY boxes per Pallet, Consumption per shift, DOH (Days on hand), L(mm), W(mm), H(mm).</p></div><div class="help-step"><strong>02 / IMPORT</strong><h3>Import your parts</h3><p>All file processing happens locally. L, W and H are loaded pallet dimensions. Stacking defaults to 1. Enable Stackability in Shifts & days on hand to edit a factor for every part; turn it off to use one-high storage while keeping those factors saved.</p></div><div class="help-step"><strong>03 / CONFIGURE</strong><h3>Choose shifts and DOH</h3><p>Select 1, 2 or 3 shifts per day. Use each part’s Excel DOH or apply a chosen DOH override to all parts.</p></div><div class="help-step"><strong>04 / COMPARE</strong><h3>Review and export</h3><p>The same required pallet count drives floor and rack m² calculations. Inspect substituted formulas and export the five-sheet workbook.</p></div></div><h3>Your required-pallet formula</h3><div class="formula-box"><code>ROUNDUP(Consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH, 0)</code></div><p class="muted">Multiply raw pallets per shift by selected shifts and DOH without rounding. Round up only the final result. Example: 0.16 pallets/shift × 2 shifts × 10 DOH = 3.2 → 4 required pallets. Physical floor positions, rows and rack bays remain whole capacity units.</p><h3>Projects and offline use</h3><p class="muted">Projects → Delete project asks for confirmation. Restore a deleted project with all inventory and settings from Deleted projects. The file embeds all code, Excel tools and the logo. Back up projects before moving this file or clearing browser data.</p><h3>Excel-style surface allocations</h3><p class="muted">GS net = lane depth × lane width × lanes / 1,000,000 (all dimensions mm). GS allocated = GS net + lane width × lanes × physical gangway width in metres / 2000. PR net = required rack bays × (usable shelf length + structural length) × (usable shelf depth + structural depth) / 1,000,000. PR allocated = PR net + required rack bays × (usable shelf length + structural length) in mm × physical gangway width in metres / 2000. Both allocate half a shared gangway. Both horizontal orientations are checked using usable shelf length, depth and height. No vertical stacking inside a slot. Required storage pallets supply the rack unit quantity. Unused shelf area is not unused warehouse floor area and is never subtracted from the rack footprint. These are allocations, not physical aisle layouts.</p>`,confirm:'Got it',cancel:''});
+    await modal({title:'From shift consumption to warehouse space',eyebrow:'HOW LOGEN WORKS',body:`<div class="help-steps"><div class="help-step"><strong>01 / PREPARE</strong><h3>Download the eight-column template</h3><p>Part Number, QTY in Box, QTY boxes per Pallet, Consumption per shift, DOH (Days on hand), L(mm), W(mm), H(mm).</p></div><div class="help-step"><strong>02 / IMPORT</strong><h3>Import your parts</h3><p>All file processing happens locally. L, W and H are loaded pallet dimensions. Floor stacking is read-only. Existing saved factors and height limits are used; new parts default to one pallet high.</p></div><div class="help-step"><strong>03 / CONFIGURE</strong><h3>Choose shifts and DOH</h3><p>Select 1, 2 or 3 shifts per day. Use each part’s Excel DOH or apply a chosen DOH override to all parts.</p></div><div class="help-step"><strong>04 / COMPARE</strong><h3>Review and export</h3><p>The same required pallet count drives floor and rack m² calculations. Inspect substituted formulas and export the five-sheet workbook.</p></div></div><h3>Your required-pallet formula</h3><div class="formula-box"><code>ROUNDUP(Consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH, 0)</code></div><p class="muted">Multiply raw pallets per shift by selected shifts and DOH without rounding. Round up only the final result. Example: 0.16 pallets/shift × 2 shifts × 10 DOH = 3.2 → 4 required pallets. Physical floor positions, rows and rack bays remain whole capacity units.</p><h3>Projects and offline use</h3><p class="muted">Projects → Delete project asks for confirmation. Restore a deleted project with all inventory and settings from Deleted projects. The file embeds all code, Excel tools and the logo. Back up projects before moving this file or clearing browser data.</p><h3>Excel-style surface allocations</h3><p class="muted">GS net = lane depth × lane width × lanes / 1,000,000 (all dimensions mm). GS allocated = GS net + lane width × lanes × physical gangway width in metres / 2000. PR net = required rack bays × (usable shelf length + structural length) × (usable shelf depth + structural depth) / 1,000,000. PR allocated = PR net + required rack bays × (usable shelf length + structural length) in mm × physical gangway width in metres / 2000. Both allocate half a shared gangway. Both horizontal orientations are checked using usable shelf length, depth and height. No vertical stacking inside a slot. Required storage pallets supply the rack unit quantity. Unused shelf area is not unused warehouse floor area and is never subtracted from the rack footprint. These are allocations, not physical aisle layouts.</p>`,confirm:'Got it',cancel:''});
   }
   function renderRecovery() {
     $('main').innerHTML=heading('WORKSPACE RECOVERY','Saved data needs attention','The saved workspace has been kept intact.')+`<div class="notice error">${escape(loadError)}</div><section class="panel backup-panel"><div><h2>Recover your workspace</h2><p>Restore a JSON backup, or recover the previous local save.</p></div><div class="actions"><button class="btn btn-primary" data-action="restore">Restore backup</button><button class="btn btn-secondary" data-action="recover">Recover previous save</button><button class="btn btn-secondary" data-action="raw-backup">Download saved data</button></div></section>`;
   }
   document.addEventListener('input',event=>{
-    if(event.target.dataset.stackingIndex!==undefined&&!busy&&!loadError){
-      const input=event.target,error=input.parentElement.querySelector('.stacking-error');
-      if(!project().settings.stackabilityEnabled)return;
-      const value=Number(input.value),valid=input.value.trim()!==''&&Number.isSafeInteger(value)&&value>=1;
-      if(!valid){input.setAttribute('aria-invalid','true');error.textContent='Enter a whole stacking factor of at least 1. This value has not been saved.';error.hidden=false;return;}
-      const parts=project().parts.slice(),index=Number(input.dataset.stackingIndex);
-      parts[index]={...parts[index],stacking:value};update({parts},true);return;
-    }
     const key=event.target.dataset.production;
     if(!key||busy||loadError)return;
     productionDrafts[key]=event.target.value;
@@ -1815,7 +1816,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     update({settings:{...project().settings,[key]:number,...(key==='customCoverageDays'?{coverageMode:'custom'}:{})}},true);
   });
   document.addEventListener('change',event=>{
-    if(event.target.hasAttribute('data-stackability')&&!busy&&!loadError){update({settings:{...project().settings,stackabilityEnabled:event.target.checked}},true);return;}
     if(!event.target.hasAttribute('data-production-coverage')||busy||loadError)return;
     update({settings:{...project().settings,coverageMode:event.target.value}},true);
   });

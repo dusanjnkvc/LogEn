@@ -25,7 +25,7 @@ Use **LogEn_Shift_Inventory_Template.xlsx**, also available from **Download temp
 
 QTY in Box means individual parts per box. QTY boxes per Pallet means boxes carried by a pallet. Consumption per shift is individual parts consumed in one shift. L, W and H describe a loaded pallet in millimeters. Replace the sample, save as `.xlsx`, import, and review the confirmation.
 
-The eight-column template does not specify floor stacking. New projects start with **Stackability unchecked** and use one pallet high. Check **Stackability** in **Shifts & days on hand** to edit a stacking factor for each part in Shift consumption, Part details, or the part editor. Unchecking it uses one-high storage while keeping every saved factor. Height limits still apply. Exports include an optional Stacking column when needed to preserve manually changed factors on re-import; the template remains exactly eight columns. Existing projects without the checkbox setting enable it automatically if they already contain a factor greater than one.
+Floor stacking is read-only in the app. Existing saved factors and project stacking state are preserved, including their height limits. New parts default to factor 1. Import/export and backups retain saved values.
 
 ## Required-pallet formula
 
@@ -83,3 +83,5 @@ Rack with gangways follows the floor allocation rule: rack storage area plus a h
 Click a unit in the shared rack shelf diagram (or focus it and press Enter/Space) to show its PN, bay, shelf, box number, coordinates and placed dimensions. This only selects a diagram position and does not change inventory.
 
 Click Required storage pallets to inspect required pallet counts that fit racks, do not fit, or need input review. The rack icon overview includes the same summary and a PN/quantity list for non-fitting and unresolved inputs. Unknown quantities and duplicate inputs are flagged instead of counted as zero or confirmed fit.
+
+Export results also includes a separate Rack Layout worksheet listing every placed unit by bay, shelf, position, PN, quantity, and exact coordinates/dimensions. Non-fitting and unresolved input rows are listed separately.

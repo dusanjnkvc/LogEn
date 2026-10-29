@@ -312,10 +312,7 @@
           [['input', 'DOH from each imported part'], ['custom', 'Project DOH override']]);
         field(productionGrid, 'customCoverageDays', 'Project DOH override', false, false, 'days');
         stock.append($('p', 'muted formula-hint', 'Required pallets = consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH, then round up only the final result.'));
-        const stackabilityLabel = $('label', 'checkbox-field');
-        const stackability = $('input'); stackability.type='checkbox'; stackability.name='stackabilityEnabled'; stackability.checked=Boolean(current.stackabilityEnabled); stackability.setAttribute('aria-label','Stackability');
-        const stackabilityCopy=$('span');stackabilityCopy.append($('strong','','Stackability'),$('small','muted','Enable per-part stacking factors. When off, floor calculations use one-high storage and keep saved factors.'));
-        stackabilityLabel.append(stackability,stackabilityCopy); stock.append(stackabilityLabel);
+        stock.append($('p','muted','Floor stacking is read-only; existing saved factors and height limits are preserved.'));
         const preview = $('div', 'planning-preview');
         stock.append(preview);
         const floor = section(body, 'Floor storage & gangways', 'Excel-style allocations reserve half a shared gangway; the physical width below remains unchanged.');
@@ -352,14 +349,14 @@
         rotationCopy.append($('strong', '', 'Allow 90° pallet rotation'), $('small', 'muted', 'Both horizontal orientations are always checked for the highest shelf capacity. No vertical rotation or stacking inside a slot.'));
         rotationLabel.append(rotation, rotationCopy);
         body.append(rotationLabel, notice('Gangway-inclusive footprints are allocated planning estimates. Shared gangways must be counted once in a physical layout.'));
-        const draft = () => ({ ...current, ...draftNumbers(fields), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, allowRotation: rotation.checked, stackabilityEnabled: stackability.checked });
+        const draft = () => ({ ...current, ...draftNumbers(fields), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, allowRotation: rotation.checked, stackabilityEnabled: current.stackabilityEnabled });
         const update = () => {
           const settings = draft();
           planningPreview(preview, sample, settings, true);
           gangwayHint.textContent = `Allocated gangway width = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm physical width. Both allocations use half a shared gangway.`;
         };
         for (const input of Object.values(fields)) input.input.addEventListener('input', update);
-        shifts.addEventListener('change', update); coverage.addEventListener('change', update); rotation.addEventListener('change', update); stackability.addEventListener('change', update);
+        shifts.addEventListener('change', update); coverage.addEventListener('change', update); rotation.addEventListener('change', update);
         update();
         return {
           focus: shifts,
@@ -381,7 +378,7 @@
     const current = initial ? globalThis.LogEnDomain.normalizePart(initial, settings) : { ...sample, partNumber: '' };
     return modal({
       title: initial ? 'Edit part number' : 'Add part number',
-      subtitle: 'The eight Excel columns, plus an optional floor-stacking safety limit.',
+      subtitle: 'The eight Excel columns. Saved floor stacking is read-only.',
       button: initial ? 'Save part number' : 'Add part number',
       build(body) {
         const name = textField(body, 'Part Number', current.partNumber, { placeholder: 'e.g. PN-001' });
@@ -402,10 +399,7 @@
         field(dimensionGrid, 'length', 'Length', 'mm', true);
         field(dimensionGrid, 'width', 'Width', 'mm', true);
         field(dimensionGrid, 'height', 'Height', 'mm', true);
-        const advanced = section(body, 'Advanced · floor stacking safety', 'Enable Stackability in Shifts & days on hand to edit this factor. When off, floor storage uses one pallet high; the saved factor is preserved. Height limits always apply.');
-        const advancedGrid = $('div', 'form-grid'); advanced.append(advancedGrid);
-        field(advancedGrid, 'stacking', 'Allowed floor stacking', 'pallets', true, true);
-        fields.stacking.input.disabled=!settings.stackabilityEnabled;
+        body.append($('p','muted',`Saved floor stacking factor: ${display(current.stacking)} (read-only). Height limits still apply.`));
         body.append(notice('Consumption means individual parts per shift. QTY in Box is parts per box; QTY boxes per Pallet is boxes per pallet. Existing historical metadata is preserved when editing.'));
         const draft = () => ({ ...current, partNumber: name.input.value.trim() || 'Preview', ...draftNumbers(fields), providedCoverageDays: Number(fields.doh.input.value), packagingInferred: false, inputErrors: [] });
         const update = () => planningPreview(preview, draft(), settings);

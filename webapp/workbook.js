@@ -344,6 +344,21 @@
       settings.getColumn(1).width = 115;
       settings.getColumn(2).width = 35;
       settings.getColumn(3).width = 65;
+      const layout = workbook.addWorksheet('Rack Layout', {views:[{state:'frozen',ySplit:6}]});
+      const plan = calculation.sharedRack;
+      add(layout, ['LogEn — shared rack layout: ' + project.name], 'header');
+      add(layout, ['Required rack bays', plan?.available ? plan.bays : 'Unavailable', 'Rack storage m²', plan?.available ? plan.withoutGangways : null]);
+      add(layout, ['Shelf units use Required storage pallets. Coordinates are mm from the shelf origin. Different PNs may share shelves.']);
+      add(layout, ['Usable shelf L / D / H (mm)', s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, 'Levels', s.rackLevels, 'Between boxes allowance (mm)', s.betweenBoxesAllowance ?? 0]);
+      add(layout, ['Feasible packing estimate; not a guaranteed optimum. Usable placement coordinates exclude structural allowances and gangways.']);
+      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'X (mm)', 'Y (mm)', 'Placed length (mm)', 'Placed depth (mm)'], 'header');
+      if (plan?.available) {
+        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[Math.floor(i/s.rackLevels)+1,i%s.rackLevels+1,j+1,p.partNumber,1,p.x,p.y,p.length,p.depth])));
+        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:9}};
+      } else add(layout, [plan?.error || 'Rack layout unavailable. Correct settings and input errors.']);
+      add(layout, []);add(layout, ['Non-fitting PNs and rows requiring review', 'Required pallets', 'Status'], 'header');
+      calculation.results.filter(r=>!r.isRackValid||!r.isPlanningValid).forEach(r=>add(layout,[r.input.partNumber,r.isPlanningValid?r.requiredPallets:'Unavailable',r.rackFit==='NO'?'Does not fit':'Needs review',r.errors.join(' | ')]));
+      for(let i=1;i<=9;i++)layout.getColumn(i).width=i===4?30:24;
       workbook.views = [{ activeTab: 3, firstSheet: 0, visibility: 'visible' }];
       return new Uint8Array(await workbook.xlsx.writeBuffer());
     }
