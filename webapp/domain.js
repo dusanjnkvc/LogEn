@@ -8,7 +8,7 @@
       maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
       gangwayWidth: 4500, floorPalletClearance: 100,
       rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
-      rackSlotHeight: 1100, rackStructuralLength: 150,
+      rackSlotHeight: 1100, betweenBoxesAllowance: 0, rackStructuralLength: 150,
       rackStructuralDepth: 200, rackStructuralHeight: 150,
       maxRackRunLength: 15000, rackFrontageClearance: 100,
       rackDepthClearance: 100, rackVerticalClearance: 100,
@@ -27,7 +27,7 @@
     maxRackRunLength: 'Maximum rack run length'
   };
   const nonNegativeSettings = {
-    gangwayWidth: 'Gangway width', floorPalletClearance: 'Floor pallet clearance',
+    betweenBoxesAllowance: 'Between boxes allowance', gangwayWidth: 'Gangway width', floorPalletClearance: 'Floor pallet clearance',
     maxFloorRowDepth: 'Maximum floor row depth (0 = unrestricted)',
     rackStructuralLength: 'Rack structural length allowance',
     rackStructuralDepth: 'Rack structural depth allowance',
@@ -178,11 +178,12 @@
   }
   // Usable dimensions already exclude any configured physical allowances.
   // Both horizontal orientations are evaluated; no vertical stacking.
-  function calculateBoxRack(requiredBoxes, length, width, height, slotLength, slotDepth, slotHeight, levels) {
+  function calculateBoxRack(requiredBoxes, length, width, height, slotLength, slotDepth, slotHeight, levels, gap = 0) {
+    if (!Number.isFinite(gap) || gap < 0) throw new Error('Between boxes allowance must be finite and non-negative.');
     if (![length,width,height,slotLength,slotDepth,slotHeight].every(v => Number.isFinite(v) && v > 0) ||
         !Number.isSafeInteger(requiredBoxes) || requiredBoxes < 0 || !Number.isSafeInteger(levels) || levels < 1)
       throw new Error('Rack sizing requires whole non-negative boxes, positive dimensions and whole positive levels.');
-    const capacity = (l,w) => height <= slotHeight ? floor(slotLength / l) * floor(slotDepth / w) : 0;
+    const capacity = (l,w) => height <= slotHeight ? floor((slotLength + gap) / (l + gap)) * floor((slotDepth + gap) / (w + gap)) : 0;
     const original = capacity(length,width), rotatedCapacity = capacity(width,length);
     const boxesPerSlot = Math.max(original,rotatedCapacity);
     const fits = boxesPerSlot > 0;
@@ -282,7 +283,7 @@
       }
 
       const sizing = calculateBoxRack(requiredPallets, input.length, input.width, input.height,
-        s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, s.rackLevels);
+        s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, s.rackLevels, s.betweenBoxesAllowance);
       if (!sizing.fits) {
         errors.push('Rack: unit does not fit the usable shelf length, depth and height in either horizontal orientation.');
       } else {
@@ -326,8 +327,8 @@
       if(!best){shelves.push({free:[{x:0,y:0,w:s.rackSlotLength,d:s.rackSlotDepth}],placements:[]});best={shelf:shelves.length-1,index:0,w:r.input.length,d:r.input.width};if(best.w>s.rackSlotLength||best.d>s.rackSlotDepth)[best.w,best.d]=[best.d,best.w];}
       const sh=shelves[best.shelf],rect=sh.free.splice(best.index,1)[0];
       sh.placements.push({partNumber:r.input.partNumber,x:rect.x,y:rect.y,length:best.w,depth:best.d});
-      if(rect.w>best.w)sh.free.push({x:rect.x+best.w,y:rect.y,w:rect.w-best.w,d:best.d});
-      if(rect.d>best.d)sh.free.push({x:rect.x,y:rect.y+best.d,w:rect.w,d:rect.d-best.d});
+      if(rect.w>best.w+s.betweenBoxesAllowance)sh.free.push({x:rect.x+best.w+s.betweenBoxesAllowance,y:rect.y,w:rect.w-best.w-s.betweenBoxesAllowance,d:best.d});
+      if(rect.d>best.d+s.betweenBoxesAllowance)sh.free.push({x:rect.x,y:rect.y+best.d+s.betweenBoxesAllowance,w:rect.w,d:rect.d-best.d-s.betweenBoxesAllowance});
     }
     const bays=ceilDivide(shelves.length,s.rackLevels),bayArea=s.rackSlotLength*s.rackSlotDepth/1000000;
     const occupied=rows.reduce((n,r)=>n+r.requiredPallets*r.input.length*r.input.width/1000000,0),available=bays*bayArea*s.rackLevels;

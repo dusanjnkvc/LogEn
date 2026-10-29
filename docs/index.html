@@ -134,7 +134,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
       gangwayWidth: 4500, floorPalletClearance: 100,
       rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
-      rackSlotHeight: 1100, rackStructuralLength: 150,
+      rackSlotHeight: 1100, betweenBoxesAllowance: 0, rackStructuralLength: 150,
       rackStructuralDepth: 200, rackStructuralHeight: 150,
       maxRackRunLength: 15000, rackFrontageClearance: 100,
       rackDepthClearance: 100, rackVerticalClearance: 100,
@@ -153,7 +153,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     maxRackRunLength: 'Maximum rack run length'
   };
   const nonNegativeSettings = {
-    gangwayWidth: 'Gangway width', floorPalletClearance: 'Floor pallet clearance',
+    betweenBoxesAllowance: 'Between boxes allowance', gangwayWidth: 'Gangway width', floorPalletClearance: 'Floor pallet clearance',
     maxFloorRowDepth: 'Maximum floor row depth (0 = unrestricted)',
     rackStructuralLength: 'Rack structural length allowance',
     rackStructuralDepth: 'Rack structural depth allowance',
@@ -304,11 +304,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   // Usable dimensions already exclude any configured physical allowances.
   // Both horizontal orientations are evaluated; no vertical stacking.
-  function calculateBoxRack(requiredBoxes, length, width, height, slotLength, slotDepth, slotHeight, levels) {
+  function calculateBoxRack(requiredBoxes, length, width, height, slotLength, slotDepth, slotHeight, levels, gap = 0) {
+    if (!Number.isFinite(gap) || gap < 0) throw new Error('Between boxes allowance must be finite and non-negative.');
     if (![length,width,height,slotLength,slotDepth,slotHeight].every(v => Number.isFinite(v) && v > 0) ||
         !Number.isSafeInteger(requiredBoxes) || requiredBoxes < 0 || !Number.isSafeInteger(levels) || levels < 1)
       throw new Error('Rack sizing requires whole non-negative boxes, positive dimensions and whole positive levels.');
-    const capacity = (l,w) => height <= slotHeight ? floor(slotLength / l) * floor(slotDepth / w) : 0;
+    const capacity = (l,w) => height <= slotHeight ? floor((slotLength + gap) / (l + gap)) * floor((slotDepth + gap) / (w + gap)) : 0;
     const original = capacity(length,width), rotatedCapacity = capacity(width,length);
     const boxesPerSlot = Math.max(original,rotatedCapacity);
     const fits = boxesPerSlot > 0;
@@ -408,7 +409,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }
 
       const sizing = calculateBoxRack(requiredPallets, input.length, input.width, input.height,
-        s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, s.rackLevels);
+        s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, s.rackLevels, s.betweenBoxesAllowance);
       if (!sizing.fits) {
         errors.push('Rack: unit does not fit the usable shelf length, depth and height in either horizontal orientation.');
       } else {
@@ -452,8 +453,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if(!best){shelves.push({free:[{x:0,y:0,w:s.rackSlotLength,d:s.rackSlotDepth}],placements:[]});best={shelf:shelves.length-1,index:0,w:r.input.length,d:r.input.width};if(best.w>s.rackSlotLength||best.d>s.rackSlotDepth)[best.w,best.d]=[best.d,best.w];}
       const sh=shelves[best.shelf],rect=sh.free.splice(best.index,1)[0];
       sh.placements.push({partNumber:r.input.partNumber,x:rect.x,y:rect.y,length:best.w,depth:best.d});
-      if(rect.w>best.w)sh.free.push({x:rect.x+best.w,y:rect.y,w:rect.w-best.w,d:best.d});
-      if(rect.d>best.d)sh.free.push({x:rect.x,y:rect.y+best.d,w:rect.w,d:rect.d-best.d});
+      if(rect.w>best.w+s.betweenBoxesAllowance)sh.free.push({x:rect.x+best.w+s.betweenBoxesAllowance,y:rect.y,w:rect.w-best.w-s.betweenBoxesAllowance,d:best.d});
+      if(rect.d>best.d+s.betweenBoxesAllowance)sh.free.push({x:rect.x,y:rect.y+best.d+s.betweenBoxesAllowance,w:rect.w,d:rect.d-best.d-s.betweenBoxesAllowance});
     }
     const bays=ceilDivide(shelves.length,s.rackLevels),bayArea=s.rackSlotLength*s.rackSlotDepth/1000000;
     const occupied=rows.reduce((n,r)=>n+r.requiredPallets*r.input.length*r.input.width/1000000,0),available=bays*bayArea*s.rackLevels;
@@ -849,7 +850,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         ['Legacy rack surface allowance (unused)', s.rackSurfaceAllowance ?? 4.125, 'm²; shelf footprint now uses usable length × depth'], ['Rack pitch', s.rackPitch ?? 3300, 'mm'], ['Rack levels', s.rackLevels, 'levels'], ['Usable shelf length', s.rackSlotLength, 'mm'],
         ['Usable shelf depth', s.rackSlotDepth, 'mm'], ['Usable shelf height', s.rackSlotHeight, 'mm'],
         ['Rack structural length allowance', s.rackStructuralLength, 'mm'], ['Rack structural depth allowance', s.rackStructuralDepth, 'mm'],
-        ['Rack structural height allowance', s.rackStructuralHeight, 'mm'], ['Maximum rack run length', s.maxRackRunLength, 'mm'],
+        ['Between boxes allowance', s.betweenBoxesAllowance ?? 0, 'mm; between units in both shelf directions only, no edge or vertical gap'], ['Rack structural height allowance', s.rackStructuralHeight, 'mm'], ['Maximum rack run length', s.maxRackRunLength, 'mm'],
         ['Legacy rack frontage clearance (unused)', s.rackFrontageClearance, 'mm; usable shelf dimensions already exclude required clearance'],
         ['Legacy rack depth clearance (unused)', s.rackDepthClearance, 'mm'], ['Legacy rack vertical clearance (unused)', s.rackVerticalClearance, 'mm'],
         ['Rack horizontal orientations', 'Both always evaluated', 'no vertical rotation or stacking within one slot'],
@@ -866,7 +867,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         'Ground length = pallet L + clearance; ground width = pallet W + clearance. Pallets per row = FLOOR(maximum row depth LIMIT / ground length). Limit 0 means one unrestricted row per part. Rows = CEILING(floor positions / pallets per row).',
         'GS net = deepest occupied lane depth (mm) * lane width (mm) * lane count / 1000000; partial lanes reserve the same depth.',
         'GS with gangway = GS net + lane width (mm) * lanes * physical gangway (m) / 2000.',
-        'Boxes per slot = MAX(FLOOR(shelf L / unit L) * FLOOR(shelf D / unit W), FLOOR(shelf L / unit W) * FLOOR(shelf D / unit L)); unit height must fit usable shelf height. Both orientations, no vertical stacking.',
+        'Boxes per slot = MAX(FLOOR((shelf L + g) / (unit L + g)) * FLOOR((shelf D + g) / (unit W + g)), FLOOR((shelf L + g) / (unit W + g)) * FLOOR((shelf D + g) / (unit L + g))); g is Between boxes allowance, between units only; unit height must fit usable shelf height. Both orientations, no vertical stacking.',
         'Required storage pallets are rack units, using existing L/W/H. Usable shelf dimensions already exclude clearances/structure. No extra clearance or structural allowance is added to shelf area.',
         'Capacity per bay = boxes per slot × rack levels. Rack bays = CEILING(required pallets / capacity per bay). Floor stacking never applies to racks.',
         'PR net = whole rack bays * usable shelf length * depth / 1000000. Levels do not multiply the floor footprint.',
@@ -942,7 +943,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const label = (x,y,text,size=11) => shape('text',{x,y,fill:'#e4e5e7','font-size':size,'font-family':'sans-serif'},text);
     label(15,22,'FRONT VIEW — units placed on shelves',12);
     const frontage = rack.rotated ? input.width : input.length;
-    const frontCapacity = Math.floor(settings.rackSlotLength / frontage);
+    const gap=settings.betweenBoxesAllowance ?? 0;
+    const frontCapacity = Math.floor((settings.rackSlotLength + gap) / (frontage + gap));
     for (let bay=0;bay<bays;bay++) {
       const x=20+bay*230, bottom=frontHeight-25;
       shape('rect',{x,y:40,width:200,height:levels*44,fill:'none',stroke:'#ffce24','stroke-width':3});
@@ -1118,7 +1120,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
     gangwayWidth: 4500, floorPalletClearance: 100,
     rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200, rackSlotHeight: 1100,
-    rackStructuralLength: 150, rackStructuralDepth: 200, rackStructuralHeight: 150,
+    betweenBoxesAllowance: 0, rackStructuralLength: 150, rackStructuralDepth: 200, rackStructuralHeight: 150,
     maxRackRunLength: 15000, rackFrontageClearance: 100,
     rackDepthClearance: 100, rackVerticalClearance: 100,
     stockMode: 'consumption', allowRotation: false, stackabilityEnabled: false,
@@ -1235,6 +1237,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         field(structureGrid, 'rackStructuralLength', 'Structural length allowance');
         field(structureGrid, 'rackStructuralDepth', 'Structural depth allowance');
         field(structureGrid, 'rackStructuralHeight', 'Structural height allowance');
+        field(structureGrid, 'betweenBoxesAllowance', 'Between boxes allowance');
+        structure.append($('p','muted','Gap between units on the same shelf, in both length and depth directions. No gap is added at shelf edges or vertically. Default 0 mm. Applies to shared shelves and per-part capacity.'));
         const rotationLabel = $('label', 'checkbox-field');
         const rotation = $('input'); rotation.type = 'checkbox'; rotation.checked = true; rotation.disabled = true;
         const rotationCopy = $('span');
@@ -1374,7 +1378,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           const front = rack.rotated ? input.width : input.length;
           const depth = rack.rotated ? input.length : input.width;
           formula(rackSection, 'Pallet orientation', rack.rotated ? '90° rotation: width along frontage, length along depth.' : 'Original: length along frontage, width along depth.', `${n(front)} mm frontage × ${n(depth)} mm depth`);
-          formula(rackSection, 'Shelf fit and boxes per slot', `A: FLOOR(${n(settings.rackSlotLength)} / ${n(input.length)}) × FLOOR(${n(settings.rackSlotDepth)} / ${n(input.width)}); B: FLOOR(${n(settings.rackSlotLength)} / ${n(input.width)}) × FLOOR(${n(settings.rackSlotDepth)} / ${n(input.length)}). Choose the higher capacity. Height ${n(input.height)} ≤ ${n(settings.rackSlotHeight)} mm. No vertical stacking.`, n(rack.boxesPerSlot));
+          formula(rackSection, 'Shelf fit and boxes per slot', `Gap g = ${n(settings.betweenBoxesAllowance ?? 0)} mm between units only. For each horizontal orientation: FLOOR((shelf length + g) / (unit length + g)) × FLOOR((shelf depth + g) / (unit width + g)). Choose highest capacity. Height must fit usable shelf height. No vertical stacking or outer edge gap.`, n(rack.boxesPerSlot));
           formula(rackSection, 'Capacity per rack bay', `${n(rack.palletsPerSlot)} pallets per slot × ${n(rack.levels)} rack levels`, `${n(rack.capacityPerBay)} pallets`);
           formula(rackSection, 'Required dedicated rack bays', `CEILING(${n(result.requiredPallets)} ÷ ${n(rack.capacityPerBay)})`, `${n(rack.bays)} bays`);
           formula(rackSection, 'Effective rack bay dimensions', `Length: ${n(settings.rackSlotLength)} + ${n(settings.rackStructuralLength)} = ${n(rack.effectiveBayLength)} mm\nDepth: ${n(settings.rackSlotDepth)} + ${n(settings.rackStructuralDepth)} = ${n(rack.effectiveBayDepth)} mm\nHeight per level: ${n(settings.rackSlotHeight)} + ${n(settings.rackStructuralHeight)} = ${n(rack.effectiveBayHeight)} mm`);
@@ -1407,7 +1411,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         for(const box of shelf.placements){const rect=document.createElementNS(svg.namespaceURI,'rect');for(const [k,v] of Object.entries({x:box.x,y:box.y,width:box.length,height:box.depth,fill:'#ffce24',stroke:'#111','stroke-width':10}))rect.setAttribute(k,String(v));const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=box.partNumber;rect.append(title);svg.append(rect);}
         card.append(svg);const counts=new Map();shelf.placements.forEach(p=>counts.set(p.partNumber,(counts.get(p.partNumber)||0)+1));card.append($('p','muted',[...counts].map(([pn,n])=>pn+' × '+n).join(' · ')));body.append(card);
       }
-      body.append($('p','muted',`Top views, gangways excluded. Showing ${limit} of ${plan.shelves.length} occupied shelves; totals include all units. Unused shelf surface: ${area(plan.unused)}; utilization: ${display(plan.utilization)}%. Empty levels in the final bay remain reserved.`));
+      body.append($('p','muted',`Top views, gangways excluded. Gap between units: ${display(settings.betweenBoxesAllowance ?? 0)} mm. Showing ${limit} of ${plan.shelves.length} occupied shelves; totals include all units. Unused shelf surface: ${area(plan.unused)}; utilization: ${display(plan.utilization)}%. Empty levels in the final bay remain reserved.`));
       return {read:()=>true};
     }});
   }

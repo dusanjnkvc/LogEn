@@ -50,7 +50,8 @@
     const label = (x,y,text,size=11) => shape('text',{x,y,fill:'#e4e5e7','font-size':size,'font-family':'sans-serif'},text);
     label(15,22,'FRONT VIEW — units placed on shelves',12);
     const frontage = rack.rotated ? input.width : input.length;
-    const frontCapacity = Math.floor(settings.rackSlotLength / frontage);
+    const gap=settings.betweenBoxesAllowance ?? 0;
+    const frontCapacity = Math.floor((settings.rackSlotLength + gap) / (frontage + gap));
     for (let bay=0;bay<bays;bay++) {
       const x=20+bay*230, bottom=frontHeight-25;
       shape('rect',{x,y:40,width:200,height:levels*44,fill:'none',stroke:'#ffce24','stroke-width':3});
@@ -226,7 +227,7 @@
     maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
     gangwayWidth: 4500, floorPalletClearance: 100,
     rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200, rackSlotHeight: 1100,
-    rackStructuralLength: 150, rackStructuralDepth: 200, rackStructuralHeight: 150,
+    betweenBoxesAllowance: 0, rackStructuralLength: 150, rackStructuralDepth: 200, rackStructuralHeight: 150,
     maxRackRunLength: 15000, rackFrontageClearance: 100,
     rackDepthClearance: 100, rackVerticalClearance: 100,
     stockMode: 'consumption', allowRotation: false, stackabilityEnabled: false,
@@ -343,6 +344,8 @@
         field(structureGrid, 'rackStructuralLength', 'Structural length allowance');
         field(structureGrid, 'rackStructuralDepth', 'Structural depth allowance');
         field(structureGrid, 'rackStructuralHeight', 'Structural height allowance');
+        field(structureGrid, 'betweenBoxesAllowance', 'Between boxes allowance');
+        structure.append($('p','muted','Gap between units on the same shelf, in both length and depth directions. No gap is added at shelf edges or vertically. Default 0 mm. Applies to shared shelves and per-part capacity.'));
         const rotationLabel = $('label', 'checkbox-field');
         const rotation = $('input'); rotation.type = 'checkbox'; rotation.checked = true; rotation.disabled = true;
         const rotationCopy = $('span');
@@ -482,7 +485,7 @@
           const front = rack.rotated ? input.width : input.length;
           const depth = rack.rotated ? input.length : input.width;
           formula(rackSection, 'Pallet orientation', rack.rotated ? '90° rotation: width along frontage, length along depth.' : 'Original: length along frontage, width along depth.', `${n(front)} mm frontage × ${n(depth)} mm depth`);
-          formula(rackSection, 'Shelf fit and boxes per slot', `A: FLOOR(${n(settings.rackSlotLength)} / ${n(input.length)}) × FLOOR(${n(settings.rackSlotDepth)} / ${n(input.width)}); B: FLOOR(${n(settings.rackSlotLength)} / ${n(input.width)}) × FLOOR(${n(settings.rackSlotDepth)} / ${n(input.length)}). Choose the higher capacity. Height ${n(input.height)} ≤ ${n(settings.rackSlotHeight)} mm. No vertical stacking.`, n(rack.boxesPerSlot));
+          formula(rackSection, 'Shelf fit and boxes per slot', `Gap g = ${n(settings.betweenBoxesAllowance ?? 0)} mm between units only. For each horizontal orientation: FLOOR((shelf length + g) / (unit length + g)) × FLOOR((shelf depth + g) / (unit width + g)). Choose highest capacity. Height must fit usable shelf height. No vertical stacking or outer edge gap.`, n(rack.boxesPerSlot));
           formula(rackSection, 'Capacity per rack bay', `${n(rack.palletsPerSlot)} pallets per slot × ${n(rack.levels)} rack levels`, `${n(rack.capacityPerBay)} pallets`);
           formula(rackSection, 'Required dedicated rack bays', `CEILING(${n(result.requiredPallets)} ÷ ${n(rack.capacityPerBay)})`, `${n(rack.bays)} bays`);
           formula(rackSection, 'Effective rack bay dimensions', `Length: ${n(settings.rackSlotLength)} + ${n(settings.rackStructuralLength)} = ${n(rack.effectiveBayLength)} mm\nDepth: ${n(settings.rackSlotDepth)} + ${n(settings.rackStructuralDepth)} = ${n(rack.effectiveBayDepth)} mm\nHeight per level: ${n(settings.rackSlotHeight)} + ${n(settings.rackStructuralHeight)} = ${n(rack.effectiveBayHeight)} mm`);
@@ -515,7 +518,7 @@
         for(const box of shelf.placements){const rect=document.createElementNS(svg.namespaceURI,'rect');for(const [k,v] of Object.entries({x:box.x,y:box.y,width:box.length,height:box.depth,fill:'#ffce24',stroke:'#111','stroke-width':10}))rect.setAttribute(k,String(v));const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=box.partNumber;rect.append(title);svg.append(rect);}
         card.append(svg);const counts=new Map();shelf.placements.forEach(p=>counts.set(p.partNumber,(counts.get(p.partNumber)||0)+1));card.append($('p','muted',[...counts].map(([pn,n])=>pn+' × '+n).join(' · ')));body.append(card);
       }
-      body.append($('p','muted',`Top views, gangways excluded. Showing ${limit} of ${plan.shelves.length} occupied shelves; totals include all units. Unused shelf surface: ${area(plan.unused)}; utilization: ${display(plan.utilization)}%. Empty levels in the final bay remain reserved.`));
+      body.append($('p','muted',`Top views, gangways excluded. Gap between units: ${display(settings.betweenBoxesAllowance ?? 0)} mm. Showing ${limit} of ${plan.shelves.length} occupied shelves; totals include all units. Unused shelf surface: ${area(plan.unused)}; utilization: ${display(plan.utilization)}%. Empty levels in the final bay remain reserved.`));
       return {read:()=>true};
     }});
   }
