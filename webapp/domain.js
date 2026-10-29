@@ -178,7 +178,8 @@
   }
   // Usable dimensions already exclude any configured physical allowances.
   // Both horizontal orientations are evaluated; no vertical stacking.
-  function calculateBoxRack(requiredBoxes, length, width, height, slotLength, slotDepth, slotHeight, levels, gap = 0) {
+  function calculateBoxRack(requiredBoxes, length, width, height, slotLength, slotDepth, slotHeight, levels, gap = 0, structuralLength = 0, structuralDepth = 0) {
+    if (![structuralLength,structuralDepth].every(v=>Number.isFinite(v)&&v>=0)) throw new Error('Rack structural allowances must be finite and non-negative.');
     if (!Number.isFinite(gap) || gap < 0) throw new Error('Between boxes allowance must be finite and non-negative.');
     if (![length,width,height,slotLength,slotDepth,slotHeight].every(v => Number.isFinite(v) && v > 0) ||
         !Number.isSafeInteger(requiredBoxes) || requiredBoxes < 0 || !Number.isSafeInteger(levels) || levels < 1)
@@ -190,16 +191,17 @@
     const capacityPerBay = boxesPerSlot * levels;
     if (!Number.isSafeInteger(capacityPerBay)) throw new Error('Rack capacity exceeds supported precision.');
     const bays = fits ? ceilDivide(requiredBoxes,capacityPerBay) : 0;
-    const bayArea = slotLength * slotDepth / 1000000;
+    const usableBayArea = slotLength * slotDepth / 1000000;
+    const bayArea = (slotLength + structuralLength) * (slotDepth + structuralDepth) / 1000000;
     const withoutGangways = bays * bayArea;
-    const availableShelfArea = withoutGangways * levels;
+    const availableShelfArea = bays * usableBayArea * levels;
     const occupiedShelfArea = fits ? requiredBoxes * length * width / 1000000 : 0;
     const unusedShelfArea = Math.max(0,availableShelfArea - occupiedShelfArea);
     const utilizationPercent = availableShelfArea > 0 ? occupiedShelfArea / availableShelfArea * 100 : null;
     const values = [bayArea,withoutGangways,availableShelfArea,occupiedShelfArea,unusedShelfArea];
     if (!values.every(Number.isFinite)) throw new Error('Rack surface exceeds supported precision.');
     return {fits, requiredBoxes, nonFittingBoxes: fits ? 0 : requiredBoxes, boxesPerSlot,
-      capacityPerBay, bays, bayArea, withoutGangways, rotated: rotatedCapacity > original,
+      capacityPerBay, bays, bayArea, usableBayArea, withoutGangways, rotated: rotatedCapacity > original,
       availableShelfArea, occupiedShelfArea, unusedShelfArea, unusedPerLevel: unusedShelfArea / levels,
       utilizationPercent, unusedPercent: utilizationPercent === null ? null : 100-utilizationPercent};
   }
@@ -283,7 +285,7 @@
       }
 
       const sizing = calculateBoxRack(requiredPallets, input.length, input.width, input.height,
-        s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, s.rackLevels, s.betweenBoxesAllowance);
+        s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, s.rackLevels, s.betweenBoxesAllowance, s.rackStructuralLength, s.rackStructuralDepth);
       if (!sizing.fits) {
         errors.push('Rack: unit does not fit the usable shelf length, depth and height in either horizontal orientation.');
       } else {
@@ -330,8 +332,8 @@
       if(rect.w>best.w+s.betweenBoxesAllowance)sh.free.push({x:rect.x+best.w+s.betweenBoxesAllowance,y:rect.y,w:rect.w-best.w-s.betweenBoxesAllowance,d:best.d});
       if(rect.d>best.d+s.betweenBoxesAllowance)sh.free.push({x:rect.x,y:rect.y+best.d+s.betweenBoxesAllowance,w:rect.w,d:rect.d-best.d-s.betweenBoxesAllowance});
     }
-    const bays=ceilDivide(shelves.length,s.rackLevels),bayArea=s.rackSlotLength*s.rackSlotDepth/1000000;
-    const occupied=rows.reduce((n,r)=>n+r.requiredPallets*r.input.length*r.input.width/1000000,0),available=bays*bayArea*s.rackLevels;
+    const bays=ceilDivide(shelves.length,s.rackLevels),bayArea=(s.rackSlotLength+s.rackStructuralLength)*(s.rackSlotDepth+s.rackStructuralDepth)/1000000;
+    const occupied=rows.reduce((n,r)=>n+r.requiredPallets*r.input.length*r.input.width/1000000,0),available=bays*s.rackSlotLength*s.rackSlotDepth/1000000*s.rackLevels;
     return {available:true,shelves,bays,quantity,withoutGangways:bays*bayArea,withGangways:bays*s.rackPitch*s.gangwayWidth/2000000,occupied,availableShelfArea:available,unused:Math.max(0,available-occupied),utilization:available>0?occupied/available*100:null};
   }
   function calculateProject(parts, settings) {

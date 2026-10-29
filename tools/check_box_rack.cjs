@@ -8,7 +8,7 @@ const c=D.calculateBoxRack(10,2800,1200,1000,2700,1100,1100,5);assert.equal(c.fi
 console.log('Rack examples A/B/C pass: 2.97 / 5.94 m², shelf waste and utilization match.');
 // Integration: Required storage pallets feed the rack engine; ground sizing remains independent.
 const fs=require('node:fs');
-const settings={...D.createDefaultSettings(),shiftsPerDay:1,rackSlotLength:2700,rackSlotDepth:1100,rackSlotHeight:1100,rackLevels:5};
+const settings={...D.createDefaultSettings(),shiftsPerDay:1,rackStructuralLength:0,rackStructuralDepth:0,rackSlotLength:2700,rackSlotDepth:1100,rackSlotHeight:1100,rackLevels:5};
 const input=(partNumber,length)=>({partNumber,qtyBox:20,qtyOnPallet:40,consumptionPerShift:800,doh:10,length,width:1000,height:1000,stacking:1});
 const project=D.calculateProject([input('A',1200),input('B',2000),{...input('C',2800),width:1200}],settings);
 assert.equal(project.results[0].requiredPallets,10);near(project.results[0].rack.withoutGangways,2.97);near(project.results[1].rack.withoutGangways,5.94);assert.equal(project.results[2].rackFit,'NO');assert.equal(project.nonFittingPallets,10);near(project.rackWithoutGangways,8.91);near(project.rackUnusedShelfArea,12.55);near(project.rackUtilizationPercent,32/44.55*100);
@@ -32,3 +32,5 @@ w.document.querySelector('[data-detail="0"]').click();assert.ok(w.document.query
 const ps=Array.from({length:10},(_,i)=>({...input('GAP-'+i,1200),consumptionPerShift:80}));const c=D.calculateProject(ps,{...settings,rackSlotLength:2400,rackSlotDepth:1000,betweenBoxesAllowance:100});assert.equal(c.totalRackBays,2);assert.equal(c.sharedRack.shelves.length,10);
 const mixed=D.calculateProject(ps,{...settings,rackSlotLength:2500,rackSlotDepth:2100,betweenBoxesAllowance:100});for(const sh of mixed.sharedRack.shelves){for(let i=0;i<sh.placements.length;i++)for(let j=i+1;j<sh.placements.length;j++){const a=sh.placements[i],b=sh.placements[j];assert.ok(a.x+a.length+100<=b.x||b.x+b.length+100<=a.x||a.y+a.depth+100<=b.y||b.y+b.depth+100<=a.y);}}
 console.log('Between-box allowance checks pass: zero default, 100 mm gaps, exact boundary, no edge gap, mixed PN placement and negative validation.'); }
+
+{const c=D.calculateProject([input('STRUCT',1200)],{...settings,rackStructuralLength:150,rackStructuralDepth:200});near(c.rackWithoutGangways,3.705);assert.equal(c.totalRackBays,1);near(c.rackAvailableShelfArea,14.85);near(c.rackUnusedShelfArea,2.85);near(c.results[0].rack.withoutGangways,3.705);const b=D.calculateProject([input('STRUCT-B',2000)],{...settings,rackStructuralLength:150,rackStructuralDepth:200});near(b.rackWithoutGangways,7.41);near(b.rackUnusedShelfArea,9.7);assert.equal(b.totalRackBays,2);console.log('Structural floor area checks pass: 3.705 / 7.41 m²; shelf capacity and unused surface unchanged.');}

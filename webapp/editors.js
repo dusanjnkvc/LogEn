@@ -66,12 +66,12 @@
       label(x,bottom+19,`Bay ${bay+1} · ${area(rack.bayArea)}`);
       const topY=frontHeight+40;
       shape('rect',{x,y:topY,width:200,height:55,fill:'#252a30',stroke:'#ffce24','stroke-width':2});
-      label(x+8,topY+22,`${display(settings.rackSlotLength)} × ${display(settings.rackSlotDepth)} mm`);
+      label(x+8,topY+22,`${display(settings.rackSlotLength + settings.rackStructuralLength)} × ${display(settings.rackSlotDepth + settings.rackStructuralDepth)} mm`);
       label(x+8,topY+42,area(rack.bayArea));
     }
     label(15,frontHeight+25,'TOP VIEW — one ground footprint per vertical bay',12);
     wrapper.append(svg);
-    wrapper.append($('p','muted',`Schematic, not to scale. ${rack.bays>bays || rack.levels>levels ? `Preview shows up to ${bays} bays and ${levels} lower levels; totals include all bays and levels. ` : ''}Front silhouettes show the first depth row, up to 12 units; labels include all depth rows. Top view shows usable shelf footprints, without structural allowances or gangways.`));
+    wrapper.append($('p','muted',`Schematic, not to scale. ${rack.bays>bays || rack.levels>levels ? `Preview shows up to ${bays} bays and ${levels} lower levels; totals include all bays and levels. ` : ''}Front silhouettes show the first depth row, up to 12 units; labels include all depth rows. Top view includes structural length/depth allowances in each ground footprint; gangways are excluded.`));
     wrapper.append($('p','muted',`Unused shelf surface: ${area(rack.unusedShelfArea)} across all levels; ${area(rack.unusedPerLevel)} equivalent per level. This is not free warehouse floor space. Allocated bays retain their full ground footprint, including unused shelf surface.`));
     return wrapper;
   }
@@ -329,7 +329,7 @@
         floor.append(gangwayHint);
         const rack = section(body, 'Pallet rack capacity', 'Enter the usable footprint and height of one shelf. These dimensions already exclude structure and required clearance.');
         const rackGrid = $('div', 'form-grid'); rack.append(rackGrid);
-        rack.append($('p', 'muted formula-hint', 'Required storage pallets are the rack unit quantity. Shelf footprint uses usable length × depth; levels increase capacity and shelf surface, not floor footprint. Both horizontal orientations are always checked. Legacy surface allowance and clearances are retained in saved data but are not applied again to usable dimensions.'));
+        rack.append($('p', 'muted formula-hint', 'Required storage pallets are the rack unit quantity. Rack floor footprint uses (usable length + structural length) × (usable depth + structural depth). Shelf capacity and surface use usable dimensions only. Both horizontal orientations are always checked. Legacy surface allowance and clearances are retained in saved data but are not applied again to usable dimensions.'));
         field(rackGrid, 'rackPitch', 'Rack pitch', true);
         field(rackGrid, 'rackLevels', 'Rack levels', true, true, 'levels');
         field(rackGrid, 'maxRackRunLength', 'Maximum rack run length', true);
@@ -489,8 +489,8 @@
           formula(rackSection, 'Capacity per rack bay', `${n(rack.palletsPerSlot)} pallets per slot × ${n(rack.levels)} rack levels`, `${n(rack.capacityPerBay)} pallets`);
           formula(rackSection, 'Required dedicated rack bays', `CEILING(${n(result.requiredPallets)} ÷ ${n(rack.capacityPerBay)})`, `${n(rack.bays)} bays`);
           formula(rackSection, 'Effective rack bay dimensions', `Length: ${n(settings.rackSlotLength)} + ${n(settings.rackStructuralLength)} = ${n(rack.effectiveBayLength)} mm\nDepth: ${n(settings.rackSlotDepth)} + ${n(settings.rackStructuralDepth)} = ${n(rack.effectiveBayDepth)} mm\nHeight per level: ${n(settings.rackSlotHeight)} + ${n(settings.rackStructuralHeight)} = ${n(rack.effectiveBayHeight)} mm`);
-          formula(rackSection, 'C · Racks without gangways', `${n(rack.bays)} vertical bays × ${n(settings.rackSlotLength)} × ${n(settings.rackSlotDepth)} / 1,000,000`, area(rack.withoutGangways));
-          formula(rackSection, 'Available / occupied shelf surface', `Available: ${n(rack.bays)} × ${n(rack.bayArea)} m² × ${n(settings.rackLevels)} levels; occupied: ${n(result.requiredPallets)} units × ${n(input.length)} × ${n(input.width)} / 1,000,000`, `${area(rack.availableShelfArea)} available; ${area(rack.occupiedShelfArea)} occupied`);
+          formula(rackSection, 'C · Racks without gangways', `${n(rack.bays)} vertical bays × (${n(settings.rackSlotLength)} + ${n(settings.rackStructuralLength)}) × (${n(settings.rackSlotDepth)} + ${n(settings.rackStructuralDepth)}) / 1,000,000`, area(rack.withoutGangways));
+          formula(rackSection, 'Available / occupied shelf surface', `Available: ${n(rack.bays)} × ${n(rack.usableBayArea)} m² usable shelf × ${n(settings.rackLevels)} levels; occupied: ${n(result.requiredPallets)} units × ${n(input.length)} × ${n(input.width)} / 1,000,000`, `${area(rack.availableShelfArea)} available; ${area(rack.occupiedShelfArea)} occupied`);
           formula(rackSection, 'Unused shelf surface · not warehouse floor space', `${n(rack.availableShelfArea)} − ${n(rack.occupiedShelfArea)}; equivalent per level = unused / ${n(settings.rackLevels)}`, `${area(rack.unusedShelfArea)} total; ${area(rack.unusedPerLevel)} per level`);
           formula(rackSection, 'Rack utilization / unused percentage', 'Occupied shelf surface / available shelf surface × 100. Unused surface is never subtracted from floor footprint.', `${rack.utilizationPercent === null ? 'N/A' : n(rack.utilizationPercent) + '%'} utilized; ${rack.unusedPercent === null ? 'N/A' : n(rack.unusedPercent) + '%'} unused`);
           formula(rackSection, 'Maximum bays per run', `FLOOR(${n(settings.maxRackRunLength)} ÷ ${n(rack.effectiveBayLength)})`, `${n(rack.maxBaysPerRun)} bays`);
