@@ -900,32 +900,50 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       for(let i=1;i<=8;i++)layout.getColumn(i).width=i===4?30:24;
       const drawing = workbook.addWorksheet('Racks Layout', {views:[{showGridLines:false}], pageSetup:{orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0}});
       add(drawing, ['LogEn — graphical shared rack layout: ' + project.name], 'header');
-      add(drawing, ['Part Numbers are shown inside pallet boxes. Each box represents one required storage pallet.']);
-      add(drawing, ['Occupied shelf top views are schematic; empty levels remain reserved in totals. Gaps reflect Between boxes allowance. Rack floor totals include structure; shelf placement uses usable dimensions.']);
-      if(plan?.available && plan.shelves.length) {
-        const xs=[...new Set([0,s.rackSlotLength,...plan.shelves.flatMap(sh=>sh.placements.flatMap(p=>[p.x,p.x+p.length]))])].sort((a,b)=>a-b);
-        if(xs.length>16000) add(drawing,['Graphical layout exceeds Excel column limits. Use the Rack Layout table for the complete allocation.']);
+      add(drawing, ['Front view: vertical rack bays side by side, highest level at the top. Each yellow box is one pallet labelled with its Part Number.']);
+      add(drawing, ['Schematic, not to scale. Up to four bays per group. Rows of boxes within a level represent shelf-depth positions, not vertical stacking. Empty shelves remain visible.']);
+      if(plan?.available && plan.bays) {
+        if(s.rackLevels*Math.ceil(plan.bays/4)*3+plan.quantity*2>900000) add(drawing,['Front view exceeds Excel row limits. Use Rack Layout for the complete allocation.']);
         else {
-          drawing.getColumn(1).width=3;
-          for(let i=0;i<xs.length-1;i++)drawing.getColumn(i+2).width=Math.max(0.1,(xs[i+1]-xs[i])/s.rackSlotLength*100);
-          const lastColumn=xs.length;
-          for(let index=0;index<plan.shelves.length;index++) {
-            const shelf=plan.shelves[index],headingRow=drawing.rowCount+2;
-            drawing.mergeCells(headingRow,2,headingRow,lastColumn);
-            const heading=drawing.getCell(headingRow,2);heading.value=`Bay ${Math.floor(index/s.rackLevels)+1} · Shelf ${index%s.rackLevels+1} · ${s.rackSlotLength} × ${s.rackSlotDepth} mm usable`;
-            heading.font={bold:true,size:12,color:{argb:BLACK}};drawing.getRow(headingRow).height=24;
-            const ys=[...new Set([0,s.rackSlotDepth,...shelf.placements.flatMap(p=>[p.y,p.y+p.depth])])].sort((a,b)=>a-b);
-            const startRow=headingRow+1;
-            for(let i=0;i<ys.length-1;i++)drawing.getRow(startRow+i).height=Math.max(1,(ys[i+1]-ys[i])/s.rackSlotDepth*150);
-            for(const box of shelf.placements) {
-              const left=xs.indexOf(box.x)+2,right=xs.indexOf(box.x+box.length)+1;
-              const top=startRow+ys.indexOf(box.y),bottom=startRow+ys.indexOf(box.y+box.depth)-1;
-              if(left!==right||top!==bottom)drawing.mergeCells(top,left,bottom,right);
-              const cell=drawing.getCell(top,left);cell.value=box.partNumber;
-              cell.font={name:'Calibri',size:11,bold:true,color:{argb:BLACK}};
-              cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:YELLOW}};
-              cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};
-              const edge={style:'thin',color:{argb:BLACK}};cell.border={top:edge,bottom:edge,left:edge,right:edge};
+          const steel='FF708399', dark='FF15181D';
+          drawing.getColumn(1).width=7;
+          for(let c=2;c<=54;c++)drawing.getColumn(c).width=(c-2)%13===0?1.2:3.2;
+          for(let first=0;first<plan.bays;first+=4) {
+            const count=Math.min(4,plan.bays-first),lastColumn=2+count*13;
+            const headingRow=drawing.rowCount+2;
+            for(let b=0;b<count;b++){
+              const start=3+b*13;drawing.mergeCells(headingRow,start,headingRow,start+11);
+              const cell=drawing.getCell(headingRow,start);cell.value=`Bay ${first+b+1}`;cell.font={bold:true,size:13};cell.alignment={horizontal:'center'};
+            }
+            drawing.getRow(headingRow).height=25;
+            let cursor=headingRow+1;
+            function frame(row,height){drawing.getRow(row).height=height;for(let c=2;c<=lastColumn;c++)drawing.getCell(row,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:steel}};}
+            frame(cursor++,6);
+            for(let level=s.rackLevels-1;level>=0;level--){
+              const shelves=Array.from({length:count},(_,b)=>plan.shelves[(first+b)*s.rackLevels+level]);
+              const bands=Math.max(1,...shelves.map(sh=>Math.ceil((sh?.placements.length||0)/3)));
+              const firstRow=cursor,boxRows=[];
+              for(let band=0;band<bands;band++){
+                drawing.getRow(cursor++).height=5;
+                boxRows.push(cursor);drawing.getRow(cursor++).height=38;
+              }
+              for(let row=firstRow;row<cursor;row++)for(let c=2;c<=lastColumn;c++)drawing.getCell(row,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:(c-2)%13===0?steel:dark}};
+              if(cursor-firstRow>1)drawing.mergeCells(firstRow,1,cursor-1,1);
+              const levelCell=drawing.getCell(firstRow,1);levelCell.value=`L${level+1}`;levelCell.font={bold:true,size:12};levelCell.alignment={vertical:'middle',horizontal:'center'};
+              shelves.forEach((shelf,b)=>{
+                if(!shelf){drawing.mergeCells(boxRows[0],3+b*13,boxRows[0],14+b*13);const empty=drawing.getCell(boxRows[0],3+b*13);empty.value='Empty shelf';empty.font={color:{argb:'FFADB5BD'},italic:true};empty.alignment={horizontal:'center',vertical:'middle'};return;}
+                const units=[...shelf.placements].sort((a,b)=>a.y-b.y||a.x-b.x);
+                units.forEach((box,index)=>{
+                  const band=Math.floor(index/3),within=index%3,number=Math.min(3,units.length-band*3),span=12/number;
+                  const left=3+b*13+within*span,right=left+span-1,row=boxRows[band];
+                  drawing.mergeCells(row,left,row,right);
+                  const cell=drawing.getCell(row,left);cell.value=box.partNumber;
+                  cell.font={name:'Calibri',size:11,bold:true,color:{argb:BLACK}};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:YELLOW}};
+                  cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};
+                  const edge={style:'medium',color:{argb:dark}};cell.border={top:edge,bottom:edge,left:edge,right:edge};
+                });
+              });
+              frame(cursor++,6);
             }
           }
         }
