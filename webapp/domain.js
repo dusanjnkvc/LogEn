@@ -19,7 +19,6 @@
   }
 
   const positiveSettings = {
-    rackPitch: 'Rack pitch',
     maxFloorStackingHeight: 'Maximum floor stacking height',
     rackSlotLength: 'Rack usable slot length',
     rackSlotDepth: 'Rack usable slot depth',
@@ -303,8 +302,8 @@
         const withoutGangways = sizing.withoutGangways;
         const totalFrontageMetres = baysPerRun.reduce((total, count) =>
           total + count * effectiveBayLength / 1000, 0);
-        const gangwayArea = bays * s.rackPitch * (s.gangwayWidth / 1000) / 2000;
-        const withGangways = gangwayArea;
+        const gangwayArea = bays * effectiveBayLength * s.gangwayWidth / 2000000;
+        const withGangways = withoutGangways + gangwayArea;
         if (![withoutGangways, gangwayArea, withGangways, effectiveBayHeight].every(Number.isFinite))
           throw new Error('Rack area exceeds supported numeric precision.');
         rack = { ...sizing, palletsPerSlot, levels: s.rackLevels, capacityPerBay, bays,
@@ -334,7 +333,7 @@
     }
     const bays=ceilDivide(shelves.length,s.rackLevels),bayArea=(s.rackSlotLength+s.rackStructuralLength)*(s.rackSlotDepth+s.rackStructuralDepth)/1000000;
     const occupied=rows.reduce((n,r)=>n+r.requiredPallets*r.input.length*r.input.width/1000000,0),available=bays*s.rackSlotLength*s.rackSlotDepth/1000000*s.rackLevels;
-    return {available:true,shelves,bays,quantity,withoutGangways:bays*bayArea,withGangways:bays*s.rackPitch*s.gangwayWidth/2000000,occupied,availableShelfArea:available,unused:Math.max(0,available-occupied),utilization:available>0?occupied/available*100:null};
+    return {available:true,shelves,bays,quantity,withoutGangways:bays*bayArea,gangwayArea:bays*(s.rackSlotLength+s.rackStructuralLength)*s.gangwayWidth/2000000,withGangways:bays*bayArea+bays*(s.rackSlotLength+s.rackStructuralLength)*s.gangwayWidth/2000000,occupied,availableShelfArea:available,unused:Math.max(0,available-occupied),utilization:available>0?occupied/available*100:null};
   }
   function calculateProject(parts, settings) {
     const s = { ...createDefaultSettings(), ...settings };
@@ -390,7 +389,7 @@
     if(shared.available){
       project.totalRackBays=shared.bays;
       project.totalRackRuns=ceilDivide(shared.bays, floor(s.maxRackRunLength/(s.rackSlotLength+s.rackStructuralLength)));
-      project.rackWithoutGangways=shared.withoutGangways;project.rackWithGangways=shared.withGangways;project.rackGangwayArea=shared.withGangways;
+      project.rackWithoutGangways=shared.withoutGangways;project.rackWithGangways=shared.withGangways;project.rackGangwayArea=shared.gangwayArea;
       project.rackAvailableShelfArea=shared.availableShelfArea;project.rackOccupiedShelfArea=shared.occupied;
       project.rackUnusedShelfArea=shared.unused;project.rackUnusedPerLevel=shared.unused/s.rackLevels;
       project.rackUtilizationPercent=shared.utilization;project.rackUnusedPercent=shared.utilization===null?null:100-shared.utilization;

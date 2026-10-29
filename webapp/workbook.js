@@ -269,7 +269,7 @@
         'GS with gangway = GS net + lane width (mm) * lanes * physical gangway (m) / 2000.',
         'GS net = deepest occupied lane depth (mm) * lane width (mm) * lane count / 1000000; partial lanes reserve the same depth.',
         'GS net = deepest occupied lane depth (mm) * lane width (mm) * lane count / 1000000; partial lanes reserve the same depth.',
-        'PR with gangway = whole rack bays * rack pitch (mm) * physical gangway (m) / 2000. Do not add PR net.',
+        'PR with gangway = PR net + whole rack bays * (usable shelf length + structural length) (mm) * physical gangway (m) / 2000.',
         'Allocated footprints are planning estimates, not optimized physical warehouse designs. Count shared gangways once in an actual layout.',
         'Floor and rack totals include independently calculable rows. A rack fit error does not exclude a valid floor result, and a floor fit error does not exclude a valid rack result. Duplicate and invalid input rows remain listed but do not contribute.',
         'Negative savings mean racks require more floor area. N/A percentages have a zero floor denominator.',
@@ -313,7 +313,7 @@
         ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
         ['Floor pallet clearance', s.floorPalletClearance, 'mm; full clearance added to both pallet L and W for ground storage only'],
         ['Floor storage total rounding', 'Sum of row areas rounded to two decimals', 'm²; independently valid floor rows, including rows with rack fit errors'],
-        ['Legacy rack surface allowance (unused)', s.rackSurfaceAllowance ?? 4.125, 'm²; shelf footprint now uses usable length × depth'], ['Rack pitch', s.rackPitch ?? 3300, 'mm'], ['Rack levels', s.rackLevels, 'levels'], ['Usable shelf length', s.rackSlotLength, 'mm'],
+        ['Legacy rack surface allowance (unused)', s.rackSurfaceAllowance ?? 4.125, 'm²; shelf footprint now uses usable length × depth'], ['Legacy rack pitch (unused)', s.rackPitch ?? 3300, 'mm; frontage now uses usable length + structural length'], ['Rack levels', s.rackLevels, 'levels'], ['Usable shelf length', s.rackSlotLength, 'mm'],
         ['Usable shelf depth', s.rackSlotDepth, 'mm'], ['Usable shelf height', s.rackSlotHeight, 'mm'],
         ['Rack structural length allowance', s.rackStructuralLength, 'mm'], ['Rack structural depth allowance', s.rackStructuralDepth, 'mm'],
         ['Between boxes allowance', s.betweenBoxesAllowance ?? 0, 'mm; between units in both shelf directions only, no edge or vertical gap'], ['Rack structural height allowance', s.rackStructuralHeight, 'mm'], ['Maximum rack run length', s.maxRackRunLength, 'mm'],
@@ -338,7 +338,7 @@
         'Capacity per bay = boxes per slot × rack levels. Rack bays = CEILING(required pallets / capacity per bay). Floor stacking never applies to racks.',
         'PR net = whole rack bays * (usable shelf length + structural length) * (usable shelf depth + structural depth) / 1000000. Levels do not multiply the floor footprint.',
         'Maximum bays per run = FLOOR(maximum run length / effective bay L). Runs = CEILING(bays / maximum bays per run). Final run uses only assigned bays.',
-        'PR with gangway = whole rack bays * rack pitch (mm) * physical gangway (m) / 2000. Do not add PR net.',
+        'PR with gangway = PR net + whole rack bays * (usable shelf length + structural length) (mm) * physical gangway (m) / 2000.',
         'Structural height allowance describes physical bay height; it does not increase usable loaded-pallet height or multiply the ground footprint.',
       ].forEach(line => add(settings, [line]));
       settings.getColumn(1).width = 115;

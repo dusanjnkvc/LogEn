@@ -41,7 +41,7 @@ Current Chrome surface formulas (full precision internally, m² displayed to two
 - GS net = deepest occupied lane depth × lane width × lane count / 1,000,000 (mm).
 - GS allocated = GS net + lane width × lanes × physical gangway metres / 2000.
 - PR net = required whole vertical rack bays × usable shelf length × depth / 1,000,000. Each bay ground footprint is counted once.
-- PR allocated = required whole rack bays × rack pitch (default 3300 mm) × physical gangway metres / 2000. PR net is not added.
+- PR allocated = PR net + required whole rack bays × (usable shelf length + structural length) in mm × physical gangway metres / 2000.
 
 Lanes use existing row count, row width (pallet width + clearance), and deepest occupied row depth. Ground length is pallet length + clearance; occupied lane depth uses this adjusted length per position, with no additional gaps. A partial final row reserves a complete lane. Depth limit 0 remains unrestricted. Shelf capacity is the maximum grid capacity of both horizontal orientations, FLOOR(shelf L / unit L) × FLOOR(shelf D / unit W), with unit height fitting usable shelf height. No vertical stacking. Required storage pallets are the required rack units, as requested; existing part L/W/H describe each unit. Bays = CEILING(required units / (units per slot × levels)). These are half-shared-gangway allocations, not physical layouts. Gangway input remains in mm, default 4500.
 
@@ -77,3 +77,5 @@ The rack icons on Overview open a shared shelf plan. Mixed part numbers share us
 Warehouse Settings → Rack structural allowances → Between boxes allowance (mm) sets horizontal gaps between rack units in both shelf directions. Default 0; no shelf-edge or vertical gap. Grid capacity uses FLOOR((usable dimension + gap) / (unit dimension + gap)); shared shelf placement reserves the same gaps. Box footprints remain unchanged, so gaps count as unused shelf surface.
 
 Rack warehouse floor m² includes structural length and depth: bays × (usable shelf length + structural length allowance) × (usable shelf depth + structural depth allowance) / 1,000,000. Shelf capacity, utilization and unused shelf surface continue to use usable dimensions only. Example: 2700 × 1100 usable plus 150 × 200 structure = 2850 × 1300 = 3.705 m² per bay.
+
+Rack with gangways follows the floor allocation rule: rack storage area plus a half-shared gangway strip along total bay frontage. Legacy rack pitch is no longer used.

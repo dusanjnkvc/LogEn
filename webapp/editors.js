@@ -330,7 +330,7 @@
         const rack = section(body, 'Pallet rack capacity', 'Enter the usable footprint and height of one shelf. These dimensions already exclude structure and required clearance.');
         const rackGrid = $('div', 'form-grid'); rack.append(rackGrid);
         rack.append($('p', 'muted formula-hint', 'Required storage pallets are the rack unit quantity. Rack floor footprint uses (usable length + structural length) × (usable depth + structural depth). Shelf capacity and surface use usable dimensions only. Both horizontal orientations are always checked. Legacy surface allowance and clearances are retained in saved data but are not applied again to usable dimensions.'));
-        field(rackGrid, 'rackPitch', 'Rack pitch', true);
+
         field(rackGrid, 'rackLevels', 'Rack levels', true, true, 'levels');
         field(rackGrid, 'maxRackRunLength', 'Maximum rack run length', true);
         field(rackGrid, 'rackSlotLength', 'Usable shelf length', true);
@@ -496,9 +496,9 @@
           formula(rackSection, 'Maximum bays per run', `FLOOR(${n(settings.maxRackRunLength)} ÷ ${n(rack.effectiveBayLength)})`, `${n(rack.maxBaysPerRun)} bays`);
           const baysPerRun = rack.baysPerRun ?? [];
           formula(rackSection, 'Required rack runs', `CEILING(${n(rack.bays)} ÷ ${n(rack.maxBaysPerRun)})\nBays per run: ${baysPerRun.length ? baysPerRun.map(n).join(', ') : 'none'}\nRun lengths: ${baysPerRun.length ? baysPerRun.map(bays => `${n(bays * rack.effectiveBayLength / 1000)} m`).join(', ') : 'none'}`, `${n(rack.runs)} runs`);
-          formula(rackSection, 'D · Racks with allocated gangway', `${n(rack.bays)} rack quantity × ${n(settings.rackPitch)} mm pitch × ${n(settings.gangwayWidth / 1000)} m physical gangway / 2000 (PR net is not added)`, area(rack.withGangways));
+          formula(rackSection, 'D · Racks with allocated gangway', `${n(rack.withoutGangways)} m² rack storage + ${n(rack.bays)} bays × ${n(rack.effectiveBayLength)} mm frontage × ${n(settings.gangwayWidth / 1000)} m physical gangway / 2000`, area(rack.withGangways));
         }
-        body.append(notice('Floor stacking is not applied to racks. Rack levels increase capacity, not ground footprint. Structural height is recorded per level and does not affect area. Both scenarios allocate half a shared gangway. PR allocated is independent of PR net. Whole-bay rack quantity rounding is preserved. These are planning estimates; a physical layout must count shared gangways once.'));
+        body.append(notice('Floor stacking is not applied to racks. Rack levels increase capacity, not ground footprint. Structural height is recorded per level and does not affect area. Both scenarios allocate half a shared gangway. PR allocated adds half a shared gangway strip to rack storage, using the frontage including structural length. Whole-bay rack quantity rounding is preserved. These are planning estimates; a physical layout must count shared gangways once.'));
         return { read: () => true };
       }
     }).then(() => undefined);
