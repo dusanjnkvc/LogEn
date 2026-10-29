@@ -881,6 +881,53 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return wrapper;
   }
 
+  function rackDiagram(result, settings) {
+    const rack = result.rack, input = result.input;
+    const wrapper = $('div', 'rack-diagram');
+    wrapper.append($('h4', '', 'Rack views · gangways excluded'));
+    wrapper.append($('p', 'muted', `${display(result.requiredPallets)} units · ${display(rack.bays)} vertical bays · ${display(rack.levels)} usable levels · ${area(rack.withoutGangways)} floor footprint`));
+    if (!rack.bays) { wrapper.append($('p', 'muted', 'No rack bays required.')); return wrapper; }
+    const bays = Math.min(rack.bays, 3), levels = Math.min(rack.levels, 8);
+    const width = bays * 230 + 30, frontHeight = levels * 44 + 65;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', `0 0 ${width} ${frontHeight + 140}`);
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', `Rack front and top views: ${rack.bays} bays, ${rack.levels} levels, ${rack.boxesPerSlot} units per shelf; ${area(rack.withoutGangways)} ground footprint`);
+    svg.style.cssText = 'display:block;width:100%;max-height:650px;background:#121416;border-radius:10px';
+    function shape(tag, attrs, text) {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const [key,value] of Object.entries(attrs)) el.setAttribute(key,String(value));
+      if (text !== undefined) el.textContent = text;
+      svg.append(el); return el;
+    }
+    const label = (x,y,text,size=11) => shape('text',{x,y,fill:'#e4e5e7','font-size':size,'font-family':'sans-serif'},text);
+    label(15,22,'FRONT VIEW — units placed on shelves',12);
+    const frontage = rack.rotated ? input.width : input.length;
+    const frontCapacity = Math.floor(settings.rackSlotLength / frontage);
+    for (let bay=0;bay<bays;bay++) {
+      const x=20+bay*230, bottom=frontHeight-25;
+      shape('rect',{x,y:40,width:200,height:levels*44,fill:'none',stroke:'#ffce24','stroke-width':3});
+      for(let level=0;level<levels;level++) {
+        const y=bottom-level*44;
+        const units=Math.max(0,Math.min(rack.boxesPerSlot,result.requiredPallets-bay*rack.capacityPerBay-level*rack.boxesPerSlot));
+        shape('line',{x1:x,y1:y,x2:x+200,y2:y,stroke:'#ffce24','stroke-width':3});
+        const visible=Math.min(units,frontCapacity,12);
+        for(let box=0;box<visible;box++) shape('rect',{x:x+3+box*194/frontCapacity,y:y-30,width:Math.max(1,194/frontCapacity-4),height:28,fill:'#ffce24',opacity:0.85});
+        label(x+4,y-33,`${units} units · level ${level+1}`,9);
+      }
+      label(x,bottom+19,`Bay ${bay+1} · ${area(rack.bayArea)}`);
+      const topY=frontHeight+40;
+      shape('rect',{x,y:topY,width:200,height:55,fill:'#252a30',stroke:'#ffce24','stroke-width':2});
+      label(x+8,topY+22,`${display(settings.rackSlotLength)} × ${display(settings.rackSlotDepth)} mm`);
+      label(x+8,topY+42,area(rack.bayArea));
+    }
+    label(15,frontHeight+25,'TOP VIEW — one ground footprint per vertical bay',12);
+    wrapper.append(svg);
+    wrapper.append($('p','muted',`Schematic, not to scale. ${rack.bays>bays || rack.levels>levels ? `Preview shows up to ${bays} bays and ${levels} lower levels; totals include all bays and levels. ` : ''}Front silhouettes show the first depth row, up to 12 units; labels include all depth rows. Top view shows usable shelf footprints, without structural allowances or gangways.`));
+    wrapper.append($('p','muted',`Unused shelf surface: ${area(rack.unusedShelfArea)} across all levels; ${area(rack.unusedPerLevel)} equivalent per level. This is not free warehouse floor space. Allocated bays retain their full ground footprint, including unused shelf surface.`));
+    return wrapper;
+  }
+
   function notice(text, error = false) {
     const element = $('div', `notice${error ? ' error' : ''}`, text);
     if (error) element.setAttribute('role', 'alert');
@@ -1284,6 +1331,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const rackSection = section(body, 'C / D · Pallet rack storage');
         if (!rack) rackSection.append(notice('Rack storage cannot be calculated. Review the validation errors above.', true));
         else {
+          rackSection.append(rackDiagram(result, settings));
           const front = rack.rotated ? input.width : input.length;
           const depth = rack.rotated ? input.length : input.width;
           formula(rackSection, 'Pallet orientation', rack.rotated ? '90° rotation: width along frontage, length along depth.' : 'Original: length along frontage, width along depth.', `${n(front)} mm frontage × ${n(depth)} mm depth`);

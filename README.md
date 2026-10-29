@@ -69,3 +69,5 @@ Calculation tests cover selected-shift daily rounding, Stackability, shifts 1–
 - `tools/preview_server.cjs`: development-only loopback preview, not required by the delivered file.
 
 Run `node --test webapp/domain.test.cjs webapp/workbook.test.cjs webapp/app.test.cjs` for JavaScript tests. DOM tests use the development-only jsdom dependency in `.tooling/qa`. Run `flutter analyze` and `flutter test` with Flutter configured for the native source.
+
+Part calculation details include front and top rack diagrams. Preview limits of three bays/eight lower levels are labeled; totals always include all allocated bays and levels. Shelf waste is shown in total and as an equivalent per level, without reducing required floor footprint.
