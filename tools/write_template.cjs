@@ -17,9 +17,9 @@ async function main() {
   const imported = await service.importBytes(bytes);
   const result = LogEnDomain.calculateProject(imported.parts,LogEnDomain.createDefaultSettings());
   assert.equal(result.invalidCount,0);
-  assert.equal(result.totalRequiredPallets,10);
+  assert.equal(result.totalRequiredPallets,6.25);
   const target = path.join(__dirname,'..','LogEn_Shift_Inventory_Template.xlsx');
   fs.writeFileSync(target,bytes);
-  console.log('Generated and re-imported '+target+' — exact 8 columns, sample requires 10 pallets.');
+  console.log('Generated and re-imported '+target+' — exact 8 columns, sample requires 6.25 pallets.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

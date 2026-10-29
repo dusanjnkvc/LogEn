@@ -88,13 +88,13 @@
         'Consumption per shift = individual parts consumed during one shift. This is neither daily nor monthly consumption.',
         'DOH (Days on hand) = required coverage days for that part. Choose input DOH or a custom project DOH override.',
         'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Decimal quantities retained; only physical capacity units round up.',
-        'Multiply the raw pallet demand per shift by the selected 1, 2 or 3 shifts first, then round the combined daily pallet demand up once. Apply DOH after that daily rounding.',
+        'Multiply raw pallet demand per shift by selected shifts and DOH without rounding.',
         'Shifts per day must be 1, 2 or 3; the default is 2. Custom project DOH defaults to 5 days.',
         'L(mm), W(mm) and H(mm) are loaded pallet dimensions in millimeters.',
         'The eight-column template omits stacking: floor stacking defaults to 1. An optional extra Stacking column is supported. Enable Stackability in Shifts & days on hand to edit and apply the saved factor for each part; unchecked uses effective stacking 1 without erasing saved factors.',
         'Current stock quantity is optional. If absent, actual stock coverage remains unavailable rather than being treated as zero stock.',
         'Old monthly and daily templates remain supported with explicit conversion notices. Legacy consumption is converted once using the production settings selected at import.',
-        'If old data has only direct parts-per-pallet capacity, packaging is inferred as one box containing that capacity. Review inferred packaging before relying on shift rounding.',
+        'If old data has only direct parts-per-pallet capacity, packaging is inferred as one box containing that capacity. Review inferred packaging before using calculated demand.',
         'Use numeric cells or decimal-point text. Formula cells are not evaluated; paste calculated values before importing.',
         'Use one unique part number per row. Invalid and duplicate rows remain visible. Both floor and rack scenarios use the same required pallets.',
         'GS with gangway = GS net + lane width (mm) * lanes * physical gangway (m) / 2000.',
@@ -151,7 +151,7 @@
       if (kind !== 'shift' && ![1, 2, 3].includes(shifts)) throw new Error('Legacy conversion requires 1, 2 or 3 shifts per day.');
       if (kind === 'monthly' && (!Number.isFinite(workingDays) || workingDays <= 0)) throw new Error('Legacy monthly conversion requires a positive working-days-per-month setting.');
       if (kind === 'daily') warnings.push('Legacy daily template converted once: Consumption is DAILY and was divided by ' + shifts + ' shifts per day to obtain consumption per shift. QTY Box and QTY on Pallet retain their packaging meaning; old entered pallets supply optional current stock.');
-      if (kind === 'monthly') warnings.push('Legacy monthly template converted once: Monthly Consumption was divided by ' + workingDays + ' working days per month and ' + shifts + ' shifts per day. Direct pallet capacity requires inferred packaging; review it before relying on selected-shift daily rounding.');
+      if (kind === 'monthly') warnings.push('Legacy monthly template converted once: Monthly Consumption was divided by ' + workingDays + ' working days per month and ' + shifts + ' shifts per day. Direct pallet capacity requires inferred packaging; review it before using calculated demand.');
       for (let rowIndex = headerRow + 1; rowIndex <= inputLastRow; rowIndex++) {
         const row = rawInputRows[rowIndex - 1];
         if (row.every(value => value == null || String(value).trim() === '')) continue;
@@ -268,7 +268,7 @@
         'Pallets without gangways equals the full-precision sum of Floor storage m² contributions exported as Without Gangways (m²). Full precision is summed internally; only displayed values round to two decimals.',
       ].forEach(line => add(comparison, [line]));
       add(comparison, []);
-      add(comparison, ['Part shift rounding and DOH planning'], 'header');
+      add(comparison, ['Decimal pallet demand and DOH planning'], 'header');
       add(comparison, ['Non-fitting required pallets', calculation.nonFittingPallets]);
       add(comparison, ['Non-fitting distinct part numbers', calculation.nonFittingPartCount]);
       add(comparison, ['Non-fitting parts with unavailable pallet quantity', calculation.nonFittingUnknownQuantity]);
