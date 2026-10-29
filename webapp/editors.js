@@ -279,27 +279,27 @@
         floor.append($('p', 'muted formula-hint', 'Ground storage adds the full clearance to both pallet length and pallet width. Example: 100 mm changes 1200 × 800 to 1300 × 900 mm. Rack fit uses original dimensions.'));
         const gangwayHint = $('p', 'muted formula-hint');
         floor.append(gangwayHint);
-        const rack = section(body, 'Pallet rack capacity', 'Usable slot dimensions exclude the rack structure. Clearances are checked independently.');
+        const rack = section(body, 'Pallet rack capacity', 'Enter the usable footprint and height of one shelf. These dimensions already exclude structure and required clearance.');
         const rackGrid = $('div', 'form-grid'); rack.append(rackGrid);
-        field(rackGrid, 'rackSurfaceAllowance', 'Rack surface allowance', true, false, 'm²');
+        rack.append($('p', 'muted formula-hint', 'Required storage pallets are the rack unit quantity. Shelf footprint uses usable length × depth; levels increase capacity and shelf surface, not floor footprint. Both horizontal orientations are always checked. Legacy surface allowance and clearances are retained in saved data but are not applied again to usable dimensions.'));
         field(rackGrid, 'rackPitch', 'Rack pitch', true);
         field(rackGrid, 'rackLevels', 'Rack levels', true, true, 'levels');
         field(rackGrid, 'maxRackRunLength', 'Maximum rack run length', true);
-        field(rackGrid, 'rackSlotLength', 'Usable slot length', true);
-        field(rackGrid, 'rackSlotDepth', 'Usable slot depth', true);
-        field(rackGrid, 'rackSlotHeight', 'Usable slot height', true);
-        field(rackGrid, 'rackFrontageClearance', 'Frontage clearance');
-        field(rackGrid, 'rackDepthClearance', 'Rack depth clearance (total)');
-        field(rackGrid, 'rackVerticalClearance', 'Rack vertical clearance');
+        field(rackGrid, 'rackSlotLength', 'Usable shelf length', true);
+        field(rackGrid, 'rackSlotDepth', 'Usable shelf depth', true);
+        field(rackGrid, 'rackSlotHeight', 'Usable shelf height', true);
+
+
+
         const structure = section(body, 'Rack structural allowances', 'Length and depth allowances increase the floor footprint. Height allowance is recorded per level and does not multiply ground area.');
         const structureGrid = $('div', 'form-grid'); structure.append(structureGrid);
         field(structureGrid, 'rackStructuralLength', 'Structural length allowance');
         field(structureGrid, 'rackStructuralDepth', 'Structural depth allowance');
         field(structureGrid, 'rackStructuralHeight', 'Structural height allowance');
         const rotationLabel = $('label', 'checkbox-field');
-        const rotation = $('input'); rotation.type = 'checkbox'; rotation.checked = Boolean(current.allowRotation);
+        const rotation = $('input'); rotation.type = 'checkbox'; rotation.checked = true; rotation.disabled = true;
         const rotationCopy = $('span');
-        rotationCopy.append($('strong', '', 'Allow 90° pallet rotation'), $('small', 'muted', 'Use the valid orientation with the highest rack slot capacity.'));
+        rotationCopy.append($('strong', '', 'Allow 90° pallet rotation'), $('small', 'muted', 'Both horizontal orientations are always checked for the highest shelf capacity. No vertical rotation or stacking inside a slot.'));
         rotationLabel.append(rotation, rotationCopy);
         body.append(rotationLabel, notice('Gangway-inclusive footprints are allocated planning estimates. Shared gangways must be counted once in a physical layout.'));
         const draft = () => ({ ...current, ...draftNumbers(fields), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, allowRotation: rotation.checked, stackabilityEnabled: stackability.checked });
@@ -434,12 +434,14 @@
           const front = rack.rotated ? input.width : input.length;
           const depth = rack.rotated ? input.length : input.width;
           formula(rackSection, 'Pallet orientation', rack.rotated ? '90° rotation: width along frontage, length along depth.' : 'Original: length along frontage, width along depth.', `${n(front)} mm frontage × ${n(depth)} mm depth`);
-          formula(rackSection, 'Depth and loaded height validation', `Depth: ${n(depth)} + ${n(settings.rackDepthClearance)} ≤ ${n(settings.rackSlotDepth)} mm\nHeight: ${n(input.height)} + ${n(settings.rackVerticalClearance)} ≤ ${n(settings.rackSlotHeight)} mm`);
-          formula(rackSection, 'Pallets per rack slot', `FLOOR((${n(settings.rackSlotLength)} − ${n(settings.rackFrontageClearance)}) ÷ (${n(front)} + ${n(settings.rackFrontageClearance)}))`, n(rack.palletsPerSlot));
+          formula(rackSection, 'Shelf fit and boxes per slot', `A: FLOOR(${n(settings.rackSlotLength)} / ${n(input.length)}) × FLOOR(${n(settings.rackSlotDepth)} / ${n(input.width)}); B: FLOOR(${n(settings.rackSlotLength)} / ${n(input.width)}) × FLOOR(${n(settings.rackSlotDepth)} / ${n(input.length)}). Choose the higher capacity. Height ${n(input.height)} ≤ ${n(settings.rackSlotHeight)} mm. No vertical stacking.`, n(rack.boxesPerSlot));
           formula(rackSection, 'Capacity per rack bay', `${n(rack.palletsPerSlot)} pallets per slot × ${n(rack.levels)} rack levels`, `${n(rack.capacityPerBay)} pallets`);
           formula(rackSection, 'Required dedicated rack bays', `CEILING(${n(result.requiredPallets)} ÷ ${n(rack.capacityPerBay)})`, `${n(rack.bays)} bays`);
           formula(rackSection, 'Effective rack bay dimensions', `Length: ${n(settings.rackSlotLength)} + ${n(settings.rackStructuralLength)} = ${n(rack.effectiveBayLength)} mm\nDepth: ${n(settings.rackSlotDepth)} + ${n(settings.rackStructuralDepth)} = ${n(rack.effectiveBayDepth)} mm\nHeight per level: ${n(settings.rackSlotHeight)} + ${n(settings.rackStructuralHeight)} = ${n(rack.effectiveBayHeight)} mm`);
-          formula(rackSection, 'C · Racks without gangways', `${n(rack.bays)} rack quantity × ${n(settings.rackSurfaceAllowance)} m² allowance`, area(rack.withoutGangways));
+          formula(rackSection, 'C · Racks without gangways', `${n(rack.bays)} vertical bays × ${n(settings.rackSlotLength)} × ${n(settings.rackSlotDepth)} / 1,000,000`, area(rack.withoutGangways));
+          formula(rackSection, 'Available / occupied shelf surface', `Available: ${n(rack.bays)} × ${n(rack.bayArea)} m² × ${n(settings.rackLevels)} levels; occupied: ${n(result.requiredPallets)} units × ${n(input.length)} × ${n(input.width)} / 1,000,000`, `${area(rack.availableShelfArea)} available; ${area(rack.occupiedShelfArea)} occupied`);
+          formula(rackSection, 'Unused shelf surface · not warehouse floor space', `${n(rack.availableShelfArea)} − ${n(rack.occupiedShelfArea)}; equivalent per level = unused / ${n(settings.rackLevels)}`, `${area(rack.unusedShelfArea)} total; ${area(rack.unusedPerLevel)} per level`);
+          formula(rackSection, 'Rack utilization / unused percentage', 'Occupied shelf surface / available shelf surface × 100. Unused surface is never subtracted from floor footprint.', `${rack.utilizationPercent === null ? 'N/A' : n(rack.utilizationPercent) + '%'} utilized; ${rack.unusedPercent === null ? 'N/A' : n(rack.unusedPercent) + '%'} unused`);
           formula(rackSection, 'Maximum bays per run', `FLOOR(${n(settings.maxRackRunLength)} ÷ ${n(rack.effectiveBayLength)})`, `${n(rack.maxBaysPerRun)} bays`);
           const baysPerRun = rack.baysPerRun ?? [];
           formula(rackSection, 'Required rack runs', `CEILING(${n(rack.bays)} ÷ ${n(rack.maxBaysPerRun)})\nBays per run: ${baysPerRun.length ? baysPerRun.map(n).join(', ') : 'none'}\nRun lengths: ${baysPerRun.length ? baysPerRun.map(bays => `${n(bays * rack.effectiveBayLength / 1000)} m`).join(', ') : 'none'}`, `${n(rack.runs)} runs`);

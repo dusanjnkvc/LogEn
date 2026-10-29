@@ -19,7 +19,7 @@
   }
 
   const positiveSettings = {
-    rackSurfaceAllowance: 'Rack surface allowance', rackPitch: 'Rack pitch',
+    rackPitch: 'Rack pitch',
     maxFloorStackingHeight: 'Maximum floor stacking height',
     rackSlotLength: 'Rack usable slot length',
     rackSlotDepth: 'Rack usable slot depth',
@@ -63,12 +63,6 @@
       errors.push('Stackability must be enabled or disabled.');
     if (s.rackSlotLength + s.rackStructuralLength > s.maxRackRunLength)
       errors.push('Maximum rack run length must fit at least one effective rack bay.');
-    if (s.rackFrontageClearance >= s.rackSlotLength)
-      errors.push('Rack frontage clearance must be smaller than the usable slot length.');
-    if (s.rackDepthClearance >= s.rackSlotDepth)
-      errors.push('Rack depth clearance must be smaller than the usable slot depth.');
-    if (s.rackVerticalClearance >= s.rackSlotHeight)
-      errors.push('Rack vertical clearance must be smaller than the usable slot height.');
     return errors;
   }
 
@@ -169,10 +163,11 @@
   }
 
   function rackFit(input, settings) {
-    const {length:l, width:w} = input;
-    const {rackSlotLength:rl, rackSlotDepth:rw} = settings;
-    if (![l,w,rl,rw].every(v => Number.isFinite(v) && v > 0)) return 'N/A';
-    return (l <= rl && w <= rw) || (settings.allowRotation && w <= rl && l <= rw) ? 'YES' : 'NO';
+    const values = [input.length,input.width,input.height,settings.rackSlotLength,settings.rackSlotDepth,settings.rackSlotHeight];
+    if (!values.every(v => Number.isFinite(v) && v > 0)) return 'N/A';
+    return input.height <= settings.rackSlotHeight &&
+      ((input.length <= settings.rackSlotLength && input.width <= settings.rackSlotDepth) ||
+       (input.width <= settings.rackSlotLength && input.length <= settings.rackSlotDepth)) ? 'YES' : 'NO';
   }
   function surfaceAreas(depth, width, lanes, quantity, allowance, pitch, gangwayMetres) {
     if (![depth,width,lanes,quantity,allowance,pitch,gangwayMetres].every(v => Number.isFinite(v) && v >= 0))
@@ -180,6 +175,32 @@
     const gsNet = depth * width * lanes / 1000000;
     return {gsNet, gsWith: gsNet + width * lanes * gangwayMetres / 2000,
       prNet: quantity * allowance, prWith: quantity * pitch * gangwayMetres / 2000};
+  }
+  // Usable dimensions already exclude any configured physical allowances.
+  // Both horizontal orientations are evaluated; no vertical stacking.
+  function calculateBoxRack(requiredBoxes, length, width, height, slotLength, slotDepth, slotHeight, levels) {
+    if (![length,width,height,slotLength,slotDepth,slotHeight].every(v => Number.isFinite(v) && v > 0) ||
+        !Number.isSafeInteger(requiredBoxes) || requiredBoxes < 0 || !Number.isSafeInteger(levels) || levels < 1)
+      throw new Error('Rack sizing requires whole non-negative boxes, positive dimensions and whole positive levels.');
+    const capacity = (l,w) => height <= slotHeight ? floor(slotLength / l) * floor(slotDepth / w) : 0;
+    const original = capacity(length,width), rotatedCapacity = capacity(width,length);
+    const boxesPerSlot = Math.max(original,rotatedCapacity);
+    const fits = boxesPerSlot > 0;
+    const capacityPerBay = boxesPerSlot * levels;
+    if (!Number.isSafeInteger(capacityPerBay)) throw new Error('Rack capacity exceeds supported precision.');
+    const bays = fits ? ceilDivide(requiredBoxes,capacityPerBay) : 0;
+    const bayArea = slotLength * slotDepth / 1000000;
+    const withoutGangways = bays * bayArea;
+    const availableShelfArea = withoutGangways * levels;
+    const occupiedShelfArea = fits ? requiredBoxes * length * width / 1000000 : 0;
+    const unusedShelfArea = Math.max(0,availableShelfArea - occupiedShelfArea);
+    const utilizationPercent = availableShelfArea > 0 ? occupiedShelfArea / availableShelfArea * 100 : null;
+    const values = [bayArea,withoutGangways,availableShelfArea,occupiedShelfArea,unusedShelfArea];
+    if (!values.every(Number.isFinite)) throw new Error('Rack surface exceeds supported precision.');
+    return {fits, requiredBoxes, nonFittingBoxes: fits ? 0 : requiredBoxes, boxesPerSlot,
+      capacityPerBay, bays, bayArea, withoutGangways, rotated: rotatedCapacity > original,
+      availableShelfArea, occupiedShelfArea, unusedShelfArea, unusedPerLevel: unusedShelfArea / levels,
+      utilizationPercent, unusedPercent: utilizationPercent === null ? null : 100-utilizationPercent};
   }
   function calculatePart(input, settings) {
     const s = { ...createDefaultSettings(), ...settings };
@@ -260,26 +281,13 @@
           formulaStorageArea, gangwayArea, withGangways };
       }
 
-      function orientationCapacity(frontage, depth) {
-        if (depth + s.rackDepthClearance > s.rackSlotDepth ||
-            input.height + s.rackVerticalClearance > s.rackSlotHeight) return 0;
-        return Math.max(0, floor((s.rackSlotLength - s.rackFrontageClearance) /
-          (frontage + s.rackFrontageClearance)));
-      }
-      const originalCapacity = orientationCapacity(input.length, input.width);
-      const rotatedCapacity = s.allowRotation ? orientationCapacity(input.width, input.length) : 0;
-      const rotated = rotatedCapacity > originalCapacity;
-      const palletsPerSlot = Math.max(originalCapacity, rotatedCapacity);
-      if (rackFit(input, s) !== 'YES' || palletsPerSlot < 1) {
-        errors.push(input.height + s.rackVerticalClearance > s.rackSlotHeight
-          ? 'Rack: loaded pallet height plus vertical clearance exceeds usable slot height.'
-          : 'Rack: pallet cannot fit the usable slot frontage/depth with the configured clearances' +
-            (s.allowRotation ? ' in either orientation.' : '.'));
+      const sizing = calculateBoxRack(requiredPallets, input.length, input.width, input.height,
+        s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, s.rackLevels);
+      if (!sizing.fits) {
+        errors.push('Rack: unit does not fit the usable shelf length, depth and height in either horizontal orientation.');
       } else {
-        const capacityPerBay = palletsPerSlot * s.rackLevels;
-        if (!Number.isSafeInteger(capacityPerBay))
-          throw new Error('Rack capacity exceeds supported numeric precision.');
-        const bays = ceilDivide(requiredPallets, capacityPerBay);
+        const {bays, capacityPerBay, rotated} = sizing;
+        const palletsPerSlot = sizing.boxesPerSlot;
         const effectiveBayLength = s.rackSlotLength + s.rackStructuralLength;
         const effectiveBayDepth = s.rackSlotDepth + s.rackStructuralDepth;
         const effectiveBayHeight = s.rackSlotHeight + s.rackStructuralHeight;
@@ -289,14 +297,14 @@
           throw new Error('Rack run count exceeds the supported project size (1,000,000 runs per part).');
         const baysPerRun = Array.from({ length: runs }, (_, index) =>
           Math.min(maxBaysPerRun, bays - index * maxBaysPerRun));
-        const withoutGangways = bays * s.rackSurfaceAllowance;
+        const withoutGangways = sizing.withoutGangways;
         const totalFrontageMetres = baysPerRun.reduce((total, count) =>
           total + count * effectiveBayLength / 1000, 0);
         const gangwayArea = bays * s.rackPitch * (s.gangwayWidth / 1000) / 2000;
         const withGangways = gangwayArea;
         if (![withoutGangways, gangwayArea, withGangways, effectiveBayHeight].every(Number.isFinite))
           throw new Error('Rack area exceeds supported numeric precision.');
-        rack = { palletsPerSlot, levels: s.rackLevels, capacityPerBay, bays,
+        rack = { ...sizing, palletsPerSlot, levels: s.rackLevels, capacityPerBay, bays,
           maxBaysPerRun, runs, rotated, effectiveBayLength, effectiveBayDepth,
           effectiveBayHeight, withoutGangways, gangwayArea, withGangways, baysPerRun };
       }
@@ -344,9 +352,15 @@
       floorWithGangways: total(floors, r => r.floor.withGangways),
       rackWithoutGangways: total(racks, r => r.rack.withoutGangways),
       rackWithGangways: total(racks, r => r.rack.withGangways),
+      rackAvailableShelfArea: total(racks, r => r.rack.availableShelfArea),
+      rackOccupiedShelfArea: total(racks, r => r.rack.occupiedShelfArea),
+      rackUnusedShelfArea: total(racks, r => r.rack.unusedShelfArea),
+      rackUnusedPerLevel: total(racks, r => r.rack.unusedPerLevel),
       floorGangwayArea: total(floors, r => r.floor.gangwayArea),
       rackGangwayArea: total(racks, r => r.rack.gangwayArea)
     };
+    project.rackUtilizationPercent = project.rackAvailableShelfArea > 0 ? project.rackOccupiedShelfArea / project.rackAvailableShelfArea * 100 : null;
+    project.rackUnusedPercent = project.rackUtilizationPercent === null ? null : 100-project.rackUtilizationPercent;
     project.savingWithoutGangways = project.floorWithoutGangways - project.rackWithoutGangways;
     project.savingWithGangways = project.floorWithGangways - project.rackWithGangways;
     project.savingWithoutGangwaysPercent = project.floorWithoutGangways === 0 ? null :
@@ -356,5 +370,5 @@
     return project;
   }
 
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
 })(globalThis);

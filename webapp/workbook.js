@@ -211,13 +211,13 @@
         const value = result.floor;
         add(floor, [...inputValues(result.input), result.input.stacking, result.isFloorValid ? (result.isValid ? 'Valid' : 'Included in floor totals — rack validation warning') : 'Invalid floor — excluded from floor totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, result.isFloorValid ? value?.storageArea : null, result.isFloorValid ? value?.gangwayArea : null, result.isFloorValid ? value?.withGangways : null, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `GS net + lane width * lanes * gangway metres / 2000 = ${value.withoutGangways} + ${value.rowWidth * 1000} * ${value.rows} * ${project.settings.gangwayWidth / 1000} / 2000` : null]);
       });
-      const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Pallets Per Slot', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS];
-      const rack = table(workbook, 'Rack Calculations', rackHeaders, [19, 20, 21, 22]);
+      const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Boxes per Rack Slot (Required storage pallets)', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS, 'Rack Fit', 'Usable Shelf Footprint (m²)', 'Available Shelf Surface (m²)', 'Occupied Shelf Surface (m²)', 'Unused Rack Surface (m²)', 'Unused Surface per Level (m²)', 'Rack Utilization (%)', 'Unused Shelf Surface (%)'];
+      const rack = table(workbook, 'Rack Calculations', rackHeaders, rackHeaders.map((h,i) => /m²|%/.test(h) ? i : -1).filter(i => i >= 0));
       calculation.results.forEach(result => {
         const value = result.rack;
-        add(rack, [result.input.partNumber, result.isRackValid ? (result.isValid ? 'Valid' : 'Included in rack totals — floor validation warning') : 'Invalid rack — excluded from rack totals', (result.errors || []).join(' | '), result.requiredPallets, result.input.length, result.input.width, result.input.height, value?.rotated, value?.palletsPerSlot, value?.levels, value?.capacityPerBay, value?.bays, value?.effectiveBayLength, value?.effectiveBayDepth, value?.effectiveBayHeight, value?.maxBaysPerRun, value?.runs, value?.baysPerRun.join(', '), value?.baysPerRun.map(bays => (bays * value.effectiveBayLength / 1000).toFixed(3)).join(', '), value ? value.bays * value.effectiveBayLength / 1000 : null, result.isRackValid ? value?.withoutGangways : null, result.isRackValid ? value?.gangwayArea : null, result.isRackValid ? value?.withGangways : null, ...planningValues(result.planning, result.input, project.settings), result.rackFit || 'N/A']);
+        add(rack, [result.input.partNumber, result.isRackValid ? (result.isValid ? 'Valid' : 'Included in rack totals — floor validation warning') : 'Invalid rack — excluded from rack totals', (result.errors || []).join(' | '), result.requiredPallets, result.input.length, result.input.width, result.input.height, value?.rotated, value?.palletsPerSlot ?? (result.rackFit === 'NO' ? 0 : null), value?.levels, value?.capacityPerBay, value?.bays ?? (result.rackFit === 'NO' ? 0 : null), value?.effectiveBayLength, value?.effectiveBayDepth, value?.effectiveBayHeight, value?.maxBaysPerRun, value?.runs, value?.baysPerRun.join(', '), value?.baysPerRun.map(bays => (bays * value.effectiveBayLength / 1000).toFixed(3)).join(', '), value ? value.bays * value.effectiveBayLength / 1000 : null, result.isRackValid ? value?.withoutGangways : null, result.isRackValid ? value?.gangwayArea : null, result.isRackValid ? value?.withGangways : null, ...planningValues(result.planning, result.input, project.settings), result.rackFit || 'N/A', value?.bayArea, value?.availableShelfArea, value?.occupiedShelfArea, value?.unusedShelfArea, value?.unusedPerLevel, value?.utilizationPercent, value?.unusedPercent]);
       });
-      rack.getRow(1).getCell(rackHeaders.length + 1).value = 'Rack';
+
 
       const comparison = workbook.addWorksheet('Warehouse Comparison');
       add(comparison, ['LogEn — ' + project.name, 'Footprint (m²)'], 'header');
@@ -269,6 +269,12 @@
       ].forEach(line => add(comparison, [line]));
       add(comparison, []);
       add(comparison, ['Decimal pallet demand and DOH planning'], 'header');
+      add(comparison, ['Available shelf surface (m²)', calculation.rackAvailableShelfArea]);
+      add(comparison, ['Occupied shelf surface (m²)', calculation.rackOccupiedShelfArea]);
+      add(comparison, ['Unused shelf surface (m²; not warehouse floor space)', calculation.rackUnusedShelfArea]);
+      add(comparison, ['Unused surface equivalent per level (m²)', calculation.rackUnusedPerLevel]);
+      add(comparison, ['Overall rack utilization (%)', calculation.rackUtilizationPercent]);
+      add(comparison, ['Overall unused shelf surface (%)', calculation.rackUnusedPercent]);
       add(comparison, ['Non-fitting required pallets', calculation.nonFittingPallets]);
       add(comparison, ['Non-fitting distinct part numbers', calculation.nonFittingPartCount]);
       add(comparison, ['Non-fitting parts with unavailable pallet quantity', calculation.nonFittingUnknownQuantity]);
@@ -299,13 +305,13 @@
         ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
         ['Floor pallet clearance', s.floorPalletClearance, 'mm; full clearance added to both pallet L and W for ground storage only'],
         ['Floor storage total rounding', 'Sum of row areas rounded to two decimals', 'm²; independently valid floor rows, including rows with rack fit errors'],
-        ['Rack surface allowance', s.rackSurfaceAllowance ?? 4.125, 'm²'], ['Rack pitch', s.rackPitch ?? 3300, 'mm'], ['Rack levels', s.rackLevels, 'levels'], ['Rack usable slot length', s.rackSlotLength, 'mm'],
-        ['Rack usable slot depth', s.rackSlotDepth, 'mm'], ['Rack usable slot height', s.rackSlotHeight, 'mm'],
+        ['Legacy rack surface allowance (unused)', s.rackSurfaceAllowance ?? 4.125, 'm²; shelf footprint now uses usable length × depth'], ['Rack pitch', s.rackPitch ?? 3300, 'mm'], ['Rack levels', s.rackLevels, 'levels'], ['Usable shelf length', s.rackSlotLength, 'mm'],
+        ['Usable shelf depth', s.rackSlotDepth, 'mm'], ['Usable shelf height', s.rackSlotHeight, 'mm'],
         ['Rack structural length allowance', s.rackStructuralLength, 'mm'], ['Rack structural depth allowance', s.rackStructuralDepth, 'mm'],
         ['Rack structural height allowance', s.rackStructuralHeight, 'mm'], ['Maximum rack run length', s.maxRackRunLength, 'mm'],
-        ['Rack frontage clearance', s.rackFrontageClearance, 'mm; before, between and after pallets'],
-        ['Rack depth clearance', s.rackDepthClearance, 'mm total'], ['Rack vertical clearance', s.rackVerticalClearance, 'mm'],
-        ['Allow pallet rotation', Boolean(s.allowRotation), '90 degrees; highest valid capacity wins'],
+        ['Legacy rack frontage clearance (unused)', s.rackFrontageClearance, 'mm; usable shelf dimensions already exclude required clearance'],
+        ['Legacy rack depth clearance (unused)', s.rackDepthClearance, 'mm'], ['Legacy rack vertical clearance (unused)', s.rackVerticalClearance, 'mm'],
+        ['Rack horizontal orientations', 'Both always evaluated', 'no vertical rotation or stacking within one slot'],
       ].forEach(row => add(settings, row));
       add(settings, []);
       [
@@ -319,10 +325,10 @@
         'Ground length = pallet L + clearance; ground width = pallet W + clearance. Pallets per row = FLOOR(maximum row depth LIMIT / ground length). Limit 0 means one unrestricted row per part. Rows = CEILING(floor positions / pallets per row).',
         'GS net = deepest occupied lane depth (mm) * lane width (mm) * lane count / 1000000; partial lanes reserve the same depth.',
         'GS with gangway = GS net + lane width (mm) * lanes * physical gangway (m) / 2000.',
-        'Rack pallets per slot = FLOOR((slot length - frontage clearance) / (pallet frontage + frontage clearance)).',
-        'Rack fit: pallet depth + total depth clearance <= usable slot depth; loaded H + vertical clearance <= usable slot height.',
-        'Capacity per bay = pallets per slot × rack levels. Rack bays = CEILING(required pallets / capacity per bay). Floor stacking never applies to racks.',
-        'PR net = whole rack bays * configurable rack surface allowance (m²).',
+        'Boxes per slot = MAX(FLOOR(shelf L / unit L) * FLOOR(shelf D / unit W), FLOOR(shelf L / unit W) * FLOOR(shelf D / unit L)); unit height must fit usable shelf height. Both orientations, no vertical stacking.',
+        'Required storage pallets are rack units, using existing L/W/H. Usable shelf dimensions already exclude clearances/structure. No extra clearance or structural allowance is added to shelf area.',
+        'Capacity per bay = boxes per slot × rack levels. Rack bays = CEILING(required pallets / capacity per bay). Floor stacking never applies to racks.',
+        'PR net = whole rack bays * usable shelf length * depth / 1000000. Levels do not multiply the floor footprint.',
         'Maximum bays per run = FLOOR(maximum run length / effective bay L). Runs = CEILING(bays / maximum bays per run). Final run uses only assigned bays.',
         'PR with gangway = whole rack bays * rack pitch (mm) * physical gangway (m) / 2000. Do not add PR net.',
         'Structural height allowance describes physical bay height; it does not increase usable loaded-pallet height or multiply the ground footprint.',
