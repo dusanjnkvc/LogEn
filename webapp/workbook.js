@@ -359,6 +359,38 @@
       add(layout, []);add(layout, ['Non-fitting PNs and rows requiring review', 'Required pallets', 'Status'], 'header');
       calculation.results.filter(r=>!r.isRackValid||!r.isPlanningValid).forEach(r=>add(layout,[r.input.partNumber,r.isPlanningValid?r.requiredPallets:'Unavailable',r.rackFit==='NO'?'Does not fit':'Needs review',r.errors.join(' | ')]));
       for(let i=1;i<=8;i++)layout.getColumn(i).width=i===4?30:24;
+      const drawing = workbook.addWorksheet('Racks Layout', {views:[{showGridLines:false}], pageSetup:{orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0}});
+      add(drawing, ['LogEn — graphical shared rack layout: ' + project.name], 'header');
+      add(drawing, ['Part Numbers are shown inside pallet boxes. Each box represents one required storage pallet.']);
+      add(drawing, ['Occupied shelf top views are schematic; empty levels remain reserved in totals. Gaps reflect Between boxes allowance. Rack floor totals include structure; shelf placement uses usable dimensions.']);
+      if(plan?.available && plan.shelves.length) {
+        const xs=[...new Set([0,s.rackSlotLength,...plan.shelves.flatMap(sh=>sh.placements.flatMap(p=>[p.x,p.x+p.length]))])].sort((a,b)=>a-b);
+        if(xs.length>16000) add(drawing,['Graphical layout exceeds Excel column limits. Use the Rack Layout table for the complete allocation.']);
+        else {
+          drawing.getColumn(1).width=3;
+          for(let i=0;i<xs.length-1;i++)drawing.getColumn(i+2).width=Math.max(0.1,(xs[i+1]-xs[i])/s.rackSlotLength*100);
+          const lastColumn=xs.length;
+          for(let index=0;index<plan.shelves.length;index++) {
+            const shelf=plan.shelves[index],headingRow=drawing.rowCount+2;
+            drawing.mergeCells(headingRow,2,headingRow,lastColumn);
+            const heading=drawing.getCell(headingRow,2);heading.value=`Bay ${Math.floor(index/s.rackLevels)+1} · Shelf ${index%s.rackLevels+1} · ${s.rackSlotLength} × ${s.rackSlotDepth} mm usable`;
+            heading.font={bold:true,size:12,color:{argb:BLACK}};drawing.getRow(headingRow).height=24;
+            const ys=[...new Set([0,s.rackSlotDepth,...shelf.placements.flatMap(p=>[p.y,p.y+p.depth])])].sort((a,b)=>a-b);
+            const startRow=headingRow+1;
+            for(let i=0;i<ys.length-1;i++)drawing.getRow(startRow+i).height=Math.max(1,(ys[i+1]-ys[i])/s.rackSlotDepth*150);
+            for(const box of shelf.placements) {
+              const left=xs.indexOf(box.x)+2,right=xs.indexOf(box.x+box.length)+1;
+              const top=startRow+ys.indexOf(box.y),bottom=startRow+ys.indexOf(box.y+box.depth)-1;
+              if(left!==right||top!==bottom)drawing.mergeCells(top,left,bottom,right);
+              const cell=drawing.getCell(top,left);cell.value=box.partNumber;
+              cell.font={name:'Calibri',size:11,bold:true,color:{argb:BLACK}};
+              cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:YELLOW}};
+              cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};
+              const edge={style:'thin',color:{argb:BLACK}};cell.border={top:edge,bottom:edge,left:edge,right:edge};
+            }
+          }
+        }
+      } else add(drawing,[plan?.available?'No rack pallets to place.':plan?.error||'Rack layout unavailable.']);
       workbook.views = [{ activeTab: 3, firstSheet: 0, visibility: 'visible' }];
       return new Uint8Array(await workbook.xlsx.writeBuffer());
     }

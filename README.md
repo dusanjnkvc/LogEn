@@ -85,3 +85,5 @@ Click a unit in the shared rack shelf diagram (or focus it and press Enter/Space
 Click Required storage pallets to inspect required pallet counts that fit racks, do not fit, or need input review. The rack icon overview includes the same summary and a PN/quantity list for non-fitting and unresolved inputs. Unknown quantities and duplicate inputs are flagged instead of counted as zero or confirmed fit.
 
 Export results also includes a separate Rack Layout worksheet listing every placed unit by bay, shelf, position, PN, quantity, and exact coordinates/dimensions. Non-fitting and unresolved input rows are listed separately.
+
+Results exports include a Racks Layout graphical worksheet with shelf top views and each pallet's Part Number inside its yellow box. Rack Layout retains the searchable allocation table without the X (mm) column. Graphical views are schematic and use the same saved shared allocation as the dashboard.
