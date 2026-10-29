@@ -11,8 +11,8 @@ assert.equal(D.rackFit({length:1000,width:1200},s),'NO');
 assert.equal(D.rackFit({length:1000,width:1200},{...s,allowRotation:true}),'YES');
 assert.equal(D.rackFit({length:null,width:1000},s),'N/A');
 const p={partNumber:'QA',qtyBox:20,qtyOnPallet:40,consumptionPerShift:500,doh:5,length:1205,width:1000,height:1000,stacking:1};
-const c=D.calculateProject([p],s);assert.equal(c.nonFittingPallets,6.25);assert.equal(c.nonFittingPartCount,1);assert.equal(c.rackWithoutGangways,0);assert.ok(c.floorWithoutGangways>0);
-for(const shifts of [1,2,3]) { const r=D.calculatePart({...p,consumptionPerShift:104,doh:1},{...s,shiftsPerDay:shifts}); assert.ok(Math.abs(r.requiredPallets-0.13*shifts)<1e-12); }
+const c=D.calculateProject([p],s);assert.equal(c.nonFittingPallets,7);assert.equal(c.nonFittingPartCount,1);assert.equal(c.rackWithoutGangways,0);assert.ok(c.floorWithoutGangways>0);
+for(const shifts of [1,2,3]) { const r=D.calculatePart({...p,consumptionPerShift:104,doh:1},{...s,shiftsPerDay:shifts}); assert.ok(Math.abs(r.planning.palletsPerDay-0.13*shifts)<1e-12); assert.equal(r.requiredPallets,1); }
 const {JSDOM}=require('../.tooling/qa/node_modules/jsdom');
 const dom=new JSDOM(fs.readFileSync('webapp/index.html','utf8').replace('__SCRIPTS__','').replace('__STYLES__',''),{url:'https://logen.test',runScripts:'outside-only'});
 const w=dom.window;w.scrollTo=()=>{};w.ExcelJS=require('../webapp/vendor/exceljs.min.js');w.localStorage.setItem('logen.offline.workspace.v1',JSON.stringify({version:3,activeId:'qa',projects:[{id:'qa',name:'QA',parts:[p],settings:s}]}));
@@ -20,5 +20,7 @@ for(const f of ['domain','workbook','editors','app'])w.eval(fs.readFileSync('web
 w.document.querySelector('[data-view="parts"]').click();
 assert.ok([...w.document.querySelectorAll('#parts-table thead th')].some(x=>x.textContent==='Rack'));
 assert.ok(w.document.querySelector('#parts-table tfoot'));
-assert.match(w.document.querySelector('.rack-fit-summary').textContent,/6.25 required pallets across 1 part/);
+assert.match(w.document.querySelector('.rack-fit-summary').textContent,/7 required pallets across 1 part/);
 (async()=>{global.ExcelJS=w.ExcelJS;const S=require('../webapp/workbook.js');const bytes=await new S().exportBytes({name:'QA',parts:[p],settings:s},c);const book=new global.ExcelJS.Workbook();await book.xlsx.load(bytes);assert.ok(book.getWorksheet('Warehouse Comparison'));w.close();console.log('Targeted checks passed: four references, exact rack fit/rotation/N/A, exclusion/counts, table footer/Rack column, workbook export.');})().catch(e=>{console.error(e);process.exitCode=1;});
+
+for(const [shifts,doh,expected] of [[1,1,1],[2,1,1],[3,1,1],[2,10,4],[3,10,5]]) { const r=D.calculatePart({...p,consumptionPerShift:128,doh},{...s,shiftsPerDay:shifts});assert.equal(r.planning.palletsPerShift,0.16);assert.ok(Math.abs(r.planning.palletsPerDay-0.16*shifts)<1e-12);assert.equal(r.requiredPallets,expected); }

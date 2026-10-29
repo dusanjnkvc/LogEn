@@ -241,7 +241,7 @@
       grid.append(metric);
     }
     container.append(grid);
-    container.append($('p', 'muted formula-hint', 'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Decimal quantities are retained.'));
+    container.append($('p', 'muted formula-hint', 'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Keep decimal intermediates, then round up the final required pallets.'));
     if (planning.noConsumption) container.append(notice('Per-shift consumption is zero, so required pallets are zero. No current stock quantity is assumed.'));
   }
 
@@ -263,7 +263,7 @@
         const coverage = selectField(productionGrid, 'coverageMode', 'DOH source', current.coverageMode === 'custom' ? 'custom' : 'input',
           [['input', 'DOH from each imported part'], ['custom', 'Project DOH override']]);
         field(productionGrid, 'customCoverageDays', 'Project DOH override', false, false, 'days');
-        stock.append($('p', 'muted formula-hint', 'Required pallets = consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH. No pallet rounding.'));
+        stock.append($('p', 'muted formula-hint', 'Required pallets = consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH, then round up only the final result.'));
         const stackabilityLabel = $('label', 'checkbox-field');
         const stackability = $('input'); stackability.type='checkbox'; stackability.name='stackabilityEnabled'; stackability.checked=Boolean(current.stackabilityEnabled); stackability.setAttribute('aria-label','Stackability');
         const stackabilityCopy=$('span');stackabilityCopy.append($('strong','','Stackability'),$('small','muted','Enable per-part stacking factors. When off, floor calculations use one-high storage and keep saved factors.'));
@@ -405,8 +405,8 @@
           formula(stock, 'Decimal daily pallet demand', `${n(planning.palletsPerShift)} × ${n(settings.shiftsPerDay)}`, `${n(planning.plannedPalletsPerDay)} pallets/day`);
           formula(stock, 'Daily consumption · raw parts', `${n(planning.consumptionPerShift)} parts/shift × ${n(settings.shiftsPerDay)} shifts`, `${n(planning.dailyConsumption)} parts/day`);
           formula(stock, 'Required parts · raw demand', `${n(planning.dailyConsumption)} parts/day × ${n(planning.targetCoverageDays)} DOH`, n(result.requiredParts));
-          formula(stock, 'Required pallets · used in both scenarios', `${n(planning.plannedPalletsPerDay)} × ${n(planning.targetCoverageDays)} DOH (no rounding)`, `${n(result.requiredPallets)} pallets`);
-          stock.append(notice('Required pallet quantities retain decimals. Only physical floor positions, rows and rack bays round to whole capacity units.'));
+          formula(stock, 'Required pallets · used in both scenarios', `${n(planning.plannedPalletsPerDay)} × ${n(planning.targetCoverageDays)} DOH, then CEILING (no intermediate rounding)`, `${n(result.requiredPallets)} pallets`);
+          stock.append(notice('Per-shift and daily demand retain decimals. Only the final required pallet quantity is rounded up before sizing physical positions and bays.'));
           const history = section(body, 'Historical stock · optional metadata', 'The eight-column input does not provide current stock. Unavailable stock values remain N/A and do not affect required pallets.');
           formula(history, 'Current stock', planning.stockQty == null ? 'N/A · stock quantity was not provided.' : `${n(planning.stockQty)} stock parts ÷ ${n(planning.partsPerPallet)} parts/pallet`, planning.currentPallets == null ? 'N/A' : `${n(planning.currentPallets)} pallets`);
           formula(history, 'Actual stock coverage', planning.actualCoverageDays == null ? 'N/A · stock quantity or positive consumption is unavailable.' : `${n(planning.stockQty)} stock parts ÷ ${n(planning.dailyConsumption)} parts/day`, planning.actualCoverageDays == null ? 'N/A' : `${n(planning.actualCoverageDays)} days`);

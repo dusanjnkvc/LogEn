@@ -21,7 +21,7 @@
     consumptionPerShift: ['Consumption per shift', 'Shift Consumption', 'Consumption per Shift (parts)'],
     consumption: ['Consumption', 'Daily Consumption'], doh: ['DOH (Days on hand)', 'DOH', 'Days on hand'],
   };
-  const PLANNING_HEADERS = ['Parts per Box', 'Boxes per Pallet', 'Parts per Pallet', 'Consumption per Shift (parts)', 'Raw Pallets per Shift', 'Pallets per Shift (unrounded)', 'Shifts per Day', 'Selected DOH (days)', 'Raw Pallets per Day (selected shifts)', 'Planned Pallets per Day', 'Required Pallets (unrounded)', 'Daily Consumption (parts/day)', 'Current Stock (parts, optional)', 'Current Pallet Equivalents (optional)', 'Current Pallet Positions (optional)', 'Actual Coverage (days, optional)', 'Input DOH (days)', 'Coverage Difference (days, optional)', 'Packaging Inferred', 'Required Pallets Formula'];
+  const PLANNING_HEADERS = ['Parts per Box', 'Boxes per Pallet', 'Parts per Pallet', 'Consumption per Shift (parts)', 'Raw Pallets per Shift', 'Pallets per Shift (unrounded)', 'Shifts per Day', 'Selected DOH (days)', 'Raw Pallets per Day (selected shifts)', 'Planned Pallets per Day', 'Required Pallets (final rounding only)', 'Daily Consumption (parts/day)', 'Current Stock (parts, optional)', 'Current Pallet Equivalents (optional)', 'Current Pallet Positions (optional)', 'Actual Coverage (days, optional)', 'Input DOH (days)', 'Coverage Difference (days, optional)', 'Packaging Inferred', 'Required Pallets Formula'];
   const YELLOW = 'FFFFD600';
   const BLACK = 'FF151515';
   const SOURCE_MARKER = 'LOGEN ORIGINAL SOURCE DATA — REFERENCE ONLY';
@@ -38,7 +38,7 @@
     return String(value);
   };
   const inputValues = part => FIELDS.map(field => part[field] ?? null);
-  const planningValues = (planning, input, settings) => !planning ? PLANNING_HEADERS.map(() => null) : [planning.qtyBox, planning.qtyOnPallet, planning.partsPerPallet, planning.consumptionPerShift, planning.palletsPerShift, planning.roundedPalletsPerShift, settings.shiftsPerDay, planning.targetCoverageDays, planning.palletsPerDay, planning.plannedPalletsPerDay, planning.requiredPallets, planning.dailyConsumption, planning.stockQty ?? 'Not provided', planning.currentPallets ?? 'N/A — stock not provided', planning.currentPalletPositions ?? 'N/A — stock not provided', planning.actualCoverageDays ?? (planning.noConsumption ? 'No consumption' : 'N/A — stock not provided'), input.doh, planning.coverageDifferenceDays ?? 'N/A', Boolean(input.packagingInferred), `${input.consumptionPerShift} / ${input.qtyBox} / ${input.qtyOnPallet} × ${settings.shiftsPerDay} × ${planning.targetCoverageDays} = ${planning.requiredPallets}`];
+  const planningValues = (planning, input, settings) => !planning ? PLANNING_HEADERS.map(() => null) : [planning.qtyBox, planning.qtyOnPallet, planning.partsPerPallet, planning.consumptionPerShift, planning.palletsPerShift, planning.roundedPalletsPerShift, settings.shiftsPerDay, planning.targetCoverageDays, planning.palletsPerDay, planning.plannedPalletsPerDay, planning.requiredPallets, planning.dailyConsumption, planning.stockQty ?? 'Not provided', planning.currentPallets ?? 'N/A — stock not provided', planning.currentPalletPositions ?? 'N/A — stock not provided', planning.actualCoverageDays ?? (planning.noConsumption ? 'No consumption' : 'N/A — stock not provided'), input.doh, planning.coverageDifferenceDays ?? 'N/A', Boolean(input.packagingInferred), `CEILING(${input.consumptionPerShift} / ${input.qtyBox} / ${input.qtyOnPallet} × ${settings.shiftsPerDay} × ${planning.targetCoverageDays}) = ${planning.requiredPallets}`];
 
   function add(sheet, values, kind) {
     const row = sheet.addRow(values.length ? values.map(value => value == null ? null : typeof value === 'number' && !Number.isFinite(value) ? String(value) : value) : ['']);
@@ -87,8 +87,8 @@
         'QTY in Box = individual parts in one box. QTY boxes per Pallet = boxes on one pallet.',
         'Consumption per shift = individual parts consumed during one shift. This is neither daily nor monthly consumption.',
         'DOH (Days on hand) = required coverage days for that part. Choose input DOH or a custom project DOH override.',
-        'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Decimal quantities retained; only physical capacity units round up.',
-        'Multiply raw pallet demand per shift by selected shifts and DOH without rounding.',
+        'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Keep all intermediate decimals; round up only the final required pallet quantity.',
+        'Multiply raw pallet demand per shift by selected shifts and DOH without intermediate rounding; round up only the final required pallets.',
         'Shifts per day must be 1, 2 or 3; the default is 2. Custom project DOH defaults to 5 days.',
         'L(mm), W(mm) and H(mm) are loaded pallet dimensions in millimeters.',
         'The eight-column template omits stacking: floor stacking defaults to 1. An optional extra Stacking column is supported. Enable Stackability in Shifts & days on hand to edit and apply the saved factor for each part; unchecked uses effective stacking 1 without erasing saved factors.',
@@ -275,7 +275,7 @@
       add(comparison, ['Part Number', 'Status', 'Validation Errors', ...PLANNING_HEADERS], 'header');
       calculation.results.forEach(result => add(comparison, [result.input.partNumber, result.isPlanningValid ? (result.isValid ? 'Valid' : 'Valid planning — storage scenario needs review') : 'Invalid planning — excluded', (result.errors || []).join(' | '), ...planningValues(result.planning, result.input, project.settings)]));
       add(comparison, []);
-      add(comparison, ['Required-pallet formula', 'Consumption per shift / parts per box / boxes per pallet × selected shifts × selected DOH. No rounding.']);
+      add(comparison, ['Required-pallet formula', 'Consumption per shift / parts per box / boxes per pallet × selected shifts × selected DOH, then round up only the final result.']);
       add(comparison, ['Optional stock interpretation', 'The eight-column input has no current stock quantity. Actual stock coverage is unavailable unless older or optional stock data is provided. Unknown stock is never treated as zero.']);
       comparison.getColumn(1).width = 105;
       comparison.getColumn(2).width = 75;
@@ -310,9 +310,9 @@
       add(settings, []);
       [
         'Parts per pallet = QTY in Box × QTY boxes per Pallet. Raw pallets per shift = Consumption per shift / QTY in Box / QTY boxes per Pallet.',
-        'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Decimal quantities retained; only physical capacity units round up.',
-        'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Decimal quantities retained; only physical capacity units round up.',
-        'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Decimal quantities retained; only physical capacity units round up.',
+        'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Keep all intermediate decimals; round up only the final required pallet quantity.',
+        'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Keep all intermediate decimals; round up only the final required pallet quantity.',
+        'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Keep all intermediate decimals; round up only the final required pallet quantity.',
         'DOH mode input uses each part’s DOH; custom uses the project DOH override. No current stock quantity is required by the eight-column template.',
         'Stackability disabled uses floor stacking 1. When enabled, each part uses its saved stacking factor capped by the height limit. Saved per-part factors are retained when disabled.',
         'Floor stacking = MIN(Stackability enabled ? saved Stacking : 1, FLOOR(maximum floor stacking height / loaded pallet H)). Floor positions = CEILING(required pallets / effective stacking).',

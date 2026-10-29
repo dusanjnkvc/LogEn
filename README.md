@@ -30,7 +30,7 @@ The eight-column template does not specify floor stacking. New projects start wi
 ## Required-pallet formula
 
 Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH.
-No daily or final pallet rounding. For example, 1.25 × 2 × 5 = 12.5 pallets. Physical floor positions, rows, rack bays and runs retain whole-capacity rounding. Choose 1, 2 or 3 shifts and per-part or overridden DOH.
+Keep decimals throughout multiplication; round up only final required pallets. For example, 0.16 × 2 × 10 = 3.2 → 4 pallets. Physical floor positions, rows, rack bays and runs retain whole-capacity rounding. Choose 1, 2 or 3 shifts and per-part or overridden DOH.
 
 ## Space planning
 
