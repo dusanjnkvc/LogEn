@@ -29,17 +29,8 @@ The eight-column template does not specify floor stacking. New projects start wi
 
 ## Required-pallet formula
 
-```text
-Raw pallets per day = Consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day
-Rounded pallets per day = ROUNDUP(Raw pallets per day, 0)
-Required pallets = ROUNDUP(Rounded pallets per day × DOH, 0)
-```
-
-Multiply by the selected shifts **before rounding**. For example, 0.13 pallets/shift becomes 0.13, 0.26 or 0.39 for 1, 2 or 3 shifts; each rounds up to **1 pallet per day**. At 5 DOH, each requires 5 pallets. Another example: 1,000 parts/shift ÷ 20 parts/box ÷ 40 boxes/pallet = 1.25 pallets/shift. With 2 shifts, 2.5 pallets/day rounds up to 3; at 5 DOH, the answer is **15 pallets**. A final ceiling keeps storage pallets whole when DOH is fractional. Raw consumption values retain their decimals.
-
-Choose **1, 2 or 3 shifts per day** (default 2). Use **DOH from each part** or a project DOH override. Editing the override immediately applies it to all parts; choose the per-part source to return to the Excel values. Changing shifts multiplies daily usage while the entered consumption per shift remains fixed. All four space results update automatically.
-
-The default template sample (20 parts/box, 40 boxes/pallet, 500 parts/shift, 5 DOH, two shifts) requires **10 pallets**. At 1200 × 800 × 1000 mm, one-high floor storage and the default warehouse settings, the four footprints are **11.34 / 63.60 / 7.98 / 33.63 m²**.
+Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH.
+No daily or final pallet rounding. For example, 1.25 × 2 × 5 = 12.5 pallets. Physical floor positions, rows, rack bays and runs retain whole-capacity rounding. Choose 1, 2 or 3 shifts and per-part or overridden DOH.
 
 ## Space planning
 

@@ -193,9 +193,9 @@
       const dailyConsumption = consumptionPerShift * s.shiftsPerDay;
       const palletsPerShift = consumptionPerShift / input.qtyBox / input.qtyOnPallet;
       // Kept for historical exports; required storage rounds the selected day.
-      const roundedPalletsPerShift = ceil(palletsPerShift, false);
+      const roundedPalletsPerShift = palletsPerShift;
       const palletsPerDay = palletsPerShift * s.shiftsPerDay;
-      const plannedPalletsPerDay = ceil(palletsPerDay, false);
+      const plannedPalletsPerDay = palletsPerDay;
       const knownStock = Number.isSafeInteger(input.stockQty) && input.stockQty >= 0;
       const currentPallets = knownStock ? input.stockQty / input.partsPerPallet : null;
       const noConsumption = dailyConsumption === 0;
@@ -205,7 +205,7 @@
       const targetCoverageDays = s.coverageMode === '24h' ? 1 : s.coverageMode === '48h' ? 2 :
         s.coverageMode === 'custom' ? s.customCoverageDays : input.doh;
       requiredParts = dailyConsumption * targetCoverageDays;
-      requiredPallets = ceil(plannedPalletsPerDay * targetCoverageDays);
+      requiredPallets = plannedPalletsPerDay * targetCoverageDays;
       if (![dailyConsumption, shiftConsumption, palletsPerDay, requiredParts,
         ...[currentPallets, palletDurationDays, actualCoverageDays, coverageDifferenceDays].filter(value => value !== null)].every(Number.isFinite) || requiredParts > Number.MAX_SAFE_INTEGER)
         throw new Error('Shift planning values exceed supported numeric precision.');
@@ -221,8 +221,8 @@
         partsPerPallet: input.partsPerPallet,
         stockQty: knownStock ? input.stockQty : null, noConsumption, targetCoverageDays,
         pallets24h: plannedPalletsPerDay,
-        pallets48h: ceil(2 * plannedPalletsPerDay),
-        palletsCustom: ceil(s.customCoverageDays * plannedPalletsPerDay),
+        pallets48h: 2 * plannedPalletsPerDay,
+        palletsCustom: s.customCoverageDays * plannedPalletsPerDay,
         customCoverageDays: s.customCoverageDays
       };
       const maximumStacking = floor(s.maxFloorStackingHeight / input.height);
