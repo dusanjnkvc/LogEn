@@ -86,6 +86,8 @@ Click Required storage pallets to inspect required pallet counts that fit racks,
 
 Export results also includes a separate Rack Layout worksheet listing every placed unit by bay, shelf, position, PN, quantity, and exact coordinates/dimensions. Non-fitting and unresolved input rows are listed separately.
 
-Results exports include a Racks Layout graphical worksheet with front views of vertical bays side by side and each pallet's Part Number inside its yellow box. Rack Layout retains the searchable allocation table without the X (mm) column. Graphical views are schematic and use the same saved shared allocation as the dashboard.
+Results exports include a Layout Graphic graphical worksheet with front views of vertical bays side by side and each pallet's Part Number inside its yellow box. Rack Layout retains the searchable allocation table without the X (mm) column. Graphical views are schematic and use the same saved shared allocation as the dashboard.
 
-Racks Layout shows four bays side by side per group, with levels in descending order and PN-labelled boxes on each shelf. Empty levels are shown; any extra row within a level represents units in shelf depth, not vertical stacking. This schematic uses the existing allocation unchanged.
+Layout Graphic shows four bays side by side per group, with levels in descending order and PN-labelled boxes on each shelf. Empty levels are shown; any extra row within a level represents units in shelf depth, not vertical stacking. This schematic uses the existing allocation unchanged.
+
+Layout Graphic begins at E5 with no introductory text in A1–A3. Rack Layout omits both X and Y coordinate columns.

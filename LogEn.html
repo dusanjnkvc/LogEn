@@ -887,37 +887,36 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const plan = calculation.sharedRack;
       add(layout, ['LogEn — shared rack layout: ' + project.name], 'header');
       add(layout, ['Required rack bays', plan?.available ? plan.bays : 'Unavailable', 'Rack storage m²', plan?.available ? plan.withoutGangways : null]);
-      add(layout, ['Shelf units use Required storage pallets. Y is the depth position in mm from the shelf origin. Different PNs may share shelves.']);
+      add(layout, ['Shelf units use Required storage pallets. Different PNs may share shelves.']);
       add(layout, ['Usable shelf L / D / H (mm)', s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, 'Levels', s.rackLevels, 'Between boxes allowance (mm)', s.betweenBoxesAllowance ?? 0]);
       add(layout, ['Feasible packing estimate; not a guaranteed optimum. Usable placement coordinates exclude structural allowances and gangways.']);
-      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'Y (mm)', 'Placed length (mm)', 'Placed depth (mm)'], 'header');
+      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'Placed length (mm)', 'Placed depth (mm)'], 'header');
       if (plan?.available) {
-        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[Math.floor(i/s.rackLevels)+1,i%s.rackLevels+1,j+1,p.partNumber,1,p.y,p.length,p.depth])));
-        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:8}};
+        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[Math.floor(i/s.rackLevels)+1,i%s.rackLevels+1,j+1,p.partNumber,1,p.length,p.depth])));
+        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:7}};
       } else add(layout, [plan?.error || 'Rack layout unavailable. Correct settings and input errors.']);
       add(layout, []);add(layout, ['Non-fitting PNs and rows requiring review', 'Required pallets', 'Status'], 'header');
       calculation.results.filter(r=>!r.isRackValid||!r.isPlanningValid).forEach(r=>add(layout,[r.input.partNumber,r.isPlanningValid?r.requiredPallets:'Unavailable',r.rackFit==='NO'?'Does not fit':'Needs review',r.errors.join(' | ')]));
-      for(let i=1;i<=8;i++)layout.getColumn(i).width=i===4?30:24;
-      const drawing = workbook.addWorksheet('Racks Layout', {views:[{showGridLines:false}], pageSetup:{orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0}});
-      add(drawing, ['LogEn — graphical shared rack layout: ' + project.name], 'header');
-      add(drawing, ['Front view: vertical rack bays side by side, highest level at the top. Each yellow box is one pallet labelled with its Part Number.']);
-      add(drawing, ['Schematic, not to scale. Up to four bays per group. Rows of boxes within a level represent shelf-depth positions, not vertical stacking. Empty shelves remain visible.']);
+      for(let i=1;i<=7;i++)layout.getColumn(i).width=i===4?30:24;
+      const drawing = workbook.addWorksheet('Layout Graphic', {views:[{showGridLines:false}], pageSetup:{orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0}});
       if(plan?.available && plan.bays) {
-        if(s.rackLevels*Math.ceil(plan.bays/4)*3+plan.quantity*2>900000) add(drawing,['Front view exceeds Excel row limits. Use Rack Layout for the complete allocation.']);
+        if(s.rackLevels*Math.ceil(plan.bays/4)*3+plan.quantity*2>900000) drawing.getCell('E5').value='Front view exceeds Excel row limits. Use Rack Layout for the complete allocation.';
         else {
           const steel='FF708399', dark='FF15181D';
-          drawing.getColumn(1).width=7;
-          for(let c=2;c<=54;c++)drawing.getColumn(c).width=(c-2)%13===0?1.2:3.2;
+          for(let c=1;c<=4;c++)drawing.getColumn(c).width=3.2;
+          drawing.getColumn(5).width=7;
+          for(let c=6;c<=58;c++)drawing.getColumn(c).width=(c-6)%13===0?1.2:3.2;
           for(let first=0;first<plan.bays;first+=4) {
-            const count=Math.min(4,plan.bays-first),lastColumn=2+count*13;
-            const headingRow=drawing.rowCount+2;
+            const count=Math.min(4,plan.bays-first),lastColumn=6+count*13;
+            const headingRow=first===0?5:drawing.rowCount+2;
+            drawing.getCell(headingRow,5).value='Level';
             for(let b=0;b<count;b++){
-              const start=3+b*13;drawing.mergeCells(headingRow,start,headingRow,start+11);
+              const start=7+b*13;drawing.mergeCells(headingRow,start,headingRow,start+11);
               const cell=drawing.getCell(headingRow,start);cell.value=`Bay ${first+b+1}`;cell.font={bold:true,size:13};cell.alignment={horizontal:'center'};
             }
             drawing.getRow(headingRow).height=25;
             let cursor=headingRow+1;
-            function frame(row,height){drawing.getRow(row).height=height;for(let c=2;c<=lastColumn;c++)drawing.getCell(row,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:steel}};}
+            function frame(row,height){drawing.getRow(row).height=height;for(let c=6;c<=lastColumn;c++)drawing.getCell(row,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:steel}};}
             frame(cursor++,6);
             for(let level=s.rackLevels-1;level>=0;level--){
               const shelves=Array.from({length:count},(_,b)=>plan.shelves[(first+b)*s.rackLevels+level]);
@@ -927,15 +926,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
                 drawing.getRow(cursor++).height=5;
                 boxRows.push(cursor);drawing.getRow(cursor++).height=38;
               }
-              for(let row=firstRow;row<cursor;row++)for(let c=2;c<=lastColumn;c++)drawing.getCell(row,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:(c-2)%13===0?steel:dark}};
-              if(cursor-firstRow>1)drawing.mergeCells(firstRow,1,cursor-1,1);
-              const levelCell=drawing.getCell(firstRow,1);levelCell.value=`L${level+1}`;levelCell.font={bold:true,size:12};levelCell.alignment={vertical:'middle',horizontal:'center'};
+              for(let row=firstRow;row<cursor;row++)for(let c=6;c<=lastColumn;c++)drawing.getCell(row,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:(c-6)%13===0?steel:dark}};
+              if(cursor-firstRow>1)drawing.mergeCells(firstRow,5,cursor-1,5);
+              const levelCell=drawing.getCell(firstRow,5);levelCell.value=`L${level+1}`;levelCell.font={bold:true,size:12};levelCell.alignment={vertical:'middle',horizontal:'center'};
               shelves.forEach((shelf,b)=>{
-                if(!shelf){drawing.mergeCells(boxRows[0],3+b*13,boxRows[0],14+b*13);const empty=drawing.getCell(boxRows[0],3+b*13);empty.value='Empty shelf';empty.font={color:{argb:'FFADB5BD'},italic:true};empty.alignment={horizontal:'center',vertical:'middle'};return;}
+                if(!shelf){drawing.mergeCells(boxRows[0],7+b*13,boxRows[0],18+b*13);const empty=drawing.getCell(boxRows[0],7+b*13);empty.value='Empty shelf';empty.font={color:{argb:'FFADB5BD'},italic:true};empty.alignment={horizontal:'center',vertical:'middle'};return;}
                 const units=[...shelf.placements].sort((a,b)=>a.y-b.y||a.x-b.x);
                 units.forEach((box,index)=>{
                   const band=Math.floor(index/3),within=index%3,number=Math.min(3,units.length-band*3),span=12/number;
-                  const left=3+b*13+within*span,right=left+span-1,row=boxRows[band];
+                  const left=7+b*13+within*span,right=left+span-1,row=boxRows[band];
                   drawing.mergeCells(row,left,row,right);
                   const cell=drawing.getCell(row,left);cell.value=box.partNumber;
                   cell.font={name:'Calibri',size:11,bold:true,color:{argb:BLACK}};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:YELLOW}};
@@ -947,7 +946,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
             }
           }
         }
-      } else add(drawing,[plan?.available?'No rack pallets to place.':plan?.error||'Rack layout unavailable.']);
+      } else drawing.getCell('E5').value=plan?.available?'No rack pallets to place.':plan?.error||'Rack layout unavailable.';
       workbook.views = [{ activeTab: 3, firstSheet: 0, visibility: 'visible' }];
       return new Uint8Array(await workbook.xlsx.writeBuffer());
     }
