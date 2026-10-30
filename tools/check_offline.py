@@ -31,8 +31,8 @@ class OfflineCheck(HTMLParser):
 check = OfflineCheck()
 check.feed(html)
 assert check.scripts == 1 and check.images == 1
-assert "connect-src 'none'" in check.csp
-assert not re.search(r'__(LOGO|STYLES|SCRIPTS)__', html)
+assert "connect-src http://127.0.0.1:8765;" in check.csp
+assert not re.search(r'__(LOGO|STYLES|SCRIPTS|AUTOCAD_HELPER)__', html)
 style = re.search(r'<style>(.*?)</style>', html, re.S).group(1)
 assert not re.search(r'@import|url\(\s*[\'"]?https?:', style, re.I)
-print('Offline package verified: inline code, styles, Excel library and logo; no external asset dependency; network connections blocked by CSP.')
+print('Offline package verified: inline code, styles, Excel library and logo; no external asset dependency; only the explicit loopback AutoCAD helper is allowed by CSP.')

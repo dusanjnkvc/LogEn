@@ -111,3 +111,9 @@ Targeted validation: `node tools/check_rack_policies.cjs`, `node tools/check_box
 Between boxes allowance also reserves the same clearance at both frontage pillars. Frontage capacity = FLOOR((usable shelf length - gap) / (pallet frontage + gap)). Two 1200 mm pallets with 100 mm gaps need 2700 mm. Depth clearance remains between rows only; structural dimensions still add to warehouse floor area separately.
 
 Rack rows are centered within each bay without changing capacity or gaps. The bundled ExcelJS VML writer includes a scoped note-anchor fallback (note.anchor) and 330 × 110 point comment shapes so proportional graphic columns do not squash box comments. Preserve this patch when upgrading the library.
+
+## Implementation and local AutoCAD conversion
+
+Greenfeild shows a saved wall-storage permission. Existing warehouses can select configured rack types and finite bay counts. Pallets from Part details are packed into those bays using each type's fit/rotation/stacking/depth/gap rules; excess pallets and non-fitting pallets are calculated on ground. All entered bays, including empty ones, contribute structural footprint and allocated gangways. Invalid rows remain visible; totals are partial when needed. The allocator is a heuristic, not a guaranteed optimal fit.
+
+DWG and generated PDF are stored per project in IndexedDB. Download the embedded helper ZIP from Implementation and run its VBS launcher on Windows with licensed AutoCAD/Core Console. The helper binds only to 127.0.0.1:8765, uses a temporary DWG copy, plots model-space extents to A3 landscape PDF, and deletes temporary files. The original drawing is unchanged. It does not insert the LogEn storage plan into the DWG. Chrome may ask permission to access the local helper. The only CSP connection exception is that loopback endpoint; calculations remain offline and need no helper. Drawing attachments are not part of JSON backups.

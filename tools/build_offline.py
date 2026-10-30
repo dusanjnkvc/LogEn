@@ -2,6 +2,8 @@
 from pathlib import Path
 import base64
 import re
+import io
+import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 source = ROOT / 'webapp'
@@ -14,6 +16,14 @@ for path in [source / 'vendor/exceljs.min.js', source / 'domain.js', source / 'w
 html = (source / 'index.html').read_text(encoding='utf-8')
 html = html.replace('__STYLES__', (source / 'styles.css').read_text(encoding='utf-8'))
 html = html.replace('__LOGO__', logo).replace('__SCRIPTS__', '\n;\n'.join(scripts))
+helper_buffer = io.BytesIO()
+with zipfile.ZipFile(helper_buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+    for helper in sorted((ROOT / 'tools/autocad_helper').iterdir()):
+        if helper.is_file():
+            entry=zipfile.ZipInfo(helper.name, (2026, 10, 30, 0, 0, 0))
+            entry.compress_type=zipfile.ZIP_DEFLATED
+            archive.writestr(entry, helper.read_bytes())
+html=html.replace('__AUTOCAD_HELPER__',base64.b64encode(helper_buffer.getvalue()).decode('ascii'))
 license_text = (source / 'vendor/LICENSE').read_text(encoding='utf-8')
 html += '\n<!-- Bundled ExcelJS 4.4.0 — MIT License\n' + license_text.replace('--', '—') + '\n-->\n'
 destination = ROOT / 'LogEn.html'

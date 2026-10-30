@@ -552,7 +552,7 @@
       const plan=calculation.sharedRack;
       if(!plan?.available){body.append(notice(plan?.error||'Rack layout unavailable.',true));return {read:()=>true};}
       body.append($('p','',`${display(plan.quantity)} units · ${display(plan.bays)} vertical bays · ${plan.typeUsage.length} rack types · ${area(plan.withoutGangways)} without gangways`));
-      body.append(notice('Feasible shelf packing estimate, not a guaranteed optimum. All units fit usable length/depth/height. Storage follows each rack type’s rotation, stacking and maximum-two-depth options. Part-level diagrams show standalone estimates; this overview and dashboard use shared allocation.'));
+      body.append(notice('Feasible shelf packing estimate, not a guaranteed optimum. All units fit usable length/depth/height. Storage follows each rack type’s rotation, stacking and maximum-two-depth options. Part-level diagrams show standalone estimates; this overview uses the supplied shared allocation.'));
       const selectorLabel=$('label','field');selectorLabel.append($('span','','Rack bay'));
       const baySelect=$('select');baySelect.setAttribute('aria-label','Rack bay');
       for(let b=0;b<plan.bays;b++){const option=$('option','',`Bay ${b+1} of ${plan.bays} — ${plan.bayLayouts[b].typeName}`);option.value=String(b);baySelect.append(option);}
