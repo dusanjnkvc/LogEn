@@ -109,3 +109,5 @@ The template includes Category; older eight-column inputs remain supported. The 
 Targeted validation: `node tools/check_rack_policies.cjs`, `node tools/check_box_rack.cjs`, `node tools/check_floor_stacking.cjs`, `node tools/check_mixed_racks.cjs`.
 
 Between boxes allowance also reserves the same clearance at both frontage pillars. Frontage capacity = FLOOR((usable shelf length - gap) / (pallet frontage + gap)). Two 1200 mm pallets with 100 mm gaps need 2700 mm. Depth clearance remains between rows only; structural dimensions still add to warehouse floor area separately.
+
+Rack rows are centered within each bay without changing capacity or gaps. The bundled ExcelJS VML writer includes a scoped note-anchor fallback (note.anchor) and 330 × 110 point comment shapes so proportional graphic columns do not squash box comments. Preserve this patch when upgrading the library.

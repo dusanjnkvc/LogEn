@@ -358,6 +358,12 @@
       const shelves=[],usage=new Map();let net=0,aisle=0,occupied=0,available=0,unusedPerLevel=0;
       bayLayouts.forEach((bay,i)=>{
         const t=bay.settings;bay.number=i+1;bay.typeId=t.id;bay.typeName=t.name;
+        // Center each actual depth row as a group; retain all inter-unit gaps.
+        for(const sh of bay.shelves){for(const depthRow of new Set(sh.placements.map(p=>p.depthRow||0))){
+          const row=sh.placements.filter(p=>(p.depthRow||0)===depthRow),left=Math.min(...row.map(p=>p.x)),right=Math.max(...row.map(p=>p.x+p.length));
+          const offset=(t.rackSlotLength-(right-left))/2-left;
+          row.forEach(p=>p.x+=offset);
+        }}
         const usable=t.rackSlotLength*t.rackSlotDepth/1000000,footprint=(t.rackSlotLength+t.rackStructuralLength)*(t.rackSlotDepth+t.rackStructuralDepth)/1000000;
         bay.withoutGangways=footprint;bay.availableShelfArea=usable*t.rackLevels;
         bay.occupiedShelfArea=bay.shelves.reduce((n,sh)=>n+sh.placements.reduce((v,p)=>v+(p.z?0:p.length*p.depth/1000000),0),0);

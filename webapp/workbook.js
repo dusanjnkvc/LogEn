@@ -409,6 +409,14 @@
                       if(right>left)drawing.mergeCells(row,left,row,right);
                       const cell=drawing.getCell(row,left);cell.value=box.partNumber;
                       cell.note=`PN: ${box.partNumber}\nQTY: 1 pallet\nDimension: ${box.length} × ${box.depth} mm\nLocation: Bay ${first+b+1}, Level ${level+1}, Position ${shelf.placements.indexOf(box)+1}`;
+                      // VML anchors use worksheet column/row coordinates. Walk real
+                      // widths so narrow proportional layout columns cannot squash notes.
+                      let endColumn=cell.col,remainingWidth=440;
+                      const columnPixels=col=>{const width=drawing.getColumn(col).width??9;return Math.max(1,Math.floor(width<1?width*12:width*7+5));};
+                      while(remainingWidth>columnPixels(endColumn+1)){remainingWidth-=columnPixels(endColumn+1);endColumn++;}
+                      let endRow=row-1,remainingHeight=147;
+                      while(remainingHeight>(drawing.getRow(endRow+1).height||15)*4/3){remainingHeight-=(drawing.getRow(endRow+1).height||15)*4/3;endRow++;}
+                      cell.note={texts:[{font:{name:'Calibri',size:11},text:cell.note}],margins:{insetmode:'custom',inset:[0.2,0.2,0.2,0.2]},editAs:'absolute',anchor:{left:cell.col,top:row-1,right:endColumn+remainingWidth/68,bottom:endRow+remainingHeight/18}};
                       cell.font={name:'Calibri',size:11,bold:true,color:{argb:BLACK}};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:YELLOW}};cell.alignment={horizontal:'center',vertical:'middle',wrapText:true,shrinkToFit:true};
                       const border={style:'thin',color:{argb:dark}};cell.border={top:border,bottom:border,left:border,right:border};
                     }
