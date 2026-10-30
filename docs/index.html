@@ -77,6 +77,8 @@ select option:checked{background:var(--yellow);color:#111}
 @media(prefers-reduced-motion:reduce){.improve-warehouse,.improve-warehouse::after{transition:none}.improve-warehouse::before,.improve-warehouse::after{animation:none}.improve-warehouse:hover,.improve-warehouse:active{transform:none}}
 
 .improvement-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:24px 0}.improvement-metrics>div{background:#151821;border:1px solid var(--border);border-radius:12px;padding:16px}.improvement-metrics span{display:block;color:var(--muted);font-size:11px}.improvement-metrics strong{display:block;margin-top:7px;font-size:20px;color:var(--yellow)}.improvement-tips{padding-left:20px}.improvement-tips li{padding:7px 0}@media(max-width:600px){.improvement-metrics{grid-template-columns:1fr}}
+
+.split-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.warehouse-improvement-dialog .notice ul{padding-left:20px;max-height:240px;overflow:auto}@media(max-width:600px){.split-metrics{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -667,7 +669,18 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return project;
   }
 
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, configuredRackTypes, rackTypeFields, rackOptionFields, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
+  function calculateStorageSplit(parts,settings,threshold,category=null){
+    if(!Number.isSafeInteger(threshold)||threshold<0)throw new Error('Rack threshold must be a whole number of at least zero.');
+    const all=calculateProject(parts,settings,category),planned=all.results.filter(r=>r.isPlanningValid);
+    const rackRows=planned.filter(r=>r.requiredPallets<=threshold),groundRows=planned.filter(r=>r.requiredPallets>threshold);
+    const rack=calculateProject(rackRows.map(r=>r.input),settings);
+    const groundValid=groundRows.filter(r=>r.isFloorValid),sum=(rows,fn)=>rows.reduce((n,r)=>n+fn(r),0);
+    return {rack,groundRows,rackRows,settingsErrors:all.settingsErrors,unassigned:all.results.filter(r=>!r.isPlanningValid),
+      rackPallets:sum(rackRows,r=>r.requiredPallets),groundPallets:sum(groundRows,r=>r.requiredPallets),
+      groundWithoutGangways:sum(groundValid,r=>r.floor.withoutGangways),groundWithGangways:sum(groundValid,r=>r.floor.withGangways),
+      groundInvalid:groundRows.filter(r=>!r.isFloorValid),rackInvalid:rack.results.filter(r=>!r.isRackValid)};
+  }
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, configuredRackTypes, rackTypeFields, rackOptionFields, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject, calculateStorageSplit });
 })(globalThis);
 
 ;
@@ -1850,17 +1863,26 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return `<div class="warehouse-heading-actions"><button class="improve-warehouse" data-action="improve-warehouse" aria-label="✦ Improve Warehouse →"><span class="ai-sparkle" aria-hidden="true">✦</span><span>Improve Warehouse</span><span aria-hidden="true">→</span></button><div class="import-actions"><button class="btn btn-secondary" data-action="template">${icon('download')}Download template</button><button class="btn btn-primary" data-action="import">${icon('upload')}Import Excel</button></div></div>`;
   }
   async function improveWarehouse(){
-    const c=calc(),s=project().settings,tips=[];
-    if(c.settingsErrors.length)tips.push('Correct the warehouse settings before comparing storage options.');
-    if(c.invalidCount)tips.push(`${count(c.invalidCount)} part numbers need review. Current totals include only calculable inventory for each storage scenario.`);
-    if(c.nonFittingPallets)tips.push(`${count(c.nonFittingPallets)} required pallets do not fit the configured rack types. Add a suitable rack type or plan floor storage for these parts.`);
-    if(c.rackAvailableShelfArea>0)tips.push(`Rack shelf utilization is ${area(c.rackUtilizationPercent)}%. Compare usable dimensions and levels of additional rack types to reduce unused shelf surface.`);
-    if(D.configuredRackTypes(s).length===1)tips.push('Add alternative rack types in Warehouse settings to let LogEn compare suitable types per bay.');
-    if(D.configuredRackTypes(s).some(t=>!t.rackAllowRotation))tips.push('Where handling rules permit it, enabling rotation can allow the shorter pallet side along the frontage. Review rack fit after changing this option.');
-    if(!c.results.length)tips.push('Import inventory or add part numbers to build your warehouse comparison.');
+    const p=project(),dialog=document.createElement('dialog');
+    const initial=Number.isSafeInteger(p.improvementThreshold)&&p.improvementThreshold>=0?p.improvementThreshold:2;
     const category=selectedCategory===null?'All categories':selectedCategory||'Uncategorized';
-    const body=`<p class="muted">${escape(project().name)} · ${escape(category)}</p><div class="improvement-metrics"><div><span>Floor storage</span><strong>${area(c.floorWithoutGangways)} m²</strong></div><div><span>Rack storage</span><strong>${area(c.rackWithoutGangways)} m²</strong></div><div><span>Difference · floor minus racks</span><strong>${signed(c.savingWithoutGangways)} m²</strong></div></div><h3>Opportunities to review</h3><ul class="improvement-tips">${tips.map(t=>`<li>${escape(t)}</li>`).join('')}</ul><p class="muted">Suggestions use the current project and selected category. Rack allocation is a planning estimate; verify physical and handling constraints before changing settings.</p>`;
-    if(await modal({title:'Improve Warehouse',eyebrow:'WAREHOUSE INSIGHTS',body,confirm:'Open warehouse settings',cancel:'Close'}))await settings();
+    dialog.className='warehouse-improvement-dialog';
+    dialog.innerHTML=`<div class="dialog-head"><div class="eyebrow">MIXED STORAGE PLANNING</div><h2>Improve Warehouse</h2><p class="muted">${escape(p.name)} · ${escape(category)}</p></div><div class="dialog-body"><label class="field"><span>Maximum pallets per part number stored in racks</span><input id="rack-planning-threshold" type="number" min="0" step="1" value="${initial}" aria-describedby="rack-threshold-rule"></label><p id="rack-threshold-rule" class="muted">Parts needing this quantity or fewer go in racks. Parts above it go on the ground. All required pallets for each PN stay together.</p><section id="storage-split-results" aria-live="polite"></section></div><div class="dialog-actions"><button class="btn btn-secondary" data-split-settings>Warehouse settings</button><button class="btn btn-primary" data-split-close>Close</button></div>`;
+    const input=dialog.querySelector('input'),results=dialog.querySelector('#storage-split-results');
+    function refresh(){
+      const threshold=input.value.trim()===''?NaN:Number(input.value);
+      if(!Number.isSafeInteger(threshold)||threshold<0){input.setAttribute('aria-invalid','true');results.innerHTML='<div class="notice error">Enter a whole number of at least 0.</div>';return;}
+      input.removeAttribute('aria-invalid');p.improvementThreshold=threshold;save();
+      const plan=D.calculateStorageSplit(p.parts,p.settings,threshold,selectedCategory),r=plan.rack;
+      if(plan.settingsErrors.length){results.innerHTML=`<div class="notice error">${plan.settingsErrors.map(escape).join('<br>')}</div>`;return;}
+      const metric=(label,value)=>`<div><span>${label}</span><strong>${area(value)} m²</strong></div>`;
+      const failures=[...plan.unassigned.map(row=>({row,reason:'Demand unavailable — unassigned'})),...plan.groundInvalid.map(row=>({row,reason:'Ground calculation invalid'})),...plan.rackInvalid.map(row=>({row,reason:'Assigned to racks but does not fit or needs review'}))];
+      results.innerHTML=`<p><strong>≤ ${count(threshold)} pallets → racks</strong> · ${count(plan.rackRows.length)} PNs / ${count(plan.rackPallets)} pallets<br><strong>&gt; ${count(threshold)} pallets → ground</strong> · ${count(plan.groundRows.length)} PNs / ${count(plan.groundPallets)} pallets</p><div class="improvement-metrics split-metrics">${metric('Racks — without gangways',r.rackWithoutGangways)}${metric('Racks — with allocated gangways',r.rackWithGangways)}${metric('Ground — without gangways',plan.groundWithoutGangways)}${metric('Ground — with allocated gangways',plan.groundWithGangways)}</div><div class="notice"><strong>Combined footprint</strong><br>Without gangways: ${area(r.rackWithoutGangways+plan.groundWithoutGangways)} m²<br>With allocated gangways: ${area(r.rackWithGangways+plan.groundWithGangways)} m²</div>${failures.length?`<div class="notice error"><strong>Partial totals · ${count(failures.length)} PNs need review</strong><p>These assigned quantities are excluded from their storage areas until corrected.</p><ul>${failures.map(({row,reason})=>`<li>${escape(row.input.partNumber||'(blank PN)')} · ${row.isPlanningValid?count(row.requiredPallets)+' pallets':'Quantity unavailable'} · ${escape(reason)}</li>`).join('')}</ul></div>`:''}${!r.sharedRack?.available?`<div class="notice error">${escape(r.sharedRack?.error||'Shared rack layout unavailable.')} Rack totals use standalone estimates.</div>`:''}<p class="muted">Rack PNs share shelves using the configured rack types and storage rules. This scenario follows the selected category and does not change the four comparison cards. Gangway-inclusive areas are allocated estimates.</p>`;
+    }
+    input.addEventListener('input',refresh);
+    dialog.querySelector('[data-split-close]').addEventListener('click',()=>dialog.close());
+    dialog.querySelector('[data-split-settings]').addEventListener('click',()=>{dialog.close();settings();});
+    dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);refresh();dialog.showModal();input.focus();
   }
   function validationBanner(c) {
     if (c.settingsErrors?.length) return `<div class="notice error"><strong>Warehouse settings need attention.</strong> Results are unavailable until these are corrected.<ul class="validation-list">${c.settingsErrors.map(e => `<li>${escape(e)}</li>`).join('')}</ul><button class="btn btn-secondary small" data-action="settings">Review settings</button></div>`;

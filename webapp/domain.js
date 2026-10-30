@@ -496,5 +496,16 @@
     return project;
   }
 
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, configuredRackTypes, rackTypeFields, rackOptionFields, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
+  function calculateStorageSplit(parts,settings,threshold,category=null){
+    if(!Number.isSafeInteger(threshold)||threshold<0)throw new Error('Rack threshold must be a whole number of at least zero.');
+    const all=calculateProject(parts,settings,category),planned=all.results.filter(r=>r.isPlanningValid);
+    const rackRows=planned.filter(r=>r.requiredPallets<=threshold),groundRows=planned.filter(r=>r.requiredPallets>threshold);
+    const rack=calculateProject(rackRows.map(r=>r.input),settings);
+    const groundValid=groundRows.filter(r=>r.isFloorValid),sum=(rows,fn)=>rows.reduce((n,r)=>n+fn(r),0);
+    return {rack,groundRows,rackRows,settingsErrors:all.settingsErrors,unassigned:all.results.filter(r=>!r.isPlanningValid),
+      rackPallets:sum(rackRows,r=>r.requiredPallets),groundPallets:sum(groundRows,r=>r.requiredPallets),
+      groundWithoutGangways:sum(groundValid,r=>r.floor.withoutGangways),groundWithGangways:sum(groundValid,r=>r.floor.withGangways),
+      groundInvalid:groundRows.filter(r=>!r.isFloorValid),rackInvalid:rack.results.filter(r=>!r.isRackValid)};
+  }
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, configuredRackTypes, rackTypeFields, rackOptionFields, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject, calculateStorageSplit });
 })(globalThis);
