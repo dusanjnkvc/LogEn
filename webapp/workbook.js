@@ -370,46 +370,52 @@
         if(plan.bayLayouts.reduce((n,b)=>n+b.settings.rackLevels*3,0)+plan.quantity*2>900000) drawing.getCell('E5').value='Front view exceeds Excel row limits. Use Rack Layout for the complete allocation.';
         else {
           const steel='FF708399', dark='FF15181D';
+          // Shared normalized frontage boundaries preserve actual X and width,
+          // including clearance gaps. Never wrap units after an arbitrary count.
+          const edges=[...new Set([0,1,...plan.bayLayouts.flatMap(b=>b.shelves.flatMap(sh=>sh.placements.flatMap(p=>[p.x/b.settings.rackSlotLength,(p.x+p.length)/b.settings.rackSlotLength])))] )].sort((a,b)=>a-b);
+          if(edges.length>4000)throw new Error('Layout Graphic has too many distinct frontage boundaries. Reduce the inventory variety before graphical export.');
+          const span=edges.length-1,stride=span+1,post=6;
           for(let c=1;c<=4;c++)drawing.getColumn(c).width=3.2;
-          drawing.getColumn(5).width=7;
-          for(let c=6;c<=58;c++)drawing.getColumn(c).width=(c-6)%13===0?1.2:3.2;
-          for(let first=0;first<plan.bays;first+=4) {
-            const group=plan.bayLayouts.slice(first,first+4),count=group.length,lastColumn=6+count*13;
+          drawing.getColumn(5).width=12;
+          for(let bay=0;bay<4;bay++){
+            drawing.getColumn(post+bay*stride).width=1.2;
+            for(let i=0;i<span;i++)drawing.getColumn(post+bay*stride+1+i).width=48*(edges[i+1]-edges[i]);
+          }
+          const edgeIndex=value=>edges.indexOf(value);
+          for(let first=0;first<plan.bays;first+=4){
+            const group=plan.bayLayouts.slice(first,first+4),lastColumn=post+group.length*stride;
             const headingRow=first===0?5:drawing.rowCount+2;
             drawing.getCell(headingRow,5).value='Level';
-            for(let b=0;b<count;b++){
-              const start=7+b*13;drawing.mergeCells(headingRow,start,headingRow,start+11);
-              const cell=drawing.getCell(headingRow,start);cell.value=`Bay ${first+b+1} — ${group[b].typeName}`;cell.font={bold:true,size:13};cell.alignment={horizontal:'center',wrapText:true};
-            }
+            group.forEach((bay,b)=>{const start=post+1+b*stride;drawing.mergeCells(headingRow,start,headingRow,start+span-1);const cell=drawing.getCell(headingRow,start);cell.value=`Bay ${first+b+1} — ${bay.typeName}`;cell.font={bold:true,size:13};cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};});
             drawing.getRow(headingRow).height=38;
             let cursor=headingRow+1;
-            function frame(row,height){drawing.getRow(row).height=height;for(let c=6;c<=lastColumn;c++)drawing.getCell(row,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:steel}};}
-            frame(cursor++,6);
+            function frame(){drawing.getRow(cursor).height=6;for(let c=post;c<=lastColumn;c++)drawing.getCell(cursor,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:steel}};cursor++;}
+            frame();
             for(let level=Math.max(...group.map(b=>b.settings.rackLevels))-1;level>=0;level--){
               const shelves=group.map(b=>b.shelves[level]);
-              const bands=Math.max(1,...shelves.map(sh=>Math.ceil((sh?.placements.length||0)/3)));
-              const firstRow=cursor,boxRows=[];
-              for(let band=0;band<bands;band++){
-                drawing.getRow(cursor++).height=5;
-                boxRows.push(cursor);drawing.getRow(cursor++).height=38;
+              const depthRows=[...new Set([0,...shelves.flatMap(sh=>sh?.placements.map(p=>p.depthRow||0)||[])])].sort((a,b)=>a-b);
+              for(const depthRow of depthRows){
+                const maxLayer=Math.max(1,...shelves.flatMap(sh=>sh?.placements.filter(p=>(p.depthRow||0)===depthRow).map(p=>p.stackLayer||1)||[]));
+                for(let layer=maxLayer;layer>=1;layer--){
+                  const top=cursor;drawing.getRow(cursor++).height=5;const row=cursor++;drawing.getRow(row).height=46;
+                  for(let r=top;r<=row;r++)for(let c=post;c<=lastColumn;c++)drawing.getCell(r,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:(c-post)%stride===0?steel:dark}};
+                  drawing.mergeCells(top,5,row,5);const label=drawing.getCell(top,5);label.value=`L${level+1}${depthRows.length>1?' · '+(depthRow?'Rear':'Front'):''}${maxLayer>1?' · Stack '+layer:''}`;label.font={bold:true,size:11};label.alignment={vertical:'middle',horizontal:'center',wrapText:true};
+                  shelves.forEach((shelf,b)=>{
+                    const start=post+1+b*stride,cfg=group[b].settings;
+                    const units=(shelf?.placements||[]).filter(p=>(p.depthRow||0)===depthRow&&(p.stackLayer||1)===layer).sort((a,b)=>a.x-b.x);
+                    if(!units.length){drawing.mergeCells(row,start,row,start+span-1);const empty=drawing.getCell(row,start);empty.value=level>=cfg.rackLevels?'No shelf at this level':depthRow?'Empty rear row':layer>1?'':'Empty shelf';empty.font={color:{argb:'FFADB5BD'},italic:true};empty.alignment={horizontal:'center',vertical:'middle'};return;}
+                    for(const box of units){
+                      const left=start+edgeIndex(box.x/cfg.rackSlotLength),right=start+edgeIndex((box.x+box.length)/cfg.rackSlotLength)-1;
+                      if(right>left)drawing.mergeCells(row,left,row,right);
+                      const cell=drawing.getCell(row,left);cell.value=box.partNumber;cell.note=`Stack layer ${box.stackLayer||1}; depth row ${(box.depthRow||0)+1}; X ${box.x} mm; ${box.length} × ${box.depth} mm`;
+                      cell.font={name:'Calibri',size:11,bold:true,color:{argb:BLACK}};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:YELLOW}};cell.alignment={horizontal:'center',vertical:'middle',wrapText:true,shrinkToFit:true};
+                      const border={style:'thin',color:{argb:dark}};cell.border={top:border,bottom:border,left:border,right:border};
+                    }
+                  });
+                }
+                // A distinct divider labels depth rows; only real stack layers share a band.
+                frame();
               }
-              for(let row=firstRow;row<cursor;row++)for(let c=6;c<=lastColumn;c++)drawing.getCell(row,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:(c-6)%13===0?steel:dark}};
-              if(cursor-firstRow>1)drawing.mergeCells(firstRow,5,cursor-1,5);
-              const levelCell=drawing.getCell(firstRow,5);levelCell.value=`L${level+1}`;levelCell.font={bold:true,size:12};levelCell.alignment={vertical:'middle',horizontal:'center'};
-              shelves.forEach((shelf,b)=>{
-                if(!shelf){drawing.mergeCells(boxRows[0],7+b*13,boxRows[0],18+b*13);const empty=drawing.getCell(boxRows[0],7+b*13);empty.value=level>=group[b].settings.rackLevels?'No shelf at this level':'Empty shelf';empty.font={color:{argb:'FFADB5BD'},italic:true};empty.alignment={horizontal:'center',vertical:'middle'};return;}
-                const units=[...shelf.placements].sort((a,b)=>a.y-b.y||a.x-b.x||(a.z||0)-(b.z||0));
-                units.forEach((box,index)=>{
-                  const band=Math.floor(index/3),within=index%3,number=Math.min(3,units.length-band*3),span=12/number;
-                  const left=7+b*13+within*span,right=left+span-1,row=boxRows[band];
-                  drawing.mergeCells(row,left,row,right);
-                  const cell=drawing.getCell(row,left);cell.value=box.partNumber;cell.note=`Stack layer ${box.stackLayer||1}; depth row ${(box.depthRow||0)+1}; ${box.length} × ${box.depth} mm`;
-                  cell.font={name:'Calibri',size:11,bold:true,color:{argb:BLACK}};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:YELLOW}};
-                  cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};
-                  const edge={style:'medium',color:{argb:dark}};cell.border={top:edge,bottom:edge,left:edge,right:edge};
-                });
-              });
-              frame(cursor++,6);
             }
           }
         }
