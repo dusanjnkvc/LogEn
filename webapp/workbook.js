@@ -211,11 +211,11 @@
         const value = result.floor;
         add(floor, [...inputValues(result.input), result.input.stacking, result.isFloorValid ? (result.isValid ? 'Valid' : 'Included in floor totals — rack validation warning') : 'Invalid floor — excluded from floor totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, result.isFloorValid ? value?.storageArea : null, result.isFloorValid ? value?.gangwayArea : null, result.isFloorValid ? value?.withGangways : null, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `GS net + lane width * lanes * gangway metres / 2000 = ${value.withoutGangways} + ${value.rowWidth * 1000} * ${value.rows} * ${project.settings.gangwayWidth / 1000} / 2000` : null, value?.stackingSource, value?.allowedStacking]);
       });
-      const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Boxes per Rack Slot (Required storage pallets)', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS, 'Rack Fit', 'Usable Shelf Footprint (m²)', 'Available Shelf Surface (m²)', 'Occupied Shelf Surface (m²)', 'Unused Rack Surface (m²)', 'Unused Surface per Level (m²)', 'Rack Utilization (%)', 'Unused Shelf Surface (%)'];
+      const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Boxes per Rack Slot (Required storage pallets)', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS, 'Rack Fit', 'Usable Shelf Footprint (m²)', 'Available Shelf Surface (m²)', 'Occupied Shelf Surface (m²)', 'Unused Rack Surface (m²)', 'Unused Surface per Level (m²)', 'Rack Utilization (%)', 'Unused Shelf Surface (%)', 'Selected standalone rack type'];
       const rack = table(workbook, 'Rack Calculations', rackHeaders, rackHeaders.map((h,i) => /m²|%/.test(h) ? i : -1).filter(i => i >= 0));
       calculation.results.forEach(result => {
         const value = result.rack;
-        add(rack, [result.input.partNumber, result.isRackValid ? (result.isValid ? 'Valid' : 'Included in rack totals — floor validation warning') : 'Invalid rack — excluded from rack totals', (result.errors || []).join(' | '), result.requiredPallets, result.input.length, result.input.width, result.input.height, value?.rotated, value?.palletsPerSlot ?? (result.rackFit === 'NO' ? 0 : null), value?.levels, value?.capacityPerBay, value?.bays ?? (result.rackFit === 'NO' ? 0 : null), value?.effectiveBayLength, value?.effectiveBayDepth, value?.effectiveBayHeight, value?.maxBaysPerRun, value?.runs, value?.baysPerRun.join(', '), value?.baysPerRun.map(bays => (bays * value.effectiveBayLength / 1000).toFixed(3)).join(', '), value ? value.bays * value.effectiveBayLength / 1000 : null, result.isRackValid ? value?.withoutGangways : null, result.isRackValid ? value?.gangwayArea : null, result.isRackValid ? value?.withGangways : null, ...planningValues(result.planning, result.input, project.settings), result.rackFit || 'N/A', value?.usableBayArea, value?.availableShelfArea, value?.occupiedShelfArea, value?.unusedShelfArea, value?.unusedPerLevel, value?.utilizationPercent, value?.unusedPercent]);
+        add(rack, [result.input.partNumber, result.isRackValid ? (result.isValid ? 'Valid' : 'Included in rack totals — floor validation warning') : 'Invalid rack — excluded from rack totals', (result.errors || []).join(' | '), result.requiredPallets, result.input.length, result.input.width, result.input.height, value?.rotated, value?.palletsPerSlot ?? (result.rackFit === 'NO' ? 0 : null), value?.levels, value?.capacityPerBay, value?.bays ?? (result.rackFit === 'NO' ? 0 : null), value?.effectiveBayLength, value?.effectiveBayDepth, value?.effectiveBayHeight, value?.maxBaysPerRun, value?.runs, value?.baysPerRun.join(', '), value?.baysPerRun.map(bays => (bays * value.effectiveBayLength / 1000).toFixed(3)).join(', '), value ? value.bays * value.effectiveBayLength / 1000 : null, result.isRackValid ? value?.withoutGangways : null, result.isRackValid ? value?.gangwayArea : null, result.isRackValid ? value?.withGangways : null, ...planningValues(result.planning, result.input, project.settings), result.rackFit || 'N/A', value?.usableBayArea, value?.availableShelfArea, value?.occupiedShelfArea, value?.unusedShelfArea, value?.unusedPerLevel, value?.utilizationPercent, value?.unusedPercent, value?.typeName]);
       });
 
 
@@ -224,8 +224,8 @@
       if (calculation.sharedRack?.available) {
         add(rack, ['Physical bays', calculation.sharedRack.bays]);
         add(rack, ['Shared rack net m²', calculation.sharedRack.withoutGangways]);
-        add(rack, ['Bay', 'Shelf', 'Part Number', 'Y (mm)', 'Unit length (mm)', 'Unit depth (mm)'], 'header');
-        calculation.sharedRack.shelves.forEach((shelf,i) => shelf.placements.forEach(p => add(rack, [Math.floor(i/project.settings.rackLevels)+1, i%project.settings.rackLevels+1,p.partNumber,p.y,p.length,p.depth])));
+        add(rack, ['Bay', 'Shelf', 'Part Number', 'Y (mm)', 'Unit length (mm)', 'Unit depth (mm)', 'Rack type'], 'header');
+        calculation.sharedRack.shelves.forEach((shelf,i) => shelf.placements.forEach(p => add(rack, [shelf.bayNumber, shelf.level,p.partNumber,p.y,p.length,p.depth,shelf.typeName])));
       }
       const comparison = workbook.addWorksheet('Warehouse Comparison');
       add(comparison, ['LogEn — ' + project.name, 'Footprint (m²)'], 'header');
@@ -277,6 +277,8 @@
       ].forEach(line => add(comparison, [line]));
       add(comparison, []);
       add(comparison, ['Decimal pallet demand and DOH planning'], 'header');
+      add(comparison,['Mixed rack allocation','Each bay is selected from configured rack types by shelf utilization, floor area per occupied surface, then unused surface. Heuristic, not a guaranteed optimum.']);
+      (calculation.sharedRack?.typeUsage||[]).forEach(t=>add(comparison,['Rack type: '+t.typeName,t.bays+' bays',t.withoutGangways]));
       add(comparison, ['Available shelf surface (m²)', calculation.rackAvailableShelfArea]);
       add(comparison, ['Occupied shelf surface (m²)', calculation.rackOccupiedShelfArea]);
       add(comparison, ['Unused shelf surface (m²; not warehouse floor space)', calculation.rackUnusedShelfArea]);
@@ -344,43 +346,46 @@
       settings.getColumn(1).width = 115;
       settings.getColumn(2).width = 35;
       settings.getColumn(3).width = 65;
+      add(settings, []);add(settings, ['Configured rack types','ID','Usable L (mm)','Usable D (mm)','Usable H (mm)','Levels','Structural L (mm)','Structural D (mm)','Structural H (mm)','Between boxes (mm)','Max run (mm)'], 'header');
+      global.LogEnDomain.configuredRackTypes(s).forEach(t=>add(settings,[t.name,t.id,t.rackSlotLength,t.rackSlotDepth,t.rackSlotHeight,t.rackLevels,t.rackStructuralLength,t.rackStructuralDepth,t.rackStructuralHeight,t.betweenBoxesAllowance,t.maxRackRunLength]));
+      for(let col=4;col<=11;col++)settings.getColumn(col).width=24;
       const layout = workbook.addWorksheet('Rack Layout', {views:[{state:'frozen',ySplit:6}]});
       const plan = calculation.sharedRack;
       add(layout, ['LogEn — shared rack layout: ' + project.name], 'header');
       add(layout, ['Required rack bays', plan?.available ? plan.bays : 'Unavailable', 'Rack storage m²', plan?.available ? plan.withoutGangways : null]);
       add(layout, ['Shelf units use Required storage pallets. Different PNs may share shelves.']);
-      add(layout, ['Usable shelf L / D / H (mm)', s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, 'Levels', s.rackLevels, 'Between boxes allowance (mm)', s.betweenBoxesAllowance ?? 0]);
+      add(layout, ['Primary shelf L / D / H (mm); additional types in Warehouse Settings', s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, 'Levels', s.rackLevels, 'Between boxes allowance (mm)', s.betweenBoxesAllowance ?? 0]);
       add(layout, ['Feasible packing estimate; not a guaranteed optimum. Usable placement coordinates exclude structural allowances and gangways.']);
-      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'Placed length (mm)', 'Placed depth (mm)'], 'header');
+      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'Placed length (mm)', 'Placed depth (mm)', 'Rack type'], 'header');
       if (plan?.available) {
-        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[Math.floor(i/s.rackLevels)+1,i%s.rackLevels+1,j+1,p.partNumber,1,p.length,p.depth])));
-        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:7}};
+        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[shelf.bayNumber,shelf.level,j+1,p.partNumber,1,p.length,p.depth,shelf.typeName])));
+        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:8}};
       } else add(layout, [plan?.error || 'Rack layout unavailable. Correct settings and input errors.']);
       add(layout, []);add(layout, ['Non-fitting PNs and rows requiring review', 'Required pallets', 'Status'], 'header');
       calculation.results.filter(r=>!r.isRackValid||!r.isPlanningValid).forEach(r=>add(layout,[r.input.partNumber,r.isPlanningValid?r.requiredPallets:'Unavailable',r.rackFit==='NO'?'Does not fit':'Needs review',r.errors.join(' | ')]));
-      for(let i=1;i<=7;i++)layout.getColumn(i).width=i===4?30:24;
+      for(let i=1;i<=8;i++)layout.getColumn(i).width=i===4?30:24;
       const drawing = workbook.addWorksheet('Layout Graphic', {views:[{showGridLines:false}], pageSetup:{orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0}});
       if(plan?.available && plan.bays) {
-        if(s.rackLevels*Math.ceil(plan.bays/4)*3+plan.quantity*2>900000) drawing.getCell('E5').value='Front view exceeds Excel row limits. Use Rack Layout for the complete allocation.';
+        if(plan.bayLayouts.reduce((n,b)=>n+b.settings.rackLevels*3,0)+plan.quantity*2>900000) drawing.getCell('E5').value='Front view exceeds Excel row limits. Use Rack Layout for the complete allocation.';
         else {
           const steel='FF708399', dark='FF15181D';
           for(let c=1;c<=4;c++)drawing.getColumn(c).width=3.2;
           drawing.getColumn(5).width=7;
           for(let c=6;c<=58;c++)drawing.getColumn(c).width=(c-6)%13===0?1.2:3.2;
           for(let first=0;first<plan.bays;first+=4) {
-            const count=Math.min(4,plan.bays-first),lastColumn=6+count*13;
+            const group=plan.bayLayouts.slice(first,first+4),count=group.length,lastColumn=6+count*13;
             const headingRow=first===0?5:drawing.rowCount+2;
             drawing.getCell(headingRow,5).value='Level';
             for(let b=0;b<count;b++){
               const start=7+b*13;drawing.mergeCells(headingRow,start,headingRow,start+11);
-              const cell=drawing.getCell(headingRow,start);cell.value=`Bay ${first+b+1}`;cell.font={bold:true,size:13};cell.alignment={horizontal:'center'};
+              const cell=drawing.getCell(headingRow,start);cell.value=`Bay ${first+b+1} — ${group[b].typeName}`;cell.font={bold:true,size:13};cell.alignment={horizontal:'center',wrapText:true};
             }
-            drawing.getRow(headingRow).height=25;
+            drawing.getRow(headingRow).height=38;
             let cursor=headingRow+1;
             function frame(row,height){drawing.getRow(row).height=height;for(let c=6;c<=lastColumn;c++)drawing.getCell(row,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:steel}};}
             frame(cursor++,6);
-            for(let level=s.rackLevels-1;level>=0;level--){
-              const shelves=Array.from({length:count},(_,b)=>plan.shelves[(first+b)*s.rackLevels+level]);
+            for(let level=Math.max(...group.map(b=>b.settings.rackLevels))-1;level>=0;level--){
+              const shelves=group.map(b=>b.shelves[level]);
               const bands=Math.max(1,...shelves.map(sh=>Math.ceil((sh?.placements.length||0)/3)));
               const firstRow=cursor,boxRows=[];
               for(let band=0;band<bands;band++){
@@ -391,7 +396,7 @@
               if(cursor-firstRow>1)drawing.mergeCells(firstRow,5,cursor-1,5);
               const levelCell=drawing.getCell(firstRow,5);levelCell.value=`L${level+1}`;levelCell.font={bold:true,size:12};levelCell.alignment={vertical:'middle',horizontal:'center'};
               shelves.forEach((shelf,b)=>{
-                if(!shelf){drawing.mergeCells(boxRows[0],7+b*13,boxRows[0],18+b*13);const empty=drawing.getCell(boxRows[0],7+b*13);empty.value='Empty shelf';empty.font={color:{argb:'FFADB5BD'},italic:true};empty.alignment={horizontal:'center',vertical:'middle'};return;}
+                if(!shelf){drawing.mergeCells(boxRows[0],7+b*13,boxRows[0],18+b*13);const empty=drawing.getCell(boxRows[0],7+b*13);empty.value=level>=group[b].settings.rackLevels?'No shelf at this level':'Empty shelf';empty.font={color:{argb:'FFADB5BD'},italic:true};empty.alignment={horizontal:'center',vertical:'middle'};return;}
                 const units=[...shelf.placements].sort((a,b)=>a.y-b.y||a.x-b.x);
                 units.forEach((box,index)=>{
                   const band=Math.floor(index/3),within=index%3,number=Math.min(3,units.length-band*3),span=12/number;

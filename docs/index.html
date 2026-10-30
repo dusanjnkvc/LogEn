@@ -38,6 +38,8 @@
 .stat-value-row{display:flex;align-items:center;gap:8px;white-space:nowrap}.stat-value-row .badge{flex:none;margin:0;line-height:1.2}.stat-value-row .stat-value{line-height:1.2}
 
 .floor-stacking-options{padding:18px 22px;margin-bottom:20px;display:flex;gap:18px;align-items:end;flex-wrap:wrap}.floor-stacking-options .field{min-width:230px;flex:1}.floor-stacking-options p{flex-basis:100%;margin:0;font-size:11px;line-height:1.7}
+
+.rack-type-card{border:1px solid var(--border);border-radius:10px;padding:16px;margin:15px 0}.rack-type-card .form-grid{margin:16px 0}.rack-type-card>.field{max-width:420px}
 </style>
 </head>
 <body>
@@ -137,7 +139,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   function createDefaultSettings() {
     return {
-      stackingMode: 'legacy', manualStacking: 1, maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
+      rackTypeName: 'Rack type 1', rackTypes: [], stackingMode: 'legacy', manualStacking: 1, maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
       gangwayWidth: 4500, floorPalletClearance: 100,
       rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
       rackSlotHeight: 1100, betweenBoxesAllowance: 0, rackStructuralLength: 150,
@@ -172,6 +174,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // Each storage allocation uses the full configured physical aisle width.
   const allocatedGangwayWidth = settings => settings.gangwayWidth;
 
+  const rackTypeFields = ['rackSlotLength','rackSlotDepth','rackSlotHeight','rackLevels','rackStructuralLength','rackStructuralDepth','rackStructuralHeight','betweenBoxesAllowance','maxRackRunLength'];
+  function configuredRackTypes(s) {
+    const primary={...s,id:'primary',name:s.rackTypeName||'Rack type 1',rackTypes:[]};
+    return [primary,...(Array.isArray(s.rackTypes)?s.rackTypes:[]).filter(t=>t&&typeof t==='object').map((t,i)=>{
+      const cfg={...s,id:String(t.id||'type-'+i),name:String(t.name||''),rackTypes:[]};
+      for(const key of rackTypeFields)cfg[key]=t[key]===undefined?s[key]:t[key];
+      return cfg;
+    })];
+  }
   function floorStackingMode(s) {
     return !s.stackingMode || s.stackingMode==='legacy' ? (s.stackabilityEnabled?'imported':'manual') : s.stackingMode;
   }
@@ -199,6 +210,18 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       errors.push('Stackability must be enabled or disabled.');
     if (s.rackSlotLength + s.rackStructuralLength > s.maxRackRunLength)
       errors.push('Maximum rack run length must fit at least one effective rack bay.');
+    if(s.rackTypes!==undefined&&!Array.isArray(s.rackTypes))errors.push('Rack types must be a list.');
+    if(Array.isArray(s.rackTypes)&&s.rackTypes.length){
+      if(s.rackTypes.length>19)errors.push('A project supports up to 20 rack types.');
+      const names=new Set([String(s.rackTypeName||'Rack type 1').trim().toLowerCase()]),ids=new Set(['primary']);
+      for(const [i,raw] of s.rackTypes.entries()){
+        if(!raw||typeof raw!=='object'){errors.push('Rack type '+(i+2)+' is invalid.');continue;}
+        const type=configuredRackTypes({...s,rackTypes:[raw]})[1];
+        if(!type.name.trim()||names.has(type.name.trim().toLowerCase()))errors.push('Each rack type needs a unique non-empty name.');names.add(type.name.trim().toLowerCase());
+        if(ids.has(type.id))errors.push('Rack type identifiers must be unique.');ids.add(type.id);
+        for(const error of validateSettings({...type,rackTypeName:type.name,rackTypes:[]}))errors.push(type.name+': '+error);
+      }
+    }
     return errors;
   }
 
@@ -299,11 +322,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 
   function rackFit(input, settings) {
-    const values = [input.length,input.width,input.height,settings.rackSlotLength,settings.rackSlotDepth,settings.rackSlotHeight];
-    if (!values.every(v => Number.isFinite(v) && v > 0)) return 'N/A';
-    return input.height <= settings.rackSlotHeight &&
-      ((input.length <= settings.rackSlotLength && input.width <= settings.rackSlotDepth) ||
-       (input.width <= settings.rackSlotLength && input.length <= settings.rackSlotDepth)) ? 'YES' : 'NO';
+    if(![input.length,input.width,input.height].every(v=>Number.isFinite(v)&&v>0))return 'N/A';
+    return configuredRackTypes(settings).some(t=>input.height<=t.rackSlotHeight&&((input.length<=t.rackSlotLength&&input.width<=t.rackSlotDepth)||(input.width<=t.rackSlotLength&&input.length<=t.rackSlotDepth)))?'YES':'NO';
   }
   function surfaceAreas(depth, width, lanes, quantity, allowance, pitch, gangwayMetres) {
     if (![depth,width,lanes,quantity,allowance,pitch,gangwayMetres].every(v => Number.isFinite(v) && v >= 0))
@@ -340,6 +360,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       capacityPerBay, bays, bayArea, usableBayArea, withoutGangways, rotated: rotatedCapacity > original,
       availableShelfArea, occupiedShelfArea, unusedShelfArea, unusedPerLevel: unusedShelfArea / levels,
       utilizationPercent, unusedPercent: utilizationPercent === null ? null : 100-utilizationPercent};
+  }
+  function rackForPart(quantity,input,t) {
+    const sizing=calculateBoxRack(quantity,input.length,input.width,input.height,t.rackSlotLength,t.rackSlotDepth,t.rackSlotHeight,t.rackLevels,t.betweenBoxesAllowance,t.rackStructuralLength,t.rackStructuralDepth);
+    if(!sizing.fits)return null;
+    const effectiveBayLength=t.rackSlotLength+t.rackStructuralLength,effectiveBayDepth=t.rackSlotDepth+t.rackStructuralDepth,effectiveBayHeight=t.rackSlotHeight+t.rackStructuralHeight;
+    const maxBaysPerRun=floor(t.maxRackRunLength/effectiveBayLength),runs=ceilDivide(sizing.bays,maxBaysPerRun);
+    if(runs>1000000)throw new Error('Rack run count exceeds the supported project size.');
+    const baysPerRun=Array.from({length:runs},(_,i)=>Math.min(maxBaysPerRun,sizing.bays-i*maxBaysPerRun));
+    const gangwayArea=sizing.bays*effectiveBayLength*t.gangwayWidth/2000000;
+    return {...sizing,palletsPerSlot:sizing.boxesPerSlot,levels:t.rackLevels,effectiveBayLength,effectiveBayDepth,effectiveBayHeight,maxBaysPerRun,runs,baysPerRun,gangwayArea,withGangways:sizing.withoutGangways+gangwayArea,typeId:t.id,typeName:t.name,typeSettings:t};
   }
   function calculatePart(input, settings) {
     const s = { ...createDefaultSettings(), ...settings };
@@ -422,38 +452,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           formulaStorageArea, gangwayArea, withGangways };
       }
 
-      const sizing = calculateBoxRack(requiredPallets, input.length, input.width, input.height,
-        s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, s.rackLevels, s.betweenBoxesAllowance, s.rackStructuralLength, s.rackStructuralDepth);
-      if (!sizing.fits) {
-        errors.push('Rack: unit does not fit the usable shelf length, depth and height in either horizontal orientation.');
-      } else {
-        const {bays, capacityPerBay, rotated} = sizing;
-        const palletsPerSlot = sizing.boxesPerSlot;
-        const effectiveBayLength = s.rackSlotLength + s.rackStructuralLength;
-        const effectiveBayDepth = s.rackSlotDepth + s.rackStructuralDepth;
-        const effectiveBayHeight = s.rackSlotHeight + s.rackStructuralHeight;
-        const maxBaysPerRun = floor(s.maxRackRunLength / effectiveBayLength);
-        const runs = ceilDivide(bays, maxBaysPerRun);
-        if (runs > 1000000)
-          throw new Error('Rack run count exceeds the supported project size (1,000,000 runs per part).');
-        const baysPerRun = Array.from({ length: runs }, (_, index) =>
-          Math.min(maxBaysPerRun, bays - index * maxBaysPerRun));
-        const withoutGangways = sizing.withoutGangways;
-        const totalFrontageMetres = baysPerRun.reduce((total, count) =>
-          total + count * effectiveBayLength / 1000, 0);
-        const gangwayArea = bays * effectiveBayLength * s.gangwayWidth / 2000000;
-        const withGangways = withoutGangways + gangwayArea;
-        if (![withoutGangways, gangwayArea, withGangways, effectiveBayHeight].every(Number.isFinite))
-          throw new Error('Rack area exceeds supported numeric precision.');
-        rack = { ...sizing, palletsPerSlot, levels: s.rackLevels, capacityPerBay, bays,
-          maxBaysPerRun, runs, rotated, effectiveBayLength, effectiveBayDepth,
-          effectiveBayHeight, withoutGangways, gangwayArea, withGangways, baysPerRun };
-      }
+      const alternatives=configuredRackTypes(s).map(t=>rackForPart(requiredPallets,input,t)).filter(Boolean);
+      alternatives.sort((a,b)=>(b.utilizationPercent||0)-(a.utilizationPercent||0)||a.withoutGangways-b.withoutGangways||a.unusedShelfArea-b.unusedShelfArea);
+      rack=alternatives[0]||null;
+      if(!rack)errors.push('Rack: unit does not fit the usable shelf length, depth and height of any configured rack type.');
     } catch (error) { errors.push(error.message); }
     return resultFor(input, errors, requiredParts, requiredPallets, floorResult, rack, planning);
   }
 
-  function sharedRackPlan(results, s) {
+  function singleRackPlan(results, s) {
     const shelves=[];
     const rows=results.filter(r=>r.isRackValid).sort((a,b)=>b.input.length*b.input.width-a.input.length*a.input.width);
     const quantity=rows.reduce((n,r)=>n+r.requiredPallets,0);
@@ -473,6 +480,73 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const bays=ceilDivide(shelves.length,s.rackLevels),bayArea=(s.rackSlotLength+s.rackStructuralLength)*(s.rackSlotDepth+s.rackStructuralDepth)/1000000;
     const occupied=rows.reduce((n,r)=>n+r.requiredPallets*r.input.length*r.input.width/1000000,0),available=bays*s.rackSlotLength*s.rackSlotDepth/1000000*s.rackLevels;
     return {available:true,shelves,bays,quantity,withoutGangways:bays*bayArea,gangwayArea:bays*(s.rackSlotLength+s.rackStructuralLength)*s.gangwayWidth/2000000,withGangways:bays*bayArea+bays*(s.rackSlotLength+s.rackStructuralLength)*s.gangwayWidth/2000000,occupied,availableShelfArea:available,unused:Math.max(0,available-occupied),utilization:available>0?occupied/available*100:null};
+  }
+  function sharedRackPlan(results,s) {
+    const types=configuredRackTypes(s);
+    function finish(bayLayouts,quantity){
+      const shelves=[],usage=new Map();let net=0,aisle=0,occupied=0,available=0,unusedPerLevel=0;
+      bayLayouts.forEach((bay,i)=>{
+        const t=bay.settings;bay.number=i+1;bay.typeId=t.id;bay.typeName=t.name;
+        const usable=t.rackSlotLength*t.rackSlotDepth/1000000,footprint=(t.rackSlotLength+t.rackStructuralLength)*(t.rackSlotDepth+t.rackStructuralDepth)/1000000;
+        bay.withoutGangways=footprint;bay.availableShelfArea=usable*t.rackLevels;
+        bay.occupiedShelfArea=bay.shelves.reduce((n,sh)=>n+sh.placements.reduce((v,p)=>v+p.length*p.depth/1000000,0),0);
+        bay.unusedShelfArea=Math.max(0,bay.availableShelfArea-bay.occupiedShelfArea);bay.utilizationPercent=bay.availableShelfArea?bay.occupiedShelfArea/bay.availableShelfArea*100:null;
+        net+=footprint;aisle+=(t.rackSlotLength+t.rackStructuralLength)*s.gangwayWidth/2000000;occupied+=bay.occupiedShelfArea;available+=bay.availableShelfArea;unusedPerLevel+=bay.unusedShelfArea/t.rackLevels;
+        const u=usage.get(t.id)||{typeId:t.id,typeName:t.name,settings:t,bays:0,withoutGangways:0};u.bays++;u.withoutGangways+=footprint;usage.set(t.id,u);
+        bay.shelves.forEach((sh,j)=>{sh.bayNumber=i+1;sh.level=j+1;sh.typeId=t.id;sh.typeName=t.name;sh.settings=t;shelves.push(sh);});
+      });
+      const typeUsage=[...usage.values()];let runs=0;for(const u of typeUsage){u.runs=ceilDivide(u.bays,floor(u.settings.maxRackRunLength/(u.settings.rackSlotLength+u.settings.rackStructuralLength)));runs+=u.runs;}
+      return {available:true,shelves,bayLayouts,typeUsage,bays:bayLayouts.length,runs,quantity,withoutGangways:net,gangwayArea:aisle,withGangways:net+aisle,occupied,availableShelfArea:available,unused:Math.max(0,available-occupied),unusedPerLevel,utilization:available?occupied/available*100:null};
+    }
+    if(types.length===1){const old=singleRackPlan(results,s);if(!old.available)return old;const bays=Array.from({length:old.bays},(_,i)=>({settings:types[0],shelves:old.shelves.slice(i*s.rackLevels,(i+1)*s.rackLevels)}));return finish(bays,old.quantity);}
+    const rows=results.filter(r=>r.isRackValid&&r.isPlanningValid).map(r=>({input:r.input,quantity:r.requiredPallets,fitCount:types.filter(t=>rackForPart(0,r.input,t)).length})).sort((a,b)=>a.fitCount-b.fitCount||b.input.length*b.input.width-a.input.length*a.input.width);
+    const quantity=rows.reduce((n,r)=>n+r.quantity,0);if(quantity>10000)return {available:false,error:'Shared rack preview supports up to 10,000 units.'};
+    const remaining=rows.map(r=>r.quantity),bayLayouts=[];let steps=0;
+    function candidate(t,stock=remaining){
+      const used=stock.map(()=>0),shelves=[];let occupied=0,count=0;
+      rows.forEach((r,index)=>{
+        if(r.input.height>t.rackSlotHeight)return;
+        for(let unit=0;unit<stock[index];unit++){
+          if(++steps>5000000)throw new Error('Mixed rack allocation is too complex; reduce inventory or the number of rack types.');
+          let best=null;
+          shelves.forEach((sh,k)=>sh.free.forEach((rect,j)=>{
+            for(const [w,d] of [[r.input.length,r.input.width],[r.input.width,r.input.length]])if(w<=rect.w&&d<=rect.d){const score=rect.w*rect.d-w*d,capacity=Math.floor((rect.w+t.betweenBoxesAllowance)/(w+t.betweenBoxesAllowance))*Math.floor((rect.d+t.betweenBoxesAllowance)/(d+t.betweenBoxesAllowance));if(!best||score<best.score||score===best.score&&capacity>best.capacity)best={k,j,w,d,score,capacity};}
+          }));
+          if(!best&&shelves.length<t.rackLevels){
+            const sizing=rackForPart(0,r.input,t);if(!sizing)break;
+            const w=sizing.rotated?r.input.width:r.input.length,d=sizing.rotated?r.input.length:r.input.width;
+            shelves.push({free:[{x:0,y:0,w:t.rackSlotLength,d:t.rackSlotDepth}],placements:[]});best={k:shelves.length-1,j:0,w,d};
+          }
+          if(!best)break;
+          const sh=shelves[best.k],rect=sh.free.splice(best.j,1)[0],g=t.betweenBoxesAllowance;
+          sh.placements.push({partNumber:r.input.partNumber,x:rect.x,y:rect.y,length:best.w,depth:best.d});
+          if(rect.w>best.w+g)sh.free.push({x:rect.x+best.w+g,y:rect.y,w:rect.w-best.w-g,d:best.d});
+          if(rect.d>best.d+g)sh.free.push({x:rect.x,y:rect.y+best.d+g,w:rect.w,d:rect.d-best.d-g});
+          occupied+=best.w*best.d/1000000;count++;used[index]++;
+        }
+      });
+      const available=t.rackSlotLength*t.rackSlotDepth/1000000*t.rackLevels,footprint=(t.rackSlotLength+t.rackStructuralLength)*(t.rackSlotDepth+t.rackStructuralDepth)/1000000;
+      return {settings:t,shelves,used,count,occupied,footprint,utilization:available?occupied/available:0,unused:available-occupied,efficiency:occupied?footprint/occupied:Infinity};
+    }
+    try{
+      while(remaining.some(n=>n>0)){
+        const candidates=types.map(t=>candidate(t)).filter(c=>c.count);
+        candidates.sort((a,b)=>b.utilization-a.utilization||a.efficiency-b.efficiency||a.unused-b.unused||b.occupied-a.occupied);
+        let best=candidates[0];
+        // Compare complete one/two-bay finishes before the next greedy step.
+        // This avoids creating a small partial bay when a required larger bay can absorb it.
+        let finishChoice=null;
+        for(const first of candidates){
+          const residual=remaining.map((n,i)=>n-first.used[i]),left=residual.reduce((n,v)=>n+v,0);
+          const endings=left?types.map(t=>candidate(t,residual)).filter(c=>c.count===left):[null];
+          for(const second of endings){const cost=first.footprint+(second?.footprint||0),unused=first.unused+(second?.unused||0);if(!finishChoice||cost<finishChoice.cost-1e-9||Math.abs(cost-finishChoice.cost)<1e-9&&unused<finishChoice.unused-1e-9)finishChoice={first,cost,unused};}
+        }
+        if(finishChoice)best=finishChoice.first;
+        if(!best)return {available:false,error:'Some required units could not be placed in the configured rack types.'};
+        best.used.forEach((n,i)=>remaining[i]-=n);bayLayouts.push(best);
+      }
+      return finish(bayLayouts,quantity);
+    }catch(error){return {available:false,error:error.message};}
   }
   function calculateProject(parts, settings) {
     const s = { ...createDefaultSettings(), ...settings };
@@ -527,10 +601,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     project.sharedRack = shared;
     if(shared.available){
       project.totalRackBays=shared.bays;
-      project.totalRackRuns=ceilDivide(shared.bays, floor(s.maxRackRunLength/(s.rackSlotLength+s.rackStructuralLength)));
+      project.totalRackRuns=shared.runs;
       project.rackWithoutGangways=shared.withoutGangways;project.rackWithGangways=shared.withGangways;project.rackGangwayArea=shared.gangwayArea;
       project.rackAvailableShelfArea=shared.availableShelfArea;project.rackOccupiedShelfArea=shared.occupied;
-      project.rackUnusedShelfArea=shared.unused;project.rackUnusedPerLevel=shared.unused/s.rackLevels;
+      project.rackUnusedShelfArea=shared.unused;project.rackUnusedPerLevel=shared.unusedPerLevel;
       project.rackUtilizationPercent=shared.utilization;project.rackUnusedPercent=shared.utilization===null?null:100-shared.utilization;
     }
     project.savingWithoutGangways = project.floorWithoutGangways - project.rackWithoutGangways;
@@ -542,7 +616,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return project;
   }
 
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, configuredRackTypes, rackTypeFields, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
 })(globalThis);
 
 ;
@@ -759,11 +833,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const value = result.floor;
         add(floor, [...inputValues(result.input), result.input.stacking, result.isFloorValid ? (result.isValid ? 'Valid' : 'Included in floor totals — rack validation warning') : 'Invalid floor — excluded from floor totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, result.isFloorValid ? value?.storageArea : null, result.isFloorValid ? value?.gangwayArea : null, result.isFloorValid ? value?.withGangways : null, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `GS net + lane width * lanes * gangway metres / 2000 = ${value.withoutGangways} + ${value.rowWidth * 1000} * ${value.rows} * ${project.settings.gangwayWidth / 1000} / 2000` : null, value?.stackingSource, value?.allowedStacking]);
       });
-      const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Boxes per Rack Slot (Required storage pallets)', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS, 'Rack Fit', 'Usable Shelf Footprint (m²)', 'Available Shelf Surface (m²)', 'Occupied Shelf Surface (m²)', 'Unused Rack Surface (m²)', 'Unused Surface per Level (m²)', 'Rack Utilization (%)', 'Unused Shelf Surface (%)'];
+      const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Boxes per Rack Slot (Required storage pallets)', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS, 'Rack Fit', 'Usable Shelf Footprint (m²)', 'Available Shelf Surface (m²)', 'Occupied Shelf Surface (m²)', 'Unused Rack Surface (m²)', 'Unused Surface per Level (m²)', 'Rack Utilization (%)', 'Unused Shelf Surface (%)', 'Selected standalone rack type'];
       const rack = table(workbook, 'Rack Calculations', rackHeaders, rackHeaders.map((h,i) => /m²|%/.test(h) ? i : -1).filter(i => i >= 0));
       calculation.results.forEach(result => {
         const value = result.rack;
-        add(rack, [result.input.partNumber, result.isRackValid ? (result.isValid ? 'Valid' : 'Included in rack totals — floor validation warning') : 'Invalid rack — excluded from rack totals', (result.errors || []).join(' | '), result.requiredPallets, result.input.length, result.input.width, result.input.height, value?.rotated, value?.palletsPerSlot ?? (result.rackFit === 'NO' ? 0 : null), value?.levels, value?.capacityPerBay, value?.bays ?? (result.rackFit === 'NO' ? 0 : null), value?.effectiveBayLength, value?.effectiveBayDepth, value?.effectiveBayHeight, value?.maxBaysPerRun, value?.runs, value?.baysPerRun.join(', '), value?.baysPerRun.map(bays => (bays * value.effectiveBayLength / 1000).toFixed(3)).join(', '), value ? value.bays * value.effectiveBayLength / 1000 : null, result.isRackValid ? value?.withoutGangways : null, result.isRackValid ? value?.gangwayArea : null, result.isRackValid ? value?.withGangways : null, ...planningValues(result.planning, result.input, project.settings), result.rackFit || 'N/A', value?.usableBayArea, value?.availableShelfArea, value?.occupiedShelfArea, value?.unusedShelfArea, value?.unusedPerLevel, value?.utilizationPercent, value?.unusedPercent]);
+        add(rack, [result.input.partNumber, result.isRackValid ? (result.isValid ? 'Valid' : 'Included in rack totals — floor validation warning') : 'Invalid rack — excluded from rack totals', (result.errors || []).join(' | '), result.requiredPallets, result.input.length, result.input.width, result.input.height, value?.rotated, value?.palletsPerSlot ?? (result.rackFit === 'NO' ? 0 : null), value?.levels, value?.capacityPerBay, value?.bays ?? (result.rackFit === 'NO' ? 0 : null), value?.effectiveBayLength, value?.effectiveBayDepth, value?.effectiveBayHeight, value?.maxBaysPerRun, value?.runs, value?.baysPerRun.join(', '), value?.baysPerRun.map(bays => (bays * value.effectiveBayLength / 1000).toFixed(3)).join(', '), value ? value.bays * value.effectiveBayLength / 1000 : null, result.isRackValid ? value?.withoutGangways : null, result.isRackValid ? value?.gangwayArea : null, result.isRackValid ? value?.withGangways : null, ...planningValues(result.planning, result.input, project.settings), result.rackFit || 'N/A', value?.usableBayArea, value?.availableShelfArea, value?.occupiedShelfArea, value?.unusedShelfArea, value?.unusedPerLevel, value?.utilizationPercent, value?.unusedPercent, value?.typeName]);
       });
 
 
@@ -772,8 +846,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if (calculation.sharedRack?.available) {
         add(rack, ['Physical bays', calculation.sharedRack.bays]);
         add(rack, ['Shared rack net m²', calculation.sharedRack.withoutGangways]);
-        add(rack, ['Bay', 'Shelf', 'Part Number', 'Y (mm)', 'Unit length (mm)', 'Unit depth (mm)'], 'header');
-        calculation.sharedRack.shelves.forEach((shelf,i) => shelf.placements.forEach(p => add(rack, [Math.floor(i/project.settings.rackLevels)+1, i%project.settings.rackLevels+1,p.partNumber,p.y,p.length,p.depth])));
+        add(rack, ['Bay', 'Shelf', 'Part Number', 'Y (mm)', 'Unit length (mm)', 'Unit depth (mm)', 'Rack type'], 'header');
+        calculation.sharedRack.shelves.forEach((shelf,i) => shelf.placements.forEach(p => add(rack, [shelf.bayNumber, shelf.level,p.partNumber,p.y,p.length,p.depth,shelf.typeName])));
       }
       const comparison = workbook.addWorksheet('Warehouse Comparison');
       add(comparison, ['LogEn — ' + project.name, 'Footprint (m²)'], 'header');
@@ -825,6 +899,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       ].forEach(line => add(comparison, [line]));
       add(comparison, []);
       add(comparison, ['Decimal pallet demand and DOH planning'], 'header');
+      add(comparison,['Mixed rack allocation','Each bay is selected from configured rack types by shelf utilization, floor area per occupied surface, then unused surface. Heuristic, not a guaranteed optimum.']);
+      (calculation.sharedRack?.typeUsage||[]).forEach(t=>add(comparison,['Rack type: '+t.typeName,t.bays+' bays',t.withoutGangways]));
       add(comparison, ['Available shelf surface (m²)', calculation.rackAvailableShelfArea]);
       add(comparison, ['Occupied shelf surface (m²)', calculation.rackOccupiedShelfArea]);
       add(comparison, ['Unused shelf surface (m²; not warehouse floor space)', calculation.rackUnusedShelfArea]);
@@ -892,43 +968,46 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       settings.getColumn(1).width = 115;
       settings.getColumn(2).width = 35;
       settings.getColumn(3).width = 65;
+      add(settings, []);add(settings, ['Configured rack types','ID','Usable L (mm)','Usable D (mm)','Usable H (mm)','Levels','Structural L (mm)','Structural D (mm)','Structural H (mm)','Between boxes (mm)','Max run (mm)'], 'header');
+      global.LogEnDomain.configuredRackTypes(s).forEach(t=>add(settings,[t.name,t.id,t.rackSlotLength,t.rackSlotDepth,t.rackSlotHeight,t.rackLevels,t.rackStructuralLength,t.rackStructuralDepth,t.rackStructuralHeight,t.betweenBoxesAllowance,t.maxRackRunLength]));
+      for(let col=4;col<=11;col++)settings.getColumn(col).width=24;
       const layout = workbook.addWorksheet('Rack Layout', {views:[{state:'frozen',ySplit:6}]});
       const plan = calculation.sharedRack;
       add(layout, ['LogEn — shared rack layout: ' + project.name], 'header');
       add(layout, ['Required rack bays', plan?.available ? plan.bays : 'Unavailable', 'Rack storage m²', plan?.available ? plan.withoutGangways : null]);
       add(layout, ['Shelf units use Required storage pallets. Different PNs may share shelves.']);
-      add(layout, ['Usable shelf L / D / H (mm)', s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, 'Levels', s.rackLevels, 'Between boxes allowance (mm)', s.betweenBoxesAllowance ?? 0]);
+      add(layout, ['Primary shelf L / D / H (mm); additional types in Warehouse Settings', s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, 'Levels', s.rackLevels, 'Between boxes allowance (mm)', s.betweenBoxesAllowance ?? 0]);
       add(layout, ['Feasible packing estimate; not a guaranteed optimum. Usable placement coordinates exclude structural allowances and gangways.']);
-      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'Placed length (mm)', 'Placed depth (mm)'], 'header');
+      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'Placed length (mm)', 'Placed depth (mm)', 'Rack type'], 'header');
       if (plan?.available) {
-        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[Math.floor(i/s.rackLevels)+1,i%s.rackLevels+1,j+1,p.partNumber,1,p.length,p.depth])));
-        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:7}};
+        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[shelf.bayNumber,shelf.level,j+1,p.partNumber,1,p.length,p.depth,shelf.typeName])));
+        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:8}};
       } else add(layout, [plan?.error || 'Rack layout unavailable. Correct settings and input errors.']);
       add(layout, []);add(layout, ['Non-fitting PNs and rows requiring review', 'Required pallets', 'Status'], 'header');
       calculation.results.filter(r=>!r.isRackValid||!r.isPlanningValid).forEach(r=>add(layout,[r.input.partNumber,r.isPlanningValid?r.requiredPallets:'Unavailable',r.rackFit==='NO'?'Does not fit':'Needs review',r.errors.join(' | ')]));
-      for(let i=1;i<=7;i++)layout.getColumn(i).width=i===4?30:24;
+      for(let i=1;i<=8;i++)layout.getColumn(i).width=i===4?30:24;
       const drawing = workbook.addWorksheet('Layout Graphic', {views:[{showGridLines:false}], pageSetup:{orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0}});
       if(plan?.available && plan.bays) {
-        if(s.rackLevels*Math.ceil(plan.bays/4)*3+plan.quantity*2>900000) drawing.getCell('E5').value='Front view exceeds Excel row limits. Use Rack Layout for the complete allocation.';
+        if(plan.bayLayouts.reduce((n,b)=>n+b.settings.rackLevels*3,0)+plan.quantity*2>900000) drawing.getCell('E5').value='Front view exceeds Excel row limits. Use Rack Layout for the complete allocation.';
         else {
           const steel='FF708399', dark='FF15181D';
           for(let c=1;c<=4;c++)drawing.getColumn(c).width=3.2;
           drawing.getColumn(5).width=7;
           for(let c=6;c<=58;c++)drawing.getColumn(c).width=(c-6)%13===0?1.2:3.2;
           for(let first=0;first<plan.bays;first+=4) {
-            const count=Math.min(4,plan.bays-first),lastColumn=6+count*13;
+            const group=plan.bayLayouts.slice(first,first+4),count=group.length,lastColumn=6+count*13;
             const headingRow=first===0?5:drawing.rowCount+2;
             drawing.getCell(headingRow,5).value='Level';
             for(let b=0;b<count;b++){
               const start=7+b*13;drawing.mergeCells(headingRow,start,headingRow,start+11);
-              const cell=drawing.getCell(headingRow,start);cell.value=`Bay ${first+b+1}`;cell.font={bold:true,size:13};cell.alignment={horizontal:'center'};
+              const cell=drawing.getCell(headingRow,start);cell.value=`Bay ${first+b+1} — ${group[b].typeName}`;cell.font={bold:true,size:13};cell.alignment={horizontal:'center',wrapText:true};
             }
-            drawing.getRow(headingRow).height=25;
+            drawing.getRow(headingRow).height=38;
             let cursor=headingRow+1;
             function frame(row,height){drawing.getRow(row).height=height;for(let c=6;c<=lastColumn;c++)drawing.getCell(row,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:steel}};}
             frame(cursor++,6);
-            for(let level=s.rackLevels-1;level>=0;level--){
-              const shelves=Array.from({length:count},(_,b)=>plan.shelves[(first+b)*s.rackLevels+level]);
+            for(let level=Math.max(...group.map(b=>b.settings.rackLevels))-1;level>=0;level--){
+              const shelves=group.map(b=>b.shelves[level]);
               const bands=Math.max(1,...shelves.map(sh=>Math.ceil((sh?.placements.length||0)/3)));
               const firstRow=cursor,boxRows=[];
               for(let band=0;band<bands;band++){
@@ -939,7 +1018,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
               if(cursor-firstRow>1)drawing.mergeCells(firstRow,5,cursor-1,5);
               const levelCell=drawing.getCell(firstRow,5);levelCell.value=`L${level+1}`;levelCell.font={bold:true,size:12};levelCell.alignment={vertical:'middle',horizontal:'center'};
               shelves.forEach((shelf,b)=>{
-                if(!shelf){drawing.mergeCells(boxRows[0],7+b*13,boxRows[0],18+b*13);const empty=drawing.getCell(boxRows[0],7+b*13);empty.value='Empty shelf';empty.font={color:{argb:'FFADB5BD'},italic:true};empty.alignment={horizontal:'center',vertical:'middle'};return;}
+                if(!shelf){drawing.mergeCells(boxRows[0],7+b*13,boxRows[0],18+b*13);const empty=drawing.getCell(boxRows[0],7+b*13);empty.value=level>=group[b].settings.rackLevels?'No shelf at this level':'Empty shelf';empty.font={color:{argb:'FFADB5BD'},italic:true};empty.alignment={horizontal:'center',vertical:'middle'};return;}
                 const units=[...shelf.placements].sort((a,b)=>a.y-b.y||a.x-b.x);
                 units.forEach((box,index)=>{
                   const band=Math.floor(index/3),within=index%3,number=Math.min(3,units.length-band*3),span=12/number;
@@ -1265,7 +1344,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 
   function settings(initial) {
-    const current = { ...defaults, ...initial };
+    const current = { ...globalThis.LogEnDomain.createDefaultSettings(), ...defaults, ...initial };
     return modal({
       title: 'Warehouse settings',
       subtitle: 'Saved to this project. Consumption and all four footprints recalculate automatically.',
@@ -1295,7 +1374,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         floor.append($('p', 'muted formula-hint', 'Ground storage adds the full clearance to both pallet length and pallet width. Example: 100 mm changes 1200 × 800 to 1300 × 900 mm. Rack fit uses original dimensions.'));
         const gangwayHint = $('p', 'muted formula-hint');
         floor.append(gangwayHint);
-        const rack = section(body, 'Pallet rack capacity', 'Enter the usable footprint and height of one shelf. These dimensions already exclude structure and required clearance.');
+        const rack = section(body, 'Primary rack type', 'Enter the usable footprint and height of one shelf. These dimensions already exclude structure and required clearance.');
+        const rackName=textField(rack,'Rack type name',current.rackTypeName,{maxLength:80});
         const rackGrid = $('div', 'form-grid'); rack.append(rackGrid);
         rack.append($('p', 'muted formula-hint', 'Required storage pallets are the rack unit quantity. Rack floor footprint uses (usable length + structural length) × (usable depth + structural depth). Shelf capacity and surface use usable dimensions only. Both horizontal orientations are always checked. Legacy surface allowance and clearances are retained in saved data but are not applied again to usable dimensions.'));
 
@@ -1314,13 +1394,28 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         field(structureGrid, 'rackStructuralHeight', 'Structural height allowance');
         field(structureGrid, 'betweenBoxesAllowance', 'Between boxes allowance');
         structure.append($('p','muted','Gap between units on the same shelf, in both length and depth directions. No gap is added at shelf edges or vertically. Default 0 mm. Applies to shared shelves and per-part capacity.'));
+        const additional=section(body,'Additional rack types','Different types may be used for different bays. Best-bay selection favors occupied shelf percentage, floor area per occupied surface and less unused surface. It also compares complete one/two-bay finishes to avoid unnecessary partial bays. This is a packing estimate, not a guaranteed global optimum.');
+        const cards=[];
+        const typeFields=[['rackSlotLength','Usable shelf length',true],['rackSlotDepth','Usable shelf depth',true],['rackSlotHeight','Usable shelf height',true],['rackLevels','Rack levels',true,true],['rackStructuralLength','Structural length allowance'],['rackStructuralDepth','Structural depth allowance'],['rackStructuralHeight','Structural height allowance'],['betweenBoxesAllowance','Between boxes allowance'],['maxRackRunLength','Maximum rack run length',true]];
+        const cardList=$('div','rack-type-list');additional.append(cardList);
+        function addRackType(value){
+          const cfg={...current,...value},card=$('section','editor-section rack-type-card');
+          const name=textField(card,'Rack type name',value.name||'Rack type '+(cards.length+2),{maxLength:80});
+          const grid=$('div','form-grid');card.append(grid);const inputs={};
+          for(const [key,label,positive,integer] of typeFields)inputs[key]=numberField(grid,key,label,cfg[key],{positive:!!positive,integer:!!integer,unit:key==='rackLevels'?'levels':'mm'});
+          const item={id:value.id||'rack-'+Date.now()+'-'+Math.random().toString(36).slice(2),name,inputs,element:card};cards.push(item);
+          const remove=$('button','btn btn-ghost small','Remove rack type');remove.type='button';remove.addEventListener('click',()=>{cards.splice(cards.indexOf(item),1);card.remove();update();});card.append(remove);cardList.append(card);
+        }
+        (Array.isArray(current.rackTypes)?current.rackTypes:[]).filter(t=>t&&typeof t==='object').forEach(addRackType);
+        const addType=$('button','btn btn-secondary','Add rack type');addType.type='button';addType.setAttribute('data-add-rack-type','');
+        addType.addEventListener('click',()=>{if(cards.length>=19){errors.textContent='A project supports up to 20 rack types.';errors.hidden=false;return;}let n=2;const names=[rackName.input.value,...cards.map(c=>c.name.input.value)];while(names.includes('Rack type '+n))n++;addRackType({name:'Rack type '+n});update();});additional.append(addType);
         const rotationLabel = $('label', 'checkbox-field');
         const rotation = $('input'); rotation.type = 'checkbox'; rotation.checked = true; rotation.disabled = true;
         const rotationCopy = $('span');
         rotationCopy.append($('strong', '', 'Allow 90° pallet rotation'), $('small', 'muted', 'Both horizontal orientations are always checked for the highest shelf capacity. No vertical rotation or stacking inside a slot.'));
         rotationLabel.append(rotation, rotationCopy);
         body.append(rotationLabel, notice('Gangway-inclusive footprints are allocated planning estimates. Shared gangways must be counted once in a physical layout.'));
-        const draft = () => ({ ...current, ...draftNumbers(fields), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, allowRotation: rotation.checked, stackabilityEnabled: current.stackabilityEnabled });
+        const draft = () => ({ ...current, ...draftNumbers(fields), rackTypeName:rackName.input.value.trim(), rackTypes:cards.map(c=>({id:c.id,name:c.name.input.value.trim(),...draftNumbers(c.inputs)})), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, allowRotation: rotation.checked, stackabilityEnabled: current.stackabilityEnabled });
         const update = () => {
           const settings = draft();
           planningPreview(preview, sample, settings, true);
@@ -1332,7 +1427,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         return {
           focus: shifts,
           read() {
-            const updated = draft(); let valid = true;
+            const updated = draft(); let valid = rackName.read()!==undefined;
+            for(const card of cards){if(card.name.read()===undefined)valid=false;for(const input of Object.values(card.inputs))if(input.read()===undefined)valid=false;}
             for (const input of Object.values(fields)) if (input.read() === undefined) valid = false;
             if (!valid) return undefined;
             const validation = globalThis.LogEnDomain.validateSettings(updated);
@@ -1400,6 +1496,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const input = result.input;
     const floor = result.floor;
     const rack = result.rack;
+    settings=rack?.typeSettings||settings;
     const n = display;
     return modal({
       eyebrow: 'PART CALCULATION',
@@ -1446,6 +1543,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const rackSection = section(body, 'C / D · Pallet rack storage');
         if (!rack) rackSection.append(notice('Rack storage cannot be calculated. Review the validation errors above.', true));
         else {
+          rackSection.append(notice('Standalone rack type: '+rack.typeName+'. Shared allocation may choose different types for different bays.'));
           rackSection.append(rackDiagram(result, settings));
           const front = rack.rotated ? input.width : input.length;
           const depth = rack.rotated ? input.length : input.width;
@@ -1498,31 +1596,31 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       rackFitSummary(body,calculation);
       const plan=calculation.sharedRack;
       if(!plan?.available){body.append(notice(plan?.error||'Rack layout unavailable.',true));return {read:()=>true};}
-      body.append($('p','',`${display(plan.quantity)} units · ${display(plan.bays)} vertical bays · ${display(settings.rackLevels)} levels · ${area(plan.withoutGangways)} without gangways`));
+      body.append($('p','',`${display(plan.quantity)} units · ${display(plan.bays)} vertical bays · ${plan.typeUsage.length} rack types · ${area(plan.withoutGangways)} without gangways`));
       body.append(notice('Feasible shelf packing estimate, not a guaranteed optimum. All units fit usable length/depth/height. No stacking inside a shelf. Part-level diagrams show standalone estimates; this overview and dashboard use shared allocation.'));
       const selectorLabel=$('label','field');selectorLabel.append($('span','','Rack bay'));
       const baySelect=$('select');baySelect.setAttribute('aria-label','Rack bay');
-      for(let b=0;b<plan.bays;b++){const option=$('option','',`Bay ${b+1} of ${plan.bays}`);option.value=String(b);baySelect.append(option);}
+      for(let b=0;b<plan.bays;b++){const option=$('option','',`Bay ${b+1} of ${plan.bays} — ${plan.bayLayouts[b].typeName}`);option.value=String(b);baySelect.append(option);}
       selectorLabel.append(baySelect);body.append(selectorLabel);
       const scope=$('p','muted'),shelfViews=$('div','shared-shelf-views');body.append(scope,shelfViews);
       function showBay(){
-        shelfViews.replaceChildren();const bay=Number(baySelect.value)||0,start=bay*settings.rackLevels,end=Math.min(plan.shelves.length,start+settings.rackLevels);
-        scope.textContent=`Showing Bay ${bay+1} of ${plan.bays}. Total floor area includes all ${plan.bays} bays, not only the selected bay.`;
-      for(let i=start;i<end;i++){
-        const shelf=plan.shelves[i],card=$('section','editor-section');
-        card.append($('h3','',`Bay ${Math.floor(i/settings.rackLevels)+1} · shelf ${i%settings.rackLevels+1}`));
-        const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${settings.rackSlotLength} ${settings.rackSlotDepth}`);svg.setAttribute('role','img');svg.setAttribute('aria-label','Top view of shared shelf '+(i+1));svg.setAttribute('role','group');svg.style.cssText='width:100%;max-height:240px;background:#202329;border:2px solid #ffce24';
+        shelfViews.replaceChildren();const bay=Number(baySelect.value)||0,layout=plan.bayLayouts[bay];if(!layout){scope.textContent='No rack bays required.';return;}const cfg=layout.settings;
+        scope.textContent=`Showing Bay ${bay+1} of ${plan.bays} — ${layout.typeName}: ${display(cfg.rackSlotLength)} × ${display(cfg.rackSlotDepth)} × ${display(cfg.rackSlotHeight)} mm usable, ${cfg.rackLevels} levels, gap ${display(cfg.betweenBoxesAllowance)} mm. Total floor area includes all bays.`;
+      for(let level=0;level<layout.shelves.length;level++){
+        const shelf=layout.shelves[level],card=$('section','editor-section');
+        card.append($('h3','',`Bay ${bay+1} · shelf ${level+1}`));
+        const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${cfg.rackSlotLength} ${cfg.rackSlotDepth}`);svg.setAttribute('role','img');svg.setAttribute('aria-label','Top view of bay '+(bay+1)+' shelf '+(level+1));svg.setAttribute('role','group');svg.style.cssText='width:100%;max-height:240px;background:#202329;border:2px solid #ffce24';
         const selectedInfo=$('div','notice rack-box-info','Click a box to see its PN and shelf position.');
         selectedInfo.setAttribute('role','status');selectedInfo.setAttribute('aria-live','polite');
         let selectedRect=null;
         for(const [boxIndex,box] of shelf.placements.entries()){
           const rect=document.createElementNS(svg.namespaceURI,'rect');
-          for(const [k,v] of Object.entries({x:box.x,y:box.y,width:box.length,height:box.depth,fill:'#ffce24',stroke:'#111','stroke-width':10,role:'button',tabindex:0,'aria-label':`PN ${box.partNumber}, bay ${Math.floor(i/settings.rackLevels)+1}, shelf ${i%settings.rackLevels+1}, box ${boxIndex+1}`,'aria-pressed':'false'}))rect.setAttribute(k,String(v));
+          for(const [k,v] of Object.entries({x:box.x,y:box.y,width:box.length,height:box.depth,fill:'#ffce24',stroke:'#111','stroke-width':10,role:'button',tabindex:0,'aria-label':`PN ${box.partNumber}, bay ${bay+1}, shelf ${level+1}, box ${boxIndex+1}`,'aria-pressed':'false'}))rect.setAttribute(k,String(v));
           rect.style.cursor='pointer';
           const selectBox=()=>{
             if(selectedRect){selectedRect.setAttribute('stroke','#111');selectedRect.setAttribute('aria-pressed','false');}
             selectedRect=rect;rect.setAttribute('stroke','#fff');rect.setAttribute('aria-pressed','true');
-            selectedInfo.textContent=`PN: ${box.partNumber} · Bay ${Math.floor(i/settings.rackLevels)+1} · Shelf ${i%settings.rackLevels+1} · Box ${boxIndex+1} · Position X ${display(box.x)} mm, Y ${display(box.y)} mm · ${display(box.length)} × ${display(box.depth)} mm`;
+            selectedInfo.textContent=`PN: ${box.partNumber} · Bay ${bay+1} · Shelf ${level+1} · Box ${boxIndex+1} · Position X ${display(box.x)} mm, Y ${display(box.y)} mm · ${display(box.length)} × ${display(box.depth)} mm`;
           };
           rect.addEventListener('click',selectBox);rect.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectBox();}});
           const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=box.partNumber;rect.append(title);svg.append(rect);
@@ -1531,7 +1629,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }
       }
       baySelect.addEventListener('change',showBay);showBay();
-      body.append($('p','muted',`Top views show usable shelf placement, gangways excluded. Total floor area also includes structural length and depth allowances. Gap between units: ${display(settings.betweenBoxesAllowance ?? 0)} mm. Unused shelf surface: ${area(plan.unused)}; utilization: ${display(plan.utilization)}%. Empty levels in the final bay remain reserved.`));
+      body.append($('p','muted',`Top views show usable shelf placement, gangways excluded. Total floor area also includes structural length and depth allowances. Each selected bay uses its rack type’s dimensions and between-box allowance. Unused shelf surface: ${area(plan.unused)}; utilization: ${display(plan.utilization)}%. Empty levels in the final bay remain reserved.`));
       return {read:()=>true};
     }});
   }
@@ -1750,7 +1848,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       `<div class="context-strip"><div class="source-info"><span class="file-icon">${p.sourceName?.endsWith('.xlsx') ? 'XLSX' : 'DATA'}</span><div><strong>${escape(source)} ${source === 'Example inventory' ? '<span class="badge" style="margin-left:7px">SAMPLE DATA</span>' : ''}</strong><small>${count(p.parts.length)} part numbers · Updated ${escape(date)} · ${escape(p.name)}</small></div></div><span class="source-check">${icon(c.invalidCount ? 'info' : 'check')}${c.invalidCount ? `${c.invalidCount} need attention` : 'All parts validated'}</span><button class="btn btn-ghost" data-action="export">${icon('download')}Export results</button></div>` +
       coverageBanner(c)+
       `<div class="mode-toolbar"><div class="section-label">Footprint comparison<span>Same required pallets for floor and racks</span></div><span class="badge">${count(p.settings.shiftsPerDay)} shifts/day · ${escape(coverageTargetLabel(p.settings))}</span></div>` +
-      `<div class="kpi-grid">${kpi('PALLETS — WITHOUT GANGWAYS',values[0],false,false,unavailable)}${kpi('PALLETS — WITH GANGWAYS',values[1],false,true,unavailable)}${kpi('RACKS — WITHOUT GANGWAYS',values[2],true,false,unavailable, `${count(c.totalRackBays)} bays × ${area((p.settings.rackSlotLength + p.settings.rackStructuralLength) * (p.settings.rackSlotDepth + p.settings.rackStructuralDepth) / 1000000)} per bay`)}${kpi('RACKS — WITH GANGWAYS',values[3],true,true,unavailable)}</div>` +productionPanel(c)+(c.sharedRack&&!c.sharedRack.available?`<div class="notice error">${escape(c.sharedRack.error)} Rack figures use standalone estimates.</div>`:'')+
+      `<div class="kpi-grid">${kpi('PALLETS — WITHOUT GANGWAYS',values[0],false,false,unavailable)}${kpi('PALLETS — WITH GANGWAYS',values[1],false,true,unavailable)}${kpi('RACKS — WITHOUT GANGWAYS',values[2],true,false,unavailable, c.sharedRack?.typeUsage?.length>1?`${count(c.totalRackBays)} bays · ${c.sharedRack.typeUsage.length} rack types`:`${count(c.totalRackBays)} bays × ${area(c.totalRackBays?c.rackWithoutGangways/c.totalRackBays:0)} per bay`)}${kpi('RACKS — WITH GANGWAYS',values[3],true,true,unavailable)}</div>` +productionPanel(c)+(c.sharedRack&&!c.sharedRack.available?`<div class="notice error">${escape(c.sharedRack.error)} Rack figures use standalone estimates.</div>`:'')+
       `<div class="two-col"><section class="panel"><div class="panel-head"><div><h2>Floor vs. rack storage</h2><p>Compare the four footprint scenarios</p></div><span class="unit-tag">m²</span></div><div class="chart" role="img" aria-label="Footprint comparison: ${values.map(area).join(', ')} square meters"><div style="display:${unavailable ? 'block' : 'none'}" class="notice error">Correct warehouse settings to calculate footprints.</div>${chartLabels.map((r,i) => `<div class="chart-row"><div class="chart-label">${r[0]}<small>${r[1]}</small></div><div class="chart-track"><div class="chart-bar ${r[2]}" style="width:${unavailable ? 0 : values[i]/max*100}%"></div></div><span class="chart-number">${unavailable ? '—' : area(values[i])}</span></div>`).join('')}</div><div class="chart-legend"><span><i class="legend-dot"></i>Floor pallets</span><span><i class="legend-dot rack"></i>Pallet racks</span><span>Striped = allocated gangways included</span></div></section><section class="panel savings-panel"><div class="panel-head"><div><h2>Space savings with racks</h2><p>Floor footprint minus rack footprint</p></div>${icon('chart')}</div>${c.results.some(r=>r.isFloorValid!==r.isRackValid)?'<div class="notice">Floor and rack totals cover different parts; savings compare partial inventories.</div>':''}<div class="saving-items">${savingsItem('WITHOUT GANGWAYS',unavailable ? null : c.savingWithoutGangways,unavailable ? null : c.savingWithoutGangwaysPercent)}${savingsItem('WITH ALLOCATED GANGWAYS',unavailable ? null : c.savingWithGangways,unavailable ? null : c.savingWithGangwaysPercent)}</div></section></div>` +
       `<section class="panel stats-panel"><div class="panel-head"><h2>Warehouse at a glance</h2><button class="text-link" data-action="settings">Configure warehouse ${icon('settings')}</button></div><div class="stats-grid">${stats.map(([label,value,unit],i) => `<div class="stat"><span class="stat-label">${label}</span><div class="stat-value-row"><span class="stat-value">${unavailable && i > 0 ? '—' : unit ? area(value) : count(value)}${unit ? `<small>${unit}</small>` : ''}</span>${i===0 && c.invalidCount ? `<span class="badge error">${c.invalidCount} invalid</span>` : ''}</div></div>`).join('')}</div></section>` +
 
@@ -1769,7 +1867,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   function renderParts(c) {
     $('main').innerHTML = heading('EVERY PART, BOTH SCENARIOS', 'Part details', 'Search your inventory, review validation, and explore each calculation.', `<button class="btn btn-secondary" data-action="export">${icon('download')}Export results</button><button class="btn btn-primary" data-action="add">${icon('plus')}Add part number</button>`) + validationBanner(c) + floorStackingOptions() +
-      `<div class="input-summary"><span>DOH: <strong>${escape(coverageTargetLabel(project().settings))}</strong></span><span>Shifts/day: <strong>${count(project().settings.shiftsPerDay)}</strong></span><span>Rack levels: <strong>${project().settings.rackLevels}</strong></span></div><div class="table-tools"><label class="search-field">${icon('search')}<input id="part-search" type="search" placeholder="Search part number…" aria-label="Search part number" value="${escape(query)}"></label><label class="toggle-label"><input id="invalid-filter" type="checkbox" ${invalidOnly ? 'checked' : ''}>Only invalid parts</label><div class="actions"><button class="btn btn-secondary" data-action="consumption">${icon('chart')}Shift calculation details</button><button class="btn btn-secondary" data-action="import">${icon('upload')}Import Excel</button><button class="btn btn-ghost" data-action="template">${icon('download')}Template</button></div></div><section class="panel" id="parts-table"></section>`;
+      `<div class="input-summary"><span>DOH: <strong>${escape(coverageTargetLabel(project().settings))}</strong></span><span>Shifts/day: <strong>${count(project().settings.shiftsPerDay)}</strong></span><span>Rack types: <strong>${D.configuredRackTypes(project().settings).length}</strong></span></div><div class="table-tools"><label class="search-field">${icon('search')}<input id="part-search" type="search" placeholder="Search part number…" aria-label="Search part number" value="${escape(query)}"></label><label class="toggle-label"><input id="invalid-filter" type="checkbox" ${invalidOnly ? 'checked' : ''}>Only invalid parts</label><div class="actions"><button class="btn btn-secondary" data-action="consumption">${icon('chart')}Shift calculation details</button><button class="btn btn-secondary" data-action="import">${icon('upload')}Import Excel</button><button class="btn btn-ghost" data-action="template">${icon('download')}Template</button></div></div><section class="panel" id="parts-table"></section>`;
     renderPartsTable(c);
     $('part-search').addEventListener('input', e => {query=e.target.value;page=0;renderPartsTable(calc());});
     $('invalid-filter').addEventListener('change', e => {invalidOnly=e.target.checked;page=0;renderPartsTable(calc());});
@@ -1780,7 +1878,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const rows = indexed.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
     if (!c.results.length) { $('parts-table').innerHTML=emptyInventory(); return; }
     const headers = ['Part number','Required pallets','Floor stacking','Floor positions','Floor rows','Floor storage m²','Floor allocated m²','Rack Fit','Boxes per Rack Slot','Rack levels','Required Rack Bays','Rack runs','Rack SQM Without Gangways','Rack allocated m²','Unused Rack Surface (m²)','Rack Utilization (%)','Input details','Validation','Actions'];
-    $('parts-table').innerHTML = `<div class="rack-fit-summary notice">Rack shelf fit check: ${count(c.nonFittingPallets)} required rack units across ${count(c.nonFittingPartCount)} part numbers do NOT fit. ${count(c.nonFittingUnknownQuantity)} non-fitting part numbers have unavailable pallet quantities. Fit checks usable shelf length, depth and height in both horizontal orientations. Each Required storage pallet is one rack unit. Missing dimensions show N/A.<br>Unused shelf surface: ${area(c.rackUnusedShelfArea)} m² · Available: ${area(c.rackAvailableShelfArea)} m² · Occupied: ${area(c.rackOccupiedShelfArea)} m² · Overall utilization: ${area(c.rackUtilizationPercent)}%. Shelf waste is not warehouse floor space. ${c.sharedRack?.available?'Rack totals share shelves across PNs; part rows show standalone rack estimates.':'Shared layout unavailable; totals use standalone estimates. Open the rack overview for details.'}</div><div class="table-scroll"><table class="data-table"><thead><tr>${headers.map((h,i)=>`<th class="${i>0&&i<13?'numeric':''}">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(({r,index}) => {
+    $('parts-table').innerHTML = `<div class="rack-fit-summary notice">Rack shelf fit check: ${count(c.nonFittingPallets)} required rack units across ${count(c.nonFittingPartCount)} part numbers do NOT fit. ${count(c.nonFittingUnknownQuantity)} non-fitting part numbers have unavailable pallet quantities. Fit checks all configured rack types in both horizontal orientations. Each Required storage pallet is one rack unit. Missing dimensions show N/A.<br>Unused shelf surface: ${area(c.rackUnusedShelfArea)} m² · Available: ${area(c.rackAvailableShelfArea)} m² · Occupied: ${area(c.rackOccupiedShelfArea)} m² · Overall utilization: ${area(c.rackUtilizationPercent)}%. Shelf waste is not warehouse floor space. ${c.sharedRack?.available?'Rack totals share shelves across PNs; part rows show standalone rack estimates.':'Shared layout unavailable; totals use standalone estimates. Open the rack overview for details.'}</div><div class="table-scroll"><table class="data-table"><thead><tr>${headers.map((h,i)=>`<th class="${i>0&&i<13?'numeric':''}">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(({r,index}) => {
       const numbers = [count(r.isPlanningValid?r.requiredPallets:null),count(r.isFloorValid?r.floor?.effectiveStacking:null),count(r.isFloorValid?r.floor?.positions:null),count(r.isFloorValid?r.floor?.rows:null),area(r.isFloorValid?r.floor?.storageArea:null),area(r.isFloorValid?r.floor?.withGangways:null),r.rackFit||'N/A',count(r.isRackValid?r.rack?.palletsPerSlot:r.rackFit==='NO'?0:null),count(r.isRackValid?r.rack?.levels:null),count(r.isRackValid?r.rack?.bays:r.rackFit==='NO'?0:null),count(r.isRackValid?r.rack?.runs:null),area(r.isRackValid?r.rack?.withoutGangways:null),area(r.isRackValid?r.rack?.withGangways:null),area(r.isRackValid?r.rack?.unusedShelfArea:null),area(r.isRackValid?r.rack?.utilizationPercent:null)];
       return `<tr><td><button class="part-link" data-detail="${index}">${icon('box')}${escape(r.input.partNumber || '(blank part number)')}</button></td>${numbers.map((n,i)=>`<td class="numeric">${i===1?stackingControl(r,index):n}</td>`).join('')}<td><span>${count(r.input.qtyBox)} parts/box × ${count(r.input.qtyOnPallet)} boxes/pallet</span><br><small class="muted">${decimal(r.input.consumptionPerShift)} parts/shift · ${decimal(r.input.doh)} input DOH<br>${count(r.input.length)} × ${count(r.input.width)} × ${count(r.input.height)} mm</small></td><td class="${r.isValid?'':'invalid-cell'}">${r.isValid ? '<span class="badge good">Validated</span>' : escape(r.errors.join(' '))}</td><td><button class="icon-btn" data-edit="${index}" title="Edit ${escape(r.input.partNumber)}" aria-label="Edit ${escape(r.input.partNumber)}">${icon('edit')}</button><button class="icon-btn" data-delete="${index}" title="Delete ${escape(r.input.partNumber)}" aria-label="Delete ${escape(r.input.partNumber)}">${icon('trash')}</button></td></tr>`;
     }).join('') || '<tr><td colspan="19" style="text-align:center;padding:35px">No matching part numbers.</td></tr>'}</tbody><tfoot><tr><th>Whole project totals</th><td>${count(c.totalRequiredPallets)}</td><td></td><td>${count(c.totalFloorPositions)}</td><td>${count(c.totalFloorRows)}</td><td>${area(c.floorWithoutGangways)}</td><td>${area(c.floorWithGangways)}</td><td></td><td></td><td></td><td>${count(c.totalRackBays)}</td><td>${count(c.totalRackRuns)}</td><td>${area(c.rackWithoutGangways)}</td><td>${area(c.rackWithGangways)}</td><td>${area(c.rackUnusedShelfArea)}</td><td>${area(c.rackUtilizationPercent)}</td><td colspan="3"></td></tr></tfoot></table></div><div class="table-footer"><span>${count(indexed.length)} matching part numbers · All areas in m², shown to two decimals</span><span class="project-floor-total">Whole project Floor storage m²: ${c.settingsErrors?.length?'—':area(c.floorWithoutGangways)} m²</span><div class="pagination"><button data-page="-1" ${page===0?'disabled':''}>Previous</button><span>${page+1} / ${pages}</span><button data-page="1" ${page===pages-1?'disabled':''}>Next</button></div></div>`;

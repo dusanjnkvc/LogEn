@@ -93,3 +93,9 @@ Layout Graphic shows four bays side by side per group, with levels in descending
 Layout Graphic begins at E5 with no introductory text in A1–A3. Rack Layout omits both X and Y coordinate columns.
 
 Part details provides floor stacking modes: calculate ROUNDDOWN(Maximum floor stacking height / pallet H), use imported Stacking, or one manual whole factor for all parts. All modes respect the height limit; imported factors remain saved when switching modes. Legacy projects retain their prior effective stacking until a mode is selected. Rack calculations and pallet demand are unaffected.
+
+Warehouse Settings supports named rack types: the primary type plus additional types, each with usable dimensions, levels, structural allowances, between-box gap and maximum run length. Mixed allocation compares a simulated bay of every fitting type against remaining inventory. It favors higher occupied shelf percentage, then lower floor area per occupied surface and less unused surface. This deterministic heuristic is not a proof of the global minimum. Part rows show the most efficient standalone type; dashboard totals, bay overview and exports use the actual mixed-type bay allocation. Each exported bay/shelf identifies its type, and Warehouse Settings exports all configured types.
+
+Near completion the mixed rack heuristic compares complete one- and two-bay finishes, preferring less floor area and unused surface, to avoid opening a small partial bay when a larger required bay can absorb those units. Up to 20 configured rack types are supported. A bounded packing effort reports an explicit unavailable warning rather than silently omitting inventory if a layout is excessively complex.
+
+Current web checks: `node tools/check_floor_stacking.cjs`, `node tools/check_mixed_racks.cjs`, and `node tools/check_box_rack.cjs`. These cover the current calculation rules, controls, persistence, shared packing and Excel export.

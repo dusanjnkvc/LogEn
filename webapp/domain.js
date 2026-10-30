@@ -5,7 +5,7 @@
 
   function createDefaultSettings() {
     return {
-      stackingMode: 'legacy', manualStacking: 1, maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
+      rackTypeName: 'Rack type 1', rackTypes: [], stackingMode: 'legacy', manualStacking: 1, maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
       gangwayWidth: 4500, floorPalletClearance: 100,
       rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
       rackSlotHeight: 1100, betweenBoxesAllowance: 0, rackStructuralLength: 150,
@@ -40,6 +40,15 @@
   // Each storage allocation uses the full configured physical aisle width.
   const allocatedGangwayWidth = settings => settings.gangwayWidth;
 
+  const rackTypeFields = ['rackSlotLength','rackSlotDepth','rackSlotHeight','rackLevels','rackStructuralLength','rackStructuralDepth','rackStructuralHeight','betweenBoxesAllowance','maxRackRunLength'];
+  function configuredRackTypes(s) {
+    const primary={...s,id:'primary',name:s.rackTypeName||'Rack type 1',rackTypes:[]};
+    return [primary,...(Array.isArray(s.rackTypes)?s.rackTypes:[]).filter(t=>t&&typeof t==='object').map((t,i)=>{
+      const cfg={...s,id:String(t.id||'type-'+i),name:String(t.name||''),rackTypes:[]};
+      for(const key of rackTypeFields)cfg[key]=t[key]===undefined?s[key]:t[key];
+      return cfg;
+    })];
+  }
   function floorStackingMode(s) {
     return !s.stackingMode || s.stackingMode==='legacy' ? (s.stackabilityEnabled?'imported':'manual') : s.stackingMode;
   }
@@ -67,6 +76,18 @@
       errors.push('Stackability must be enabled or disabled.');
     if (s.rackSlotLength + s.rackStructuralLength > s.maxRackRunLength)
       errors.push('Maximum rack run length must fit at least one effective rack bay.');
+    if(s.rackTypes!==undefined&&!Array.isArray(s.rackTypes))errors.push('Rack types must be a list.');
+    if(Array.isArray(s.rackTypes)&&s.rackTypes.length){
+      if(s.rackTypes.length>19)errors.push('A project supports up to 20 rack types.');
+      const names=new Set([String(s.rackTypeName||'Rack type 1').trim().toLowerCase()]),ids=new Set(['primary']);
+      for(const [i,raw] of s.rackTypes.entries()){
+        if(!raw||typeof raw!=='object'){errors.push('Rack type '+(i+2)+' is invalid.');continue;}
+        const type=configuredRackTypes({...s,rackTypes:[raw]})[1];
+        if(!type.name.trim()||names.has(type.name.trim().toLowerCase()))errors.push('Each rack type needs a unique non-empty name.');names.add(type.name.trim().toLowerCase());
+        if(ids.has(type.id))errors.push('Rack type identifiers must be unique.');ids.add(type.id);
+        for(const error of validateSettings({...type,rackTypeName:type.name,rackTypes:[]}))errors.push(type.name+': '+error);
+      }
+    }
     return errors;
   }
 
@@ -167,11 +188,8 @@
   }
 
   function rackFit(input, settings) {
-    const values = [input.length,input.width,input.height,settings.rackSlotLength,settings.rackSlotDepth,settings.rackSlotHeight];
-    if (!values.every(v => Number.isFinite(v) && v > 0)) return 'N/A';
-    return input.height <= settings.rackSlotHeight &&
-      ((input.length <= settings.rackSlotLength && input.width <= settings.rackSlotDepth) ||
-       (input.width <= settings.rackSlotLength && input.length <= settings.rackSlotDepth)) ? 'YES' : 'NO';
+    if(![input.length,input.width,input.height].every(v=>Number.isFinite(v)&&v>0))return 'N/A';
+    return configuredRackTypes(settings).some(t=>input.height<=t.rackSlotHeight&&((input.length<=t.rackSlotLength&&input.width<=t.rackSlotDepth)||(input.width<=t.rackSlotLength&&input.length<=t.rackSlotDepth)))?'YES':'NO';
   }
   function surfaceAreas(depth, width, lanes, quantity, allowance, pitch, gangwayMetres) {
     if (![depth,width,lanes,quantity,allowance,pitch,gangwayMetres].every(v => Number.isFinite(v) && v >= 0))
@@ -208,6 +226,16 @@
       capacityPerBay, bays, bayArea, usableBayArea, withoutGangways, rotated: rotatedCapacity > original,
       availableShelfArea, occupiedShelfArea, unusedShelfArea, unusedPerLevel: unusedShelfArea / levels,
       utilizationPercent, unusedPercent: utilizationPercent === null ? null : 100-utilizationPercent};
+  }
+  function rackForPart(quantity,input,t) {
+    const sizing=calculateBoxRack(quantity,input.length,input.width,input.height,t.rackSlotLength,t.rackSlotDepth,t.rackSlotHeight,t.rackLevels,t.betweenBoxesAllowance,t.rackStructuralLength,t.rackStructuralDepth);
+    if(!sizing.fits)return null;
+    const effectiveBayLength=t.rackSlotLength+t.rackStructuralLength,effectiveBayDepth=t.rackSlotDepth+t.rackStructuralDepth,effectiveBayHeight=t.rackSlotHeight+t.rackStructuralHeight;
+    const maxBaysPerRun=floor(t.maxRackRunLength/effectiveBayLength),runs=ceilDivide(sizing.bays,maxBaysPerRun);
+    if(runs>1000000)throw new Error('Rack run count exceeds the supported project size.');
+    const baysPerRun=Array.from({length:runs},(_,i)=>Math.min(maxBaysPerRun,sizing.bays-i*maxBaysPerRun));
+    const gangwayArea=sizing.bays*effectiveBayLength*t.gangwayWidth/2000000;
+    return {...sizing,palletsPerSlot:sizing.boxesPerSlot,levels:t.rackLevels,effectiveBayLength,effectiveBayDepth,effectiveBayHeight,maxBaysPerRun,runs,baysPerRun,gangwayArea,withGangways:sizing.withoutGangways+gangwayArea,typeId:t.id,typeName:t.name,typeSettings:t};
   }
   function calculatePart(input, settings) {
     const s = { ...createDefaultSettings(), ...settings };
@@ -290,38 +318,15 @@
           formulaStorageArea, gangwayArea, withGangways };
       }
 
-      const sizing = calculateBoxRack(requiredPallets, input.length, input.width, input.height,
-        s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, s.rackLevels, s.betweenBoxesAllowance, s.rackStructuralLength, s.rackStructuralDepth);
-      if (!sizing.fits) {
-        errors.push('Rack: unit does not fit the usable shelf length, depth and height in either horizontal orientation.');
-      } else {
-        const {bays, capacityPerBay, rotated} = sizing;
-        const palletsPerSlot = sizing.boxesPerSlot;
-        const effectiveBayLength = s.rackSlotLength + s.rackStructuralLength;
-        const effectiveBayDepth = s.rackSlotDepth + s.rackStructuralDepth;
-        const effectiveBayHeight = s.rackSlotHeight + s.rackStructuralHeight;
-        const maxBaysPerRun = floor(s.maxRackRunLength / effectiveBayLength);
-        const runs = ceilDivide(bays, maxBaysPerRun);
-        if (runs > 1000000)
-          throw new Error('Rack run count exceeds the supported project size (1,000,000 runs per part).');
-        const baysPerRun = Array.from({ length: runs }, (_, index) =>
-          Math.min(maxBaysPerRun, bays - index * maxBaysPerRun));
-        const withoutGangways = sizing.withoutGangways;
-        const totalFrontageMetres = baysPerRun.reduce((total, count) =>
-          total + count * effectiveBayLength / 1000, 0);
-        const gangwayArea = bays * effectiveBayLength * s.gangwayWidth / 2000000;
-        const withGangways = withoutGangways + gangwayArea;
-        if (![withoutGangways, gangwayArea, withGangways, effectiveBayHeight].every(Number.isFinite))
-          throw new Error('Rack area exceeds supported numeric precision.');
-        rack = { ...sizing, palletsPerSlot, levels: s.rackLevels, capacityPerBay, bays,
-          maxBaysPerRun, runs, rotated, effectiveBayLength, effectiveBayDepth,
-          effectiveBayHeight, withoutGangways, gangwayArea, withGangways, baysPerRun };
-      }
+      const alternatives=configuredRackTypes(s).map(t=>rackForPart(requiredPallets,input,t)).filter(Boolean);
+      alternatives.sort((a,b)=>(b.utilizationPercent||0)-(a.utilizationPercent||0)||a.withoutGangways-b.withoutGangways||a.unusedShelfArea-b.unusedShelfArea);
+      rack=alternatives[0]||null;
+      if(!rack)errors.push('Rack: unit does not fit the usable shelf length, depth and height of any configured rack type.');
     } catch (error) { errors.push(error.message); }
     return resultFor(input, errors, requiredParts, requiredPallets, floorResult, rack, planning);
   }
 
-  function sharedRackPlan(results, s) {
+  function singleRackPlan(results, s) {
     const shelves=[];
     const rows=results.filter(r=>r.isRackValid).sort((a,b)=>b.input.length*b.input.width-a.input.length*a.input.width);
     const quantity=rows.reduce((n,r)=>n+r.requiredPallets,0);
@@ -341,6 +346,73 @@
     const bays=ceilDivide(shelves.length,s.rackLevels),bayArea=(s.rackSlotLength+s.rackStructuralLength)*(s.rackSlotDepth+s.rackStructuralDepth)/1000000;
     const occupied=rows.reduce((n,r)=>n+r.requiredPallets*r.input.length*r.input.width/1000000,0),available=bays*s.rackSlotLength*s.rackSlotDepth/1000000*s.rackLevels;
     return {available:true,shelves,bays,quantity,withoutGangways:bays*bayArea,gangwayArea:bays*(s.rackSlotLength+s.rackStructuralLength)*s.gangwayWidth/2000000,withGangways:bays*bayArea+bays*(s.rackSlotLength+s.rackStructuralLength)*s.gangwayWidth/2000000,occupied,availableShelfArea:available,unused:Math.max(0,available-occupied),utilization:available>0?occupied/available*100:null};
+  }
+  function sharedRackPlan(results,s) {
+    const types=configuredRackTypes(s);
+    function finish(bayLayouts,quantity){
+      const shelves=[],usage=new Map();let net=0,aisle=0,occupied=0,available=0,unusedPerLevel=0;
+      bayLayouts.forEach((bay,i)=>{
+        const t=bay.settings;bay.number=i+1;bay.typeId=t.id;bay.typeName=t.name;
+        const usable=t.rackSlotLength*t.rackSlotDepth/1000000,footprint=(t.rackSlotLength+t.rackStructuralLength)*(t.rackSlotDepth+t.rackStructuralDepth)/1000000;
+        bay.withoutGangways=footprint;bay.availableShelfArea=usable*t.rackLevels;
+        bay.occupiedShelfArea=bay.shelves.reduce((n,sh)=>n+sh.placements.reduce((v,p)=>v+p.length*p.depth/1000000,0),0);
+        bay.unusedShelfArea=Math.max(0,bay.availableShelfArea-bay.occupiedShelfArea);bay.utilizationPercent=bay.availableShelfArea?bay.occupiedShelfArea/bay.availableShelfArea*100:null;
+        net+=footprint;aisle+=(t.rackSlotLength+t.rackStructuralLength)*s.gangwayWidth/2000000;occupied+=bay.occupiedShelfArea;available+=bay.availableShelfArea;unusedPerLevel+=bay.unusedShelfArea/t.rackLevels;
+        const u=usage.get(t.id)||{typeId:t.id,typeName:t.name,settings:t,bays:0,withoutGangways:0};u.bays++;u.withoutGangways+=footprint;usage.set(t.id,u);
+        bay.shelves.forEach((sh,j)=>{sh.bayNumber=i+1;sh.level=j+1;sh.typeId=t.id;sh.typeName=t.name;sh.settings=t;shelves.push(sh);});
+      });
+      const typeUsage=[...usage.values()];let runs=0;for(const u of typeUsage){u.runs=ceilDivide(u.bays,floor(u.settings.maxRackRunLength/(u.settings.rackSlotLength+u.settings.rackStructuralLength)));runs+=u.runs;}
+      return {available:true,shelves,bayLayouts,typeUsage,bays:bayLayouts.length,runs,quantity,withoutGangways:net,gangwayArea:aisle,withGangways:net+aisle,occupied,availableShelfArea:available,unused:Math.max(0,available-occupied),unusedPerLevel,utilization:available?occupied/available*100:null};
+    }
+    if(types.length===1){const old=singleRackPlan(results,s);if(!old.available)return old;const bays=Array.from({length:old.bays},(_,i)=>({settings:types[0],shelves:old.shelves.slice(i*s.rackLevels,(i+1)*s.rackLevels)}));return finish(bays,old.quantity);}
+    const rows=results.filter(r=>r.isRackValid&&r.isPlanningValid).map(r=>({input:r.input,quantity:r.requiredPallets,fitCount:types.filter(t=>rackForPart(0,r.input,t)).length})).sort((a,b)=>a.fitCount-b.fitCount||b.input.length*b.input.width-a.input.length*a.input.width);
+    const quantity=rows.reduce((n,r)=>n+r.quantity,0);if(quantity>10000)return {available:false,error:'Shared rack preview supports up to 10,000 units.'};
+    const remaining=rows.map(r=>r.quantity),bayLayouts=[];let steps=0;
+    function candidate(t,stock=remaining){
+      const used=stock.map(()=>0),shelves=[];let occupied=0,count=0;
+      rows.forEach((r,index)=>{
+        if(r.input.height>t.rackSlotHeight)return;
+        for(let unit=0;unit<stock[index];unit++){
+          if(++steps>5000000)throw new Error('Mixed rack allocation is too complex; reduce inventory or the number of rack types.');
+          let best=null;
+          shelves.forEach((sh,k)=>sh.free.forEach((rect,j)=>{
+            for(const [w,d] of [[r.input.length,r.input.width],[r.input.width,r.input.length]])if(w<=rect.w&&d<=rect.d){const score=rect.w*rect.d-w*d,capacity=Math.floor((rect.w+t.betweenBoxesAllowance)/(w+t.betweenBoxesAllowance))*Math.floor((rect.d+t.betweenBoxesAllowance)/(d+t.betweenBoxesAllowance));if(!best||score<best.score||score===best.score&&capacity>best.capacity)best={k,j,w,d,score,capacity};}
+          }));
+          if(!best&&shelves.length<t.rackLevels){
+            const sizing=rackForPart(0,r.input,t);if(!sizing)break;
+            const w=sizing.rotated?r.input.width:r.input.length,d=sizing.rotated?r.input.length:r.input.width;
+            shelves.push({free:[{x:0,y:0,w:t.rackSlotLength,d:t.rackSlotDepth}],placements:[]});best={k:shelves.length-1,j:0,w,d};
+          }
+          if(!best)break;
+          const sh=shelves[best.k],rect=sh.free.splice(best.j,1)[0],g=t.betweenBoxesAllowance;
+          sh.placements.push({partNumber:r.input.partNumber,x:rect.x,y:rect.y,length:best.w,depth:best.d});
+          if(rect.w>best.w+g)sh.free.push({x:rect.x+best.w+g,y:rect.y,w:rect.w-best.w-g,d:best.d});
+          if(rect.d>best.d+g)sh.free.push({x:rect.x,y:rect.y+best.d+g,w:rect.w,d:rect.d-best.d-g});
+          occupied+=best.w*best.d/1000000;count++;used[index]++;
+        }
+      });
+      const available=t.rackSlotLength*t.rackSlotDepth/1000000*t.rackLevels,footprint=(t.rackSlotLength+t.rackStructuralLength)*(t.rackSlotDepth+t.rackStructuralDepth)/1000000;
+      return {settings:t,shelves,used,count,occupied,footprint,utilization:available?occupied/available:0,unused:available-occupied,efficiency:occupied?footprint/occupied:Infinity};
+    }
+    try{
+      while(remaining.some(n=>n>0)){
+        const candidates=types.map(t=>candidate(t)).filter(c=>c.count);
+        candidates.sort((a,b)=>b.utilization-a.utilization||a.efficiency-b.efficiency||a.unused-b.unused||b.occupied-a.occupied);
+        let best=candidates[0];
+        // Compare complete one/two-bay finishes before the next greedy step.
+        // This avoids creating a small partial bay when a required larger bay can absorb it.
+        let finishChoice=null;
+        for(const first of candidates){
+          const residual=remaining.map((n,i)=>n-first.used[i]),left=residual.reduce((n,v)=>n+v,0);
+          const endings=left?types.map(t=>candidate(t,residual)).filter(c=>c.count===left):[null];
+          for(const second of endings){const cost=first.footprint+(second?.footprint||0),unused=first.unused+(second?.unused||0);if(!finishChoice||cost<finishChoice.cost-1e-9||Math.abs(cost-finishChoice.cost)<1e-9&&unused<finishChoice.unused-1e-9)finishChoice={first,cost,unused};}
+        }
+        if(finishChoice)best=finishChoice.first;
+        if(!best)return {available:false,error:'Some required units could not be placed in the configured rack types.'};
+        best.used.forEach((n,i)=>remaining[i]-=n);bayLayouts.push(best);
+      }
+      return finish(bayLayouts,quantity);
+    }catch(error){return {available:false,error:error.message};}
   }
   function calculateProject(parts, settings) {
     const s = { ...createDefaultSettings(), ...settings };
@@ -395,10 +467,10 @@
     project.sharedRack = shared;
     if(shared.available){
       project.totalRackBays=shared.bays;
-      project.totalRackRuns=ceilDivide(shared.bays, floor(s.maxRackRunLength/(s.rackSlotLength+s.rackStructuralLength)));
+      project.totalRackRuns=shared.runs;
       project.rackWithoutGangways=shared.withoutGangways;project.rackWithGangways=shared.withGangways;project.rackGangwayArea=shared.gangwayArea;
       project.rackAvailableShelfArea=shared.availableShelfArea;project.rackOccupiedShelfArea=shared.occupied;
-      project.rackUnusedShelfArea=shared.unused;project.rackUnusedPerLevel=shared.unused/s.rackLevels;
+      project.rackUnusedShelfArea=shared.unused;project.rackUnusedPerLevel=shared.unusedPerLevel;
       project.rackUtilizationPercent=shared.utilization;project.rackUnusedPercent=shared.utilization===null?null:100-shared.utilization;
     }
     project.savingWithoutGangways = project.floorWithoutGangways - project.rackWithoutGangways;
@@ -410,5 +482,5 @@
     return project;
   }
 
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, configuredRackTypes, rackTypeFields, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
 })(globalThis);
