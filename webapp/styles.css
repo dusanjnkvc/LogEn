@@ -35,3 +35,20 @@
 .category-filter {align-self:center;min-width:0;}
 @media(max-width:1000px){.production-totals{grid-template-columns:repeat(3,minmax(0,1fr));}}
 @media(max-width:600px){.production-totals{grid-template-columns:repeat(2,minmax(0,1fr));}}
+/* Theme both closed dropdown controls and their expanded option lists. */
+select{accent-color:var(--yellow);color-scheme:dark;cursor:pointer}
+select option{background:var(--surface);color:var(--text)}
+select option:checked{background:var(--yellow);color:#111}
+@supports (appearance:base-select){
+  select,select::picker(select){appearance:base-select}
+  select{border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);padding:10px 12px;align-items:center;gap:12px}
+  select::picker(select){background:var(--surface);color:var(--text);border:1px solid #5e5124;border-radius:9px;padding:5px;box-shadow:0 12px 30px #0008;max-height:320px;overflow-y:auto;margin-block:5px}
+  select::picker-icon{color:var(--yellow);transition:rotate .15s}
+  select:open::picker-icon{rotate:180deg}
+  select option{padding:9px 12px;border-radius:5px;cursor:pointer;white-space:normal;overflow-wrap:anywhere}
+  select option:hover,select option:focus{background:#f5c51824;color:var(--yellow);outline:none}
+  select option:checked{background:var(--yellow);color:#111}
+  select option::checkmark{color:currentColor}
+  select option:disabled{color:var(--muted);background:transparent;cursor:default}
+  .project-picker select{padding:5px 7px;flex:1}
+}
