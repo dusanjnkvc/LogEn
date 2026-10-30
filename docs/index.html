@@ -679,9 +679,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return project;
   }
 
-  function calculateStorageSplit(parts,settings,threshold,category=null){
+  function calculateStorageSplit(parts,settings,threshold,category=null,existingCalculation=null){
     if(!Number.isSafeInteger(threshold)||threshold<0)throw new Error('Rack threshold must be a whole number of at least zero.');
-    const all=calculateProject(parts,settings,category),planned=all.results.filter(r=>r.isPlanningValid);
+    const all=existingCalculation||calculateProject(parts,settings,category),planned=all.results.filter(r=>r.isPlanningValid);
     const rackRows=planned.filter(r=>r.requiredPallets<=threshold),groundRows=planned.filter(r=>r.requiredPallets>threshold);
     const rack=calculateProject(rackRows.map(r=>r.input),settings);
     const groundValid=groundRows.filter(r=>r.isFloorValid),sum=(rows,fn)=>rows.reduce((n,r)=>n+fn(r),0);
@@ -1125,6 +1125,39 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           }
         }
       } else drawing.getCell('E5').value=plan?.available?'No rack pallets to place.':plan?.error||'Rack layout unavailable.';
+      const improved=workbook.addWorksheet('Improved Warehouse',{views:[{state:'frozen',ySplit:3}]});
+      const threshold=Number.isSafeInteger(project.improvementThreshold)&&project.improvementThreshold>=0?project.improvementThreshold:2;
+      const split=global.LogEnDomain.calculateStorageSplit(project.parts,s,threshold,null,calculation),rackSplit=split.rack;
+      add(improved,['Improved Warehouse — '+project.name],'header');
+      add(improved,['Rack threshold (pallets per PN)',threshold]);
+      add(improved,['Assignment rule',`Required pallets ≤ ${threshold}: racks; required pallets > ${threshold}: ground. Each PN stays together.`]);
+      add(improved,['Rack footprint without gangways (m²)',rackSplit.rackWithoutGangways],'kpi');
+      add(improved,['Rack footprint with allocated gangways (m²)',rackSplit.rackWithGangways],'kpi');
+      add(improved,['Ground footprint without gangways (m²)',split.groundWithoutGangways],'kpi');
+      add(improved,['Ground footprint with allocated gangways (m²)',split.groundWithGangways],'kpi');
+      add(improved,['Combined without gangways (m²)',rackSplit.rackWithoutGangways+split.groundWithoutGangways],'kpi');
+      add(improved,['Combined with allocated gangways (m²)',rackSplit.rackWithGangways+split.groundWithGangways],'kpi');
+      add(improved,['Rack assigned PNs / pallets',split.rackRows.length,split.rackPallets]);
+      add(improved,['Ground assigned PNs / pallets',split.groundRows.length,split.groundPallets]);
+      add(improved,['Required rack bays',rackSplit.totalRackBays]);
+      add(improved,['PNs requiring review',split.unassigned.length+split.groundInvalid.length+split.rackInvalid.length]);
+      add(improved,['Scope','Same inventory/category selection as the other exported results. All areas use the current warehouse settings.']);
+      add(improved,['Planning model','Shared rack shelves; ground rows dedicated per PN. Gangways are allocated estimates. Part-level rack areas are not added independently.']);
+      if(split.settingsErrors.length)add(improved,['Settings errors — results unavailable',split.settingsErrors.join(' | ')]);
+      if(!rackSplit.sharedRack?.available)add(improved,['Rack allocation warning',rackSplit.sharedRack?.error||'Shared allocation unavailable; standalone rack estimates used.']);
+      add(improved,[]);
+      add(improved,['Part Number','Category','Required pallets','Assigned storage','Ground without gangways (m²)','Ground with allocated gangways (m²)','Status / validation'],'header');
+      const assignedRack=new Map(rackSplit.results.map(r=>[r.input.partNumber,r]));
+      calculation.results.forEach(row=>{
+        const assigned=!row.isPlanningValid?'Unassigned':row.requiredPallets<=threshold?'Racks':'Ground';
+        const evaluated=assigned==='Racks'?assignedRack.get(row.input.partNumber):row;
+        const valid=assigned==='Racks'?evaluated?.isRackValid:assigned==='Ground'?row.isFloorValid:false;
+        add(improved,[row.input.partNumber,row.input.category||'Uncategorized',row.isPlanningValid?row.requiredPallets:'Unavailable',assigned,assigned==='Ground'&&row.isFloorValid?row.floor.withoutGangways:null,assigned==='Ground'&&row.isFloorValid?row.floor.withGangways:null,valid?'Included':(evaluated?.errors||row.errors||[]).join(' | ')||'Needs review']);
+      });
+      add(improved,[]);add(improved,['Mixed rack type','Bays','Storage footprint (m²)'],'header');
+      (rackSplit.sharedRack?.typeUsage||[]).forEach(type=>add(improved,[type.typeName,type.bays,type.withoutGangways]));
+      improved.getColumn(1).width=52;improved.getColumn(2).width=42;for(let col=3;col<=6;col++)improved.getColumn(col).width=25;improved.getColumn(7).width=75;
+      improved.getColumn(2).numFmt='#,##0.00';for(const col of [5,6])improved.getColumn(col).numFmt='#,##0.00';
       workbook.views = [{ activeTab: 3, firstSheet: 0, visibility: 'visible' }];
       return new Uint8Array(await workbook.xlsx.writeBuffer());
     }

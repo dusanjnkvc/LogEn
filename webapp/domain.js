@@ -502,9 +502,9 @@
     return project;
   }
 
-  function calculateStorageSplit(parts,settings,threshold,category=null){
+  function calculateStorageSplit(parts,settings,threshold,category=null,existingCalculation=null){
     if(!Number.isSafeInteger(threshold)||threshold<0)throw new Error('Rack threshold must be a whole number of at least zero.');
-    const all=calculateProject(parts,settings,category),planned=all.results.filter(r=>r.isPlanningValid);
+    const all=existingCalculation||calculateProject(parts,settings,category),planned=all.results.filter(r=>r.isPlanningValid);
     const rackRows=planned.filter(r=>r.requiredPallets<=threshold),groundRows=planned.filter(r=>r.requiredPallets>threshold);
     const rack=calculateProject(rackRows.map(r=>r.input),settings);
     const groundValid=groundRows.filter(r=>r.isFloorValid),sum=(rows,fn)=>rows.reduce((n,r)=>n+fn(r),0);
