@@ -107,3 +107,5 @@ Each rack type can be deleted, including the primary type (which can be restored
 The template includes Category; older eight-column inputs remain supported. The Category selector beside Required storage pallets scopes calculations, shared layouts and exports. Stored inventory remains complete, and duplicate validation spans the original project. Blank categories appear as Uncategorized.
 
 Targeted validation: `node tools/check_rack_policies.cjs`, `node tools/check_box_rack.cjs`, `node tools/check_floor_stacking.cjs`, `node tools/check_mixed_racks.cjs`.
+
+Between boxes allowance also reserves the same clearance at both frontage pillars. Frontage capacity = FLOOR((usable shelf length - gap) / (pallet frontage + gap)). Two 1200 mm pallets with 100 mm gaps need 2700 mm. Depth clearance remains between rows only; structural dimensions still add to warehouse floor area separately.

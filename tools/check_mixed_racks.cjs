@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs');require('../webapp/domain.js');const D=global.LogEnDomain;
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
-const large={rackAllowRotation:true,id:'large',name:'Large',rackSlotLength:2400,rackSlotDepth:1200,rackSlotHeight:1800,rackLevels:2,rackStructuralLength:200,rackStructuralDepth:200,rackStructuralHeight:150,betweenBoxesAllowance:100,maxRackRunLength:15000};
+const large={rackAllowRotation:true,id:'large',name:'Large',rackSlotLength:2400,rackSlotDepth:1200,rackSlotHeight:1800,rackLevels:2,rackStructuralLength:200,rackStructuralDepth:200,rackStructuralHeight:150,betweenBoxesAllowance:0,maxRackRunLength:15000};
 const settings={...D.createDefaultSettings(),rackTypeName:'Compact',rackSlotLength:1200,rackSlotDepth:1000,rackSlotHeight:1000,rackLevels:2,rackStructuralLength:100,rackStructuralDepth:100,shiftsPerDay:1,rackTypes:[large]};
 const unit=(partNumber,quantity,length,width,height)=>({partNumber,qtyBox:1,qtyOnPallet:1,consumptionPerShift:quantity,doh:1,length,width,height,stacking:1});
 const parts=[unit('SMALL',3,1200,1000,800),unit('LARGE',1,2300,1100,1500),unit('TALL',2,1200,1000,2000),unit('WIDE',1,3000,2000,800)];

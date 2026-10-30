@@ -350,7 +350,7 @@
         field(structureGrid, 'rackStructuralDepth', 'Structural depth allowance');
         field(structureGrid, 'rackStructuralHeight', 'Structural height allowance');
         field(structureGrid, 'betweenBoxesAllowance', 'Between boxes allowance');
-        structure.append($('p','muted','Gap between units on the same shelf, in both length and depth directions. No gap is added at shelf edges or vertically. Default 0 mm. Applies to shared shelves and per-part capacity.'));
+        structure.append($('p','muted','Gap between pallets, plus the same clearance at both rack pillars along shelf length. Example: 100 + 1200 + 100 + 1200 + 100 = 2700 mm. Depth gaps remain between rows only; no vertical gap. Applies to capacity and layouts.'));
         const additional=section(body,'Additional rack types','Different types may be used for different bays. Best-bay selection favors occupied shelf percentage, floor area per occupied surface and less unused surface. It also compares complete one/two-bay finishes to avoid unnecessary partial bays. This is a packing estimate, not a guaranteed global optimum.');
         const cards=[];
         const typeFields=[['rackSlotLength','Usable shelf length',true],['rackSlotDepth','Usable shelf depth',true],['rackSlotHeight','Usable shelf height',true],['rackLevels','Rack levels',true,true],['rackStructuralLength','Structural length allowance'],['rackStructuralDepth','Structural depth allowance'],['rackStructuralHeight','Structural height allowance'],['betweenBoxesAllowance','Between boxes allowance'],['maxRackRunLength','Maximum rack run length',true]];

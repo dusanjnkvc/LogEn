@@ -366,7 +366,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         !Number.isSafeInteger(requiredBoxes) || requiredBoxes < 0 || !Number.isSafeInteger(levels) || levels < 1)
       throw new Error('Rack sizing requires whole non-negative boxes, positive dimensions and whole positive levels.');
     const stackLayers=options.rackAllowStacking?floor(slotHeight/height):1;
-    const capacity = (l,w) => height <= slotHeight ? floor((slotLength + gap) / (l + gap)) * Math.min(options.rackAllowDepthRows?2:1,floor((slotDepth + gap) / (w + gap))) * stackLayers : 0;
+    const capacity = (l,w) => height <= slotHeight ? Math.max(0,floor((slotLength - gap) / (l + gap))) * Math.min(options.rackAllowDepthRows?2:1,floor((slotDepth + gap) / (w + gap))) * stackLayers : 0;
     const original = capacity(length,width), rotatedCapacity = capacity(width,length);
     const rotated=!!options.rackAllowRotation && (width<length ? rotatedCapacity>0 : original===0&&rotatedCapacity>0);
     const boxesPerSlot = rotated?rotatedCapacity:original;
@@ -551,7 +551,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           if(!best&&shelves.length<t.rackLevels){
             const sizing=rackForPart(0,r.input,t);if(!sizing)break;
             const w=sizing.rotated?r.input.width:r.input.length,d=sizing.rotated?r.input.length:r.input.width;
-            const free=[{x:0,y:0,w:t.rackSlotLength,d:t.rackAllowDepthRows?d:t.rackSlotDepth,depthRow:0}];if(t.rackAllowDepthRows&&t.rackSlotDepth>d+t.betweenBoxesAllowance)free.push({x:0,y:d+t.betweenBoxesAllowance,w:t.rackSlotLength,d:t.rackSlotDepth-d-t.betweenBoxesAllowance,depthRow:1});shelves.push({free,placements:[]});best={k:shelves.length-1,j:0,w,d};
+            const free=[{x:t.betweenBoxesAllowance,y:0,w:t.rackSlotLength-2*t.betweenBoxesAllowance,d:t.rackAllowDepthRows?d:t.rackSlotDepth,depthRow:0}];if(t.rackAllowDepthRows&&t.rackSlotDepth>d+t.betweenBoxesAllowance)free.push({x:t.betweenBoxesAllowance,y:d+t.betweenBoxesAllowance,w:t.rackSlotLength-2*t.betweenBoxesAllowance,d:t.rackSlotDepth-d-t.betweenBoxesAllowance,depthRow:1});shelves.push({free,placements:[]});best={k:shelves.length-1,j:0,w,d};
           }
           if(!best)break;
           const sh=shelves[best.k],rect=sh.free.splice(best.j,1)[0],g=t.betweenBoxesAllowance;
@@ -977,7 +977,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         ['Legacy rack surface allowance (unused)', s.rackSurfaceAllowance ?? 4.125, 'm²; shelf footprint now uses usable length × depth'], ['Legacy rack pitch (unused)', s.rackPitch ?? 3300, 'mm; frontage now uses usable length + structural length'], ['Rack levels', s.rackLevels, 'levels'], ['Usable shelf length', s.rackSlotLength, 'mm'],
         ['Usable shelf depth', s.rackSlotDepth, 'mm'], ['Usable shelf height', s.rackSlotHeight, 'mm'],
         ['Rack structural length allowance', s.rackStructuralLength, 'mm'], ['Rack structural depth allowance', s.rackStructuralDepth, 'mm'],
-        ['Between boxes allowance', s.betweenBoxesAllowance ?? 0, 'mm; between units in both shelf directions only, no edge or vertical gap'], ['Rack structural height allowance', s.rackStructuralHeight, 'mm'], ['Maximum rack run length', s.maxRackRunLength, 'mm'],
+        ['Between boxes allowance', s.betweenBoxesAllowance ?? 0, 'mm; between units and at both frontage pillars; no depth-edge or vertical gap'], ['Rack structural height allowance', s.rackStructuralHeight, 'mm'], ['Maximum rack run length', s.maxRackRunLength, 'mm'],
         ['Legacy rack frontage clearance (unused)', s.rackFrontageClearance, 'mm; usable shelf dimensions already exclude required clearance'],
         ['Legacy rack depth clearance (unused)', s.rackDepthClearance, 'mm'], ['Legacy rack vertical clearance (unused)', s.rackVerticalClearance, 'mm'],
         ['Rack storage options', 'Per rack type; default off', 'Rotation prefers shorter frontage; stacking identical PN only; depth maximum two'],
@@ -994,7 +994,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         'Ground length = pallet L + clearance; ground width = pallet W + clearance. Pallets per row = FLOOR(maximum row depth LIMIT / ground length). Limit 0 means one unrestricted row per part. Rows = CEILING(floor positions / pallets per row).',
         'GS net = deepest occupied lane depth (mm) * lane width (mm) * lane count / 1000000; partial lanes reserve the same depth.',
         'GS with gangway = GS net + lane width (mm) * lanes * physical gangway (m) / 2000.',
-        'Boxes per slot = frontage positions × depth rows (1, or at most 2 when enabled) × stack layers (1, or FLOOR(usable H/unit H) when enabled); g is Between boxes allowance, between units only; unit height must fit usable shelf height. Storage options apply per rack type: preferred shorter frontage when rotation enabled, identical-PN stacks when enabled, maximum two depth rows when enabled.',
+        'Boxes per slot = FLOOR((usable length - g) / (unit frontage + g)) × depth rows (1, or at most 2 when enabled) × stack layers (1, or FLOOR(usable H/unit H) when enabled); g is Between boxes allowance, between units and at both frontage pillars; unit height must fit usable shelf height. Storage options apply per rack type: preferred shorter frontage when rotation enabled, identical-PN stacks when enabled, maximum two depth rows when enabled.',
         'Required storage pallets are rack units, using existing L/W/H. Usable shelf dimensions already exclude clearances/structure. Structural length/depth allowances are added only to rack floor footprint, not usable shelf area.',
         'Capacity per bay = boxes per slot × rack levels. Rack bays = CEILING(required pallets / capacity per bay). Floor stacking never applies to racks.',
         'PR net = whole rack bays * (usable shelf length + structural length) * (usable shelf depth + structural depth) / 1000000. Levels do not multiply the floor footprint.',
@@ -1445,7 +1445,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         field(structureGrid, 'rackStructuralDepth', 'Structural depth allowance');
         field(structureGrid, 'rackStructuralHeight', 'Structural height allowance');
         field(structureGrid, 'betweenBoxesAllowance', 'Between boxes allowance');
-        structure.append($('p','muted','Gap between units on the same shelf, in both length and depth directions. No gap is added at shelf edges or vertically. Default 0 mm. Applies to shared shelves and per-part capacity.'));
+        structure.append($('p','muted','Gap between pallets, plus the same clearance at both rack pillars along shelf length. Example: 100 + 1200 + 100 + 1200 + 100 = 2700 mm. Depth gaps remain between rows only; no vertical gap. Applies to capacity and layouts.'));
         const additional=section(body,'Additional rack types','Different types may be used for different bays. Best-bay selection favors occupied shelf percentage, floor area per occupied surface and less unused surface. It also compares complete one/two-bay finishes to avoid unnecessary partial bays. This is a packing estimate, not a guaranteed global optimum.');
         const cards=[];
         const typeFields=[['rackSlotLength','Usable shelf length',true],['rackSlotDepth','Usable shelf depth',true],['rackSlotHeight','Usable shelf height',true],['rackLevels','Rack levels',true,true],['rackStructuralLength','Structural length allowance'],['rackStructuralDepth','Structural depth allowance'],['rackStructuralHeight','Structural height allowance'],['betweenBoxesAllowance','Between boxes allowance'],['maxRackRunLength','Maximum rack run length',true]];

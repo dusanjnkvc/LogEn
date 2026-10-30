@@ -210,7 +210,7 @@
         !Number.isSafeInteger(requiredBoxes) || requiredBoxes < 0 || !Number.isSafeInteger(levels) || levels < 1)
       throw new Error('Rack sizing requires whole non-negative boxes, positive dimensions and whole positive levels.');
     const stackLayers=options.rackAllowStacking?floor(slotHeight/height):1;
-    const capacity = (l,w) => height <= slotHeight ? floor((slotLength + gap) / (l + gap)) * Math.min(options.rackAllowDepthRows?2:1,floor((slotDepth + gap) / (w + gap))) * stackLayers : 0;
+    const capacity = (l,w) => height <= slotHeight ? Math.max(0,floor((slotLength - gap) / (l + gap))) * Math.min(options.rackAllowDepthRows?2:1,floor((slotDepth + gap) / (w + gap))) * stackLayers : 0;
     const original = capacity(length,width), rotatedCapacity = capacity(width,length);
     const rotated=!!options.rackAllowRotation && (width<length ? rotatedCapacity>0 : original===0&&rotatedCapacity>0);
     const boxesPerSlot = rotated?rotatedCapacity:original;
@@ -395,7 +395,7 @@
           if(!best&&shelves.length<t.rackLevels){
             const sizing=rackForPart(0,r.input,t);if(!sizing)break;
             const w=sizing.rotated?r.input.width:r.input.length,d=sizing.rotated?r.input.length:r.input.width;
-            const free=[{x:0,y:0,w:t.rackSlotLength,d:t.rackAllowDepthRows?d:t.rackSlotDepth,depthRow:0}];if(t.rackAllowDepthRows&&t.rackSlotDepth>d+t.betweenBoxesAllowance)free.push({x:0,y:d+t.betweenBoxesAllowance,w:t.rackSlotLength,d:t.rackSlotDepth-d-t.betweenBoxesAllowance,depthRow:1});shelves.push({free,placements:[]});best={k:shelves.length-1,j:0,w,d};
+            const free=[{x:t.betweenBoxesAllowance,y:0,w:t.rackSlotLength-2*t.betweenBoxesAllowance,d:t.rackAllowDepthRows?d:t.rackSlotDepth,depthRow:0}];if(t.rackAllowDepthRows&&t.rackSlotDepth>d+t.betweenBoxesAllowance)free.push({x:t.betweenBoxesAllowance,y:d+t.betweenBoxesAllowance,w:t.rackSlotLength-2*t.betweenBoxesAllowance,d:t.rackSlotDepth-d-t.betweenBoxesAllowance,depthRow:1});shelves.push({free,placements:[]});best={k:shelves.length-1,j:0,w,d};
           }
           if(!best)break;
           const sh=shelves[best.k],rect=sh.free.splice(best.j,1)[0],g=t.betweenBoxesAllowance;
