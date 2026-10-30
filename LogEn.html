@@ -83,6 +83,21 @@ select option:checked{background:var(--yellow);color:#111}
 .implementation-panel{padding:26px;max-width:900px}.implementation-panel h2{margin-top:0}.implementation-panel .checkbox-field small{display:block;margin-top:4px}.implementation-panel .notice{margin:22px 0}.implementation-file{display:flex;justify-content:space-between;align-items:center;gap:18px;border:1px solid var(--border);padding:18px;border-radius:12px;margin:20px 0}.implementation-file strong{overflow-wrap:anywhere}.implementation-file p{margin:5px 0 0}@media(max-width:600px){.implementation-panel{padding:18px}.implementation-file{align-items:flex-start;flex-direction:column}}
 
 .implementation-panel+.implementation-panel{margin-top:22px}.implementation-option{margin-top:18px}.existing-rack-row{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;align-items:end;gap:14px;margin:20px 0}.implementation-allocation-table{max-height:440px;overflow:auto;margin-top:20px}@media(max-width:650px){.existing-rack-row{grid-template-columns:1fr}.existing-rack-row .btn{justify-self:start}}
+
+/* Freeze part identifiers and keep the horizontal control at the visible lower edge. */
+.implementation-table-region{position:relative;margin-top:20px;min-width:0}
+.implementation-table-region .implementation-allocation-table{margin-top:0;max-height:min(55vh,440px);overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
+.implementation-allocation-table .data-table{border-collapse:separate;border-spacing:0;min-width:820px}
+.implementation-allocation-table thead th{position:sticky;top:0;z-index:2;background:#151719}
+.implementation-allocation-table th:first-child,.implementation-allocation-table td:first-child{position:sticky;left:0;min-width:180px;max-width:240px;overflow:hidden;text-overflow:ellipsis;background:var(--surface);z-index:1;box-shadow:2px 0 0 var(--border)}
+.implementation-allocation-table thead th:first-child{z-index:3;background:#151719}
+.implementation-allocation-table tbody tr:hover td:first-child{background:#24241b}
+.implementation-scrollbar{position:sticky;bottom:0;z-index:4;max-width:100%;height:20px;overflow-x:scroll;overflow-y:hidden;background:#111315;border-top:1px solid var(--border);scrollbar-color:#87909d #111315;scrollbar-width:auto}
+.implementation-scrollbar>div{height:1px}
+.implementation-scrollbar::-webkit-scrollbar{height:16px}
+.implementation-scrollbar::-webkit-scrollbar-track{background:#111315;border-radius:8px}
+.implementation-scrollbar::-webkit-scrollbar-thumb{background:#87909d;border:3px solid #111315;border-radius:8px;min-width:40px}
+.implementation-scrollbar::-webkit-scrollbar-thumb:hover{background:var(--yellow)}
 </style>
 </head>
 <body>
@@ -2087,8 +2102,20 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const target=$('implementation-results');if(!target)return;const plan=implementationPlan();
     if(!plan.available){target.innerHTML=`<div class="notice error">${plan.errors.map(escape).join('<br>')}</div>`;return;}
     const metric=(label,value)=>`<div><span>${label}</span><strong>${area(value)} m²</strong></div>`;
-    target.innerHTML=`<div class="improvement-metrics split-metrics">${metric('Total — without gangways',plan.totalWithoutGangways)}${metric('Total — with allocated gangways',plan.totalWithGangways)}${metric('Racks — without gangways',plan.rack.withoutGangways)}${metric('Racks — with allocated gangways',plan.rack.withGangways)}${metric('Ground — without gangways',plan.groundWithoutGangways)}${metric('Ground — with allocated gangways',plan.groundWithGangways)}</div><p><strong>${count(plan.rackPallets)}</strong> pallets in ${count(plan.rack.bays)} existing bays · <strong>${count(plan.groundPallets)}</strong> pallets on ground</p>${plan.invalidCount?`<div class="notice error">Partial totals: ${count(plan.invalidCount)} PNs need review. Their invalid areas or quantities are excluded and listed below.</div>`:''}<button class="btn btn-secondary" data-action="implementation-rack-layout" ${plan.rack.bays?'':'disabled'}>View filled racks</button><div class="table-scroll implementation-allocation-table"><table class="data-table"><thead><tr><th>Part Number</th><th>Required pallets</th><th>In racks</th><th>On ground</th><th>Ground storage m²</th><th>Status</th></tr></thead><tbody>${plan.rows.map(r=>`<tr><td>${escape(r.input.partNumber)}</td><td>${count(r.required)}</td><td>${count(r.rackPallets)}</td><td>${count(r.groundPallets)}</td><td>${r.groundPallets===0?'0.00':area(r.ground?.withoutGangways)}</td><td><strong>${r.required===null?'Unassigned':r.rackPallets>0&&r.groundPallets>0?'Rack + ground storage':r.rackPallets>0?'Rack storage':r.groundPallets>0?'Ground storage':'No storage required'}</strong>${r.errors.length?`<small class="difference-caption error">${escape(r.errors.join(' '))}</small>`:''}</td></tr>`).join('')}</tbody></table></div><p class="muted small-note">The existing racks remain in the area total even when partly empty. Shared gangways use the same allocated planning model as the dashboard. Allocation is a feasible packing estimate.</p>`;
+    target.innerHTML=`<div class="improvement-metrics split-metrics">${metric('Total — without gangways',plan.totalWithoutGangways)}${metric('Total — with allocated gangways',plan.totalWithGangways)}${metric('Racks — without gangways',plan.rack.withoutGangways)}${metric('Racks — with allocated gangways',plan.rack.withGangways)}${metric('Ground — without gangways',plan.groundWithoutGangways)}${metric('Ground — with allocated gangways',plan.groundWithGangways)}</div><p><strong>${count(plan.rackPallets)}</strong> pallets in ${count(plan.rack.bays)} existing bays · <strong>${count(plan.groundPallets)}</strong> pallets on ground</p>${plan.invalidCount?`<div class="notice error">Partial totals: ${count(plan.invalidCount)} PNs need review. Their invalid areas or quantities are excluded and listed below.</div>`:''}<button class="btn btn-secondary" data-action="implementation-rack-layout" ${plan.rack.bays?'':'disabled'}>View filled racks</button><div class="implementation-table-region"><div class="table-scroll implementation-allocation-table" id="implementation-table-viewport"><table class="data-table"><thead><tr><th>Part Number</th><th>Required pallets</th><th>In racks</th><th>On ground</th><th>Ground storage m²</th><th>Status</th></tr></thead><tbody>${plan.rows.map(r=>`<tr><td title="${escape(r.input.partNumber)}">${escape(r.input.partNumber)}</td><td>${count(r.required)}</td><td>${count(r.rackPallets)}</td><td>${count(r.groundPallets)}</td><td>${r.groundPallets===0?'0.00':area(r.ground?.withoutGangways)}</td><td><strong>${r.required===null?'Unassigned':r.rackPallets>0&&r.groundPallets>0?'Rack + ground storage':r.rackPallets>0?'Rack storage':r.groundPallets>0?'Ground storage':'No storage required'}</strong>${r.errors.length?`<small class="difference-caption error">${escape(r.errors.join(' '))}</small>`:''}</td></tr>`).join('')}</tbody></table></div><div class="implementation-scrollbar" id="implementation-horizontal-scroll" tabindex="0" role="region" aria-label="Scroll storage allocation table horizontally"><div aria-hidden="true"></div></div></div><p class="muted small-note">The existing racks remain in the area total even when partly empty. Shared gangways use the same allocated planning model as the dashboard. Allocation is a feasible packing estimate.</p>`;
+    requestAnimationFrame(bindImplementationScroll);
   }
+  function sizeImplementationScroll(){
+    const viewport=$('implementation-table-viewport'),bar=$('implementation-horizontal-scroll');if(!viewport||!bar)return;
+    bar.style.width=viewport.clientWidth+'px';bar.firstElementChild.style.width=viewport.scrollWidth+'px';bar.scrollLeft=viewport.scrollLeft;
+  }
+  function bindImplementationScroll(){
+    const viewport=$('implementation-table-viewport'),bar=$('implementation-horizontal-scroll');if(!viewport||!bar)return;
+    sizeImplementationScroll();
+    viewport.addEventListener('scroll',()=>{if(bar.scrollLeft!==viewport.scrollLeft)bar.scrollLeft=viewport.scrollLeft;},{passive:true});
+    bar.addEventListener('scroll',()=>{if(viewport.scrollLeft!==bar.scrollLeft)viewport.scrollLeft=bar.scrollLeft;},{passive:true});
+  }
+  window.addEventListener('resize',sizeImplementationScroll,{passive:true});
   function saveImplementation(changes,rerender=true){const p=project();p.implementation={...p.implementation,...changes};p.updatedAt=new Date().toISOString();save();if(rerender)render();else renderImplementationResults();}
   async function convertDrawingPDF(){
     const p=project();await work('AutoCAD is creating the PDF on this PC…',async()=>{
