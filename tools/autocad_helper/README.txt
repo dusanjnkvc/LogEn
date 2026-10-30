@@ -3,7 +3,7 @@ LogEn local AutoCAD PDF helper
 1. Extract this ZIP to a folder on your Windows PC.
 2. Install and activate licensed AutoCAD (Core Console and DWG To PDF.pc3 are required).
 3. Double-click Start LogEn AutoCAD Helper.vbs. The helper runs in the background for this session.
-4. In LogEn > Implementation, upload DWG and click Create PDF from DWG.
+4. In LogEn > Warehouse Designer, upload DWG and click Create PDF from DWG.
 5. If Chrome asks, allow local network access for LogEn. Download PDF after conversion completes.
 
 No Python, cloud converter or Windows administrator account is required. Windows PowerShell 5.1 is used. If Windows blocks downloaded scripts, unblock the extracted files in their Properties first. Company policy can disable scripts or Core Console; contact your administrator in that case.
