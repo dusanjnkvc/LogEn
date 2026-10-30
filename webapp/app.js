@@ -130,7 +130,20 @@
     return `<section class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${subtitle}</p></div><div class="actions">${actions}</div></section>`;
   }
   function importButtons() {
-    return `<button class="btn btn-secondary" data-action="template">${icon('download')}Download template</button><button class="btn btn-primary" data-action="import">${icon('upload')}Import Excel</button>`;
+    return `<div class="warehouse-heading-actions"><button class="improve-warehouse" data-action="improve-warehouse" aria-label="✦ Improve Warehouse →"><span class="ai-sparkle" aria-hidden="true">✦</span><span>Improve Warehouse</span><span aria-hidden="true">→</span></button><div class="import-actions"><button class="btn btn-secondary" data-action="template">${icon('download')}Download template</button><button class="btn btn-primary" data-action="import">${icon('upload')}Import Excel</button></div></div>`;
+  }
+  async function improveWarehouse(){
+    const c=calc(),s=project().settings,tips=[];
+    if(c.settingsErrors.length)tips.push('Correct the warehouse settings before comparing storage options.');
+    if(c.invalidCount)tips.push(`${count(c.invalidCount)} part numbers need review. Current totals include only calculable inventory for each storage scenario.`);
+    if(c.nonFittingPallets)tips.push(`${count(c.nonFittingPallets)} required pallets do not fit the configured rack types. Add a suitable rack type or plan floor storage for these parts.`);
+    if(c.rackAvailableShelfArea>0)tips.push(`Rack shelf utilization is ${area(c.rackUtilizationPercent)}%. Compare usable dimensions and levels of additional rack types to reduce unused shelf surface.`);
+    if(D.configuredRackTypes(s).length===1)tips.push('Add alternative rack types in Warehouse settings to let LogEn compare suitable types per bay.');
+    if(D.configuredRackTypes(s).some(t=>!t.rackAllowRotation))tips.push('Where handling rules permit it, enabling rotation can allow the shorter pallet side along the frontage. Review rack fit after changing this option.');
+    if(!c.results.length)tips.push('Import inventory or add part numbers to build your warehouse comparison.');
+    const category=selectedCategory===null?'All categories':selectedCategory||'Uncategorized';
+    const body=`<p class="muted">${escape(project().name)} · ${escape(category)}</p><div class="improvement-metrics"><div><span>Floor storage</span><strong>${area(c.floorWithoutGangways)} m²</strong></div><div><span>Rack storage</span><strong>${area(c.rackWithoutGangways)} m²</strong></div><div><span>Difference · floor minus racks</span><strong>${signed(c.savingWithoutGangways)} m²</strong></div></div><h3>Opportunities to review</h3><ul class="improvement-tips">${tips.map(t=>`<li>${escape(t)}</li>`).join('')}</ul><p class="muted">Suggestions use the current project and selected category. Rack allocation is a planning estimate; verify physical and handling constraints before changing settings.</p>`;
+    if(await modal({title:'Improve Warehouse',eyebrow:'WAREHOUSE INSIGHTS',body,confirm:'Open warehouse settings',cancel:'Close'}))await settings();
   }
   function validationBanner(c) {
     if (c.settingsErrors?.length) return `<div class="notice error"><strong>Warehouse settings need attention.</strong> Results are unavailable until these are corrected.<ul class="validation-list">${c.settingsErrors.map(e => `<li>${escape(e)}</li>`).join('')}</ul><button class="btn btn-secondary small" data-action="settings">Review settings</button></div>`;
@@ -359,6 +372,7 @@
       if(b.dataset.deleteProject)return deleteProject(b.dataset.deleteProject);
       if(b.dataset.restoreProject)return restoreProject(b.dataset.restoreProject);
       switch(b.dataset.action){
+        case 'improve-warehouse':await improveWarehouse();break;
         case 'import':$('excel-input').click();break;
         case 'template':await template();break;
         case 'export':await exportResults();break;
