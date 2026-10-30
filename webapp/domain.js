@@ -543,10 +543,13 @@
     const rack=sharedRackPlan(base.results,{...createDefaultSettings(),...settings},limits);
     if(!rack.available)return {available:false,errors:[rack.error]};
     const rows=base.results.map(r=>{
-      if(!r.isPlanningValid)return {input:r.input,required:null,rackPallets:0,groundPallets:null,errors:r.errors};
+      if(!r.isPlanningValid)return {input:r.input,required:null,rackPallets:0,groundPallets:null,storageType:'Unassigned',groundReason:'',errors:r.errors};
       const rackPallets=rack.placedByPN?.[r.input.partNumber]||0,groundPallets=r.requiredPallets-rackPallets;
       const ground=groundPallets?calculatePart(r.input,settings,groundPallets):null;
-      return {input:r.input,required:r.requiredPallets,rackPallets,groundPallets,ground:ground?.floor,errors:groundPallets&&!ground?.isFloorValid?(ground?.errors||['Invalid ground calculation']):[]};
+      const storageType=rackPallets>0?(groundPallets>0?'Rack + ground storage':'Rack storage'):groundPallets>0?'Ground storage':'No storage required';
+      const usableTypes=types.filter(t=>(limits[t.id]||0)>0);
+      const groundReason=!groundPallets?'':config.greenfield?'Empty area planned as ground storage.':!usableTypes.length?'No existing rack bays available.':!usableTypes.some(t=>rackForPart(0,r.input,t))?'Pallet dimensions do not fit the available rack types.':'Remaining pallets have no usable space in the entered rack bays.';
+      return {input:r.input,required:r.requiredPallets,rackPallets,groundPallets,storageType,groundReason,ground:ground?.floor,errors:groundPallets&&!ground?.isFloorValid?(ground?.errors||['Invalid ground calculation']):[]};
     });
     const groundWithoutGangways=rows.reduce((n,r)=>n+(r.ground?.withoutGangways||0),0),groundWithGangways=rows.reduce((n,r)=>n+(r.ground?.withGangways||0),0);
     return {available:true,errors:[],rows,rack,totalPallets:base.totalRequiredPallets,rackPallets:rack.quantity,groundPallets:rows.reduce((n,r)=>n+(r.groundPallets||0),0),groundWithoutGangways,groundWithGangways,totalWithoutGangways:rack.withoutGangways+groundWithoutGangways,totalWithGangways:rack.withGangways+groundWithGangways,invalidCount:rows.filter(r=>r.errors.length).length};

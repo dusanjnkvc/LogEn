@@ -88,3 +88,5 @@ select option:checked{background:var(--yellow);color:#111}
 .implementation-scrollbar::-webkit-scrollbar-track{background:#111315;border-radius:8px}
 .implementation-scrollbar::-webkit-scrollbar-thumb{background:#87909d;border:3px solid #111315;border-radius:8px;min-width:40px}
 .implementation-scrollbar::-webkit-scrollbar-thumb:hover{background:var(--yellow)}
+
+.storage-location.has-ground{color:var(--yellow)}.storage-location.rack-only{color:var(--green)}.implementation-allocation-table td:last-child{min-width:270px}.implementation-allocation-table td:last-child .difference-caption{white-space:normal;max-width:320px}
