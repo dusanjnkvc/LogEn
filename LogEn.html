@@ -79,6 +79,8 @@ select option:checked{background:var(--yellow);color:#111}
 .improvement-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:24px 0}.improvement-metrics>div{background:#151821;border:1px solid var(--border);border-radius:12px;padding:16px}.improvement-metrics span{display:block;color:var(--muted);font-size:11px}.improvement-metrics strong{display:block;margin-top:7px;font-size:20px;color:var(--yellow)}.improvement-tips{padding-left:20px}.improvement-tips li{padding:7px 0}@media(max-width:600px){.improvement-metrics{grid-template-columns:1fr}}
 
 .split-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.warehouse-improvement-dialog .notice ul{padding-left:20px;max-height:240px;overflow:auto}@media(max-width:600px){.split-metrics{grid-template-columns:1fr}}
+
+.implementation-panel{padding:26px;max-width:900px}.implementation-panel h2{margin-top:0}.implementation-panel .checkbox-field small{display:block;margin-top:4px}.implementation-panel .notice{margin:22px 0}.implementation-file{display:flex;justify-content:space-between;align-items:center;gap:18px;border:1px solid var(--border);padding:18px;border-radius:12px;margin:20px 0}.implementation-file strong{overflow-wrap:anywhere}.implementation-file p{margin:5px 0 0}@media(max-width:600px){.implementation-panel{padding:18px}.implementation-file{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
@@ -110,6 +112,7 @@ select option:checked{background:var(--yellow);color:#111}
       <button class="nav-item active" data-view="dashboard"><svg class="icon"><use href="#i-grid"/></svg>Overview<span class="nav-dot"></span></button>
       <button class="nav-item" data-view="consumption"><svg class="icon"><use href="#i-chart"/></svg>Shift consumption</button>
       <button class="nav-item" data-view="parts"><svg class="icon"><use href="#i-box"/></svg>Part details<span id="nav-count" class="count-badge">0</span></button>
+      <button class="nav-item" data-view="implementation"><svg class="icon"><use href="#i-folder"/></svg>Implementation</button>
       <button class="nav-item" id="settings-nav"><svg class="icon"><use href="#i-settings"/></svg>Warehouse settings</button>
       <button class="nav-item" data-view="projects"><svg class="icon"><use href="#i-folder"/></svg>Projects</button>
     </nav>
@@ -122,6 +125,7 @@ select option:checked{background:var(--yellow);color:#111}
     <main id="main" tabindex="-1"></main>
     <footer class="page-footer"><span>LogEn · Warehouse Footprint Calculator</span><span>Allocated planning estimates · Dedicated floor rows · Shared rack bays</span></footer>
   </div>
+  <input id="dwg-input" type="file" accept=".dwg" hidden>
   <input id="excel-input" type="file" accept=".xlsx" hidden>
   <input id="backup-input" type="file" accept=".json" hidden>
   <div id="toast" role="status" aria-live="polite"></div>
@@ -1999,6 +2003,24 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       return `<tr><td><button class="part-link" data-detail="${index}">${icon('box')}${escape(r.input.partNumber || '(blank part number)')}</button></td>${numbers.map((n,i)=>`<td class="numeric">${i===1?stackingControl(r,index):n}</td>`).join('')}<td><span>${count(r.input.qtyBox)} parts/box × ${count(r.input.qtyOnPallet)} boxes/pallet</span><br><small class="muted">${decimal(r.input.consumptionPerShift)} parts/shift · ${decimal(r.input.doh)} input DOH<br>${count(r.input.length)} × ${count(r.input.width)} × ${count(r.input.height)} mm</small></td><td class="${r.isValid?'':'invalid-cell'}">${r.isValid ? '<span class="badge good">Validated</span>' : escape(r.errors.join(' '))}</td><td><button class="icon-btn" data-edit="${r.sourceIndex??index}" title="Edit ${escape(r.input.partNumber)}" aria-label="Edit ${escape(r.input.partNumber)}">${icon('edit')}</button><button class="icon-btn" data-delete="${r.sourceIndex??index}" title="Delete ${escape(r.input.partNumber)}" aria-label="Delete ${escape(r.input.partNumber)}">${icon('trash')}</button></td></tr>`;
     }).join('') || '<tr><td colspan="19" style="text-align:center;padding:35px">No matching part numbers.</td></tr>'}</tbody><tfoot><tr><th>Whole project totals</th><td>${count(c.totalRequiredPallets)}</td><td></td><td>${count(c.totalFloorPositions)}</td><td>${count(c.totalFloorRows)}</td><td>${area(c.floorWithoutGangways)}</td><td>${area(c.floorWithGangways)}</td><td></td><td></td><td></td><td>${count(c.totalRackBays)}</td><td>${count(c.totalRackRuns)}</td><td>${area(c.rackWithoutGangways)}</td><td>${area(c.rackWithGangways)}</td><td>${area(c.rackUnusedShelfArea)}</td><td>${area(c.rackUtilizationPercent)}</td><td colspan="3"></td></tr></tfoot></table></div><div class="table-footer"><span>${count(indexed.length)} matching part numbers · All areas in m², shown to two decimals</span><span class="project-floor-total">Whole project Floor storage m²: ${c.settingsErrors?.length?'—':area(c.floorWithoutGangways)} m²</span><div class="pagination"><button data-page="-1" ${page===0?'disabled':''}>Previous</button><span>${page+1} / ${pages}</span><button data-page="1" ${page===pages-1?'disabled':''}>Next</button></div></div>`;
   }
+  function renderImplementation(){
+    const config=project().implementation||{},file=config.dwg;
+    $('main').innerHTML=heading('WAREHOUSE IMPLEMENTATION','Implementation','Upload the existing warehouse drawing or mark an empty area for a new implementation.')+`<section class="panel implementation-panel"><h2>Warehouse area</h2><label class="checkbox-field"><input id="implementation-greenfield" type="checkbox" ${config.greenfield?'checked':''}><span><strong>Greenfeild</strong><small class="muted">The area is blank, with no existing racks, equipment or other installations.</small></span></label><div class="notice">${config.greenfield?'Greenfeild selected: plan for an empty area. An existing warehouse DWG is optional.':'Existing warehouse: upload its AutoCAD DWG drawing as the implementation reference.'}</div><h3>Existing warehouse drawing</h3><p class="muted">Upload an AutoCAD .dwg file. The original drawing is saved locally for this project.</p><button class="btn btn-primary" data-action="upload-dwg">${icon('upload')}Upload DWG</button>${file?`<div class="implementation-file"><div><strong>${escape(file.name)}</strong><p class="muted">${decimal(file.size/1024/1024)} MB · Added ${escape(new Date(file.uploadedAt).toLocaleDateString('en-GB'))}</p></div><button class="btn btn-secondary" data-action="download-dwg">${icon('download')}Download DWG</button></div>`:'<p class="muted">No DWG uploaded for this project.</p>'}<p class="muted small-note">DWG is stored as a reference file; drawing preview and automatic geometry extraction are not available. Keep a separate copy when moving to another PC—the JSON workspace backup does not include DWG files.</p></section>`;
+  }
+  function drawingStore(mode,action){
+    return new Promise((resolve,reject)=>{const request=indexedDB.open('logen.project.drawings',1);request.onupgradeneeded=()=>request.result.createObjectStore('drawings');request.onerror=()=>reject(new Error('Drawing storage is unavailable.'));request.onsuccess=()=>{const db=request.result;let result;const tx=db.transaction('drawings',mode);const task=action(tx.objectStore('drawings'));task.onsuccess=()=>{result=task.result;};tx.oncomplete=()=>{db.close();resolve(result);};tx.onerror=()=>{db.close();reject(new Error('Could not save or read the drawing. Browser storage may be full.'));};tx.onabort=tx.onerror;};});
+  }
+  async function uploadDrawing(file){
+    if(!file)return;
+    await work('Saving warehouse drawing…',async()=>{
+      if(!/\.dwg$/i.test(file.name))throw new Error('Choose an AutoCAD .dwg file.');
+      const signature=await file.slice(0,6).text();if(!/^AC\d{4}$/.test(signature))throw new Error('This file does not have a recognized AutoCAD DWG header. Choose the original .dwg file.');
+      const p=project();await drawingStore('readwrite',store=>store.put(file,p.id));
+      const implementation={...p.implementation,dwg:{name:file.name,size:file.size,uploadedAt:new Date().toISOString()}};
+      p.implementation=implementation;p.updatedAt=new Date().toISOString();save();render();toast('Warehouse DWG saved locally.');
+    });
+  }
+  async function downloadDrawing(){const p=project();await work('Opening warehouse drawing…',async()=>{const file=await drawingStore('readonly',store=>store.get(p.id));if(!file)throw new Error('This drawing is not stored on this device. Upload the DWG again.');download(file,p.implementation?.dwg?.name||'Warehouse.dwg','application/acad');});}
   function renderProjects() {
     const deleted=state.deletedProjects||[];
     $('main').innerHTML = heading('YOUR LOCAL WORKSPACE', 'Warehouse projects', 'Each project keeps its own inventory and warehouse settings on this device.', `<button class="btn btn-secondary danger-text" data-delete-project="${escape(state.activeId)}">${icon('trash')}Delete current project</button><button class="btn btn-primary" data-action="new-project">${icon('plus')}New warehouse project</button>`) +
@@ -2014,7 +2036,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     $('nav-count').textContent=p.parts.length;
     document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===view));
     const c=calc();
-    if (view==='parts') renderParts(c); else if(view==='consumption') renderConsumption(c); else if(view==='projects') renderProjects(); else renderDashboard(c);
+    if (view==='parts') renderParts(c); else if(view==='consumption') renderConsumption(c); else if(view==='projects') renderProjects(); else if(view==='implementation') renderImplementation(); else renderDashboard(c);
   }
   function go(target) { if(busy)return;view=target;page=0;render();window.scrollTo({top:0,behavior:'instant'}); }
   async function newProject() {
@@ -2099,6 +2121,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     update({settings:{...project().settings,[key]:number,...(key==='customCoverageDays'?{coverageMode:'custom'}:{})}},true);
   });
   document.addEventListener('change',event=>{
+    if(event.target.id==='implementation-greenfield'){update({implementation:{...project().implementation,greenfield:event.target.checked}});return;}
     if(event.target.id==='category-filter'){selectedCategory=JSON.parse(event.target.value);page=0;render();return;}
     if(event.target.hasAttribute('data-floor-stacking-mode')&&!busy&&!loadError){
       productionDrafts.manualStacking=undefined;
@@ -2125,6 +2148,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if(b.dataset.restoreProject)return restoreProject(b.dataset.restoreProject);
       switch(b.dataset.action){
         case 'improve-warehouse':await improveWarehouse();break;
+        case 'upload-dwg':$('dwg-input').click();break;
+        case 'download-dwg':await downloadDrawing();break;
         case 'import':$('excel-input').click();break;
         case 'template':await template();break;
         case 'export':await exportResults();break;
@@ -2147,6 +2172,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   $('new-project').addEventListener('click',newProject);
   $('settings-nav').addEventListener('click',()=>{if(!loadError)settings();});
   $('method-help').addEventListener('click',help);
+  $('dwg-input').addEventListener('change',async event=>{const file=event.target.files[0];event.target.value='';await uploadDrawing(file);});
   $('excel-input').addEventListener('change',async event=>{const file=event.target.files[0];event.target.value='';await importFile(file);});
   $('backup-input').addEventListener('change',async event=>{const file=event.target.files[0];event.target.value='';await restore(file);});
   window.addEventListener('unhandledrejection',event=>{console.error(event.reason);toast(event.reason?.message||'An unexpected error occurred. Your last saved workspace is retained.',true);});

@@ -39,6 +39,7 @@
       <button class="nav-item active" data-view="dashboard"><svg class="icon"><use href="#i-grid"/></svg>Overview<span class="nav-dot"></span></button>
       <button class="nav-item" data-view="consumption"><svg class="icon"><use href="#i-chart"/></svg>Shift consumption</button>
       <button class="nav-item" data-view="parts"><svg class="icon"><use href="#i-box"/></svg>Part details<span id="nav-count" class="count-badge">0</span></button>
+      <button class="nav-item" data-view="implementation"><svg class="icon"><use href="#i-folder"/></svg>Implementation</button>
       <button class="nav-item" id="settings-nav"><svg class="icon"><use href="#i-settings"/></svg>Warehouse settings</button>
       <button class="nav-item" data-view="projects"><svg class="icon"><use href="#i-folder"/></svg>Projects</button>
     </nav>
@@ -51,6 +52,7 @@
     <main id="main" tabindex="-1"></main>
     <footer class="page-footer"><span>LogEn · Warehouse Footprint Calculator</span><span>Allocated planning estimates · Dedicated floor rows · Shared rack bays</span></footer>
   </div>
+  <input id="dwg-input" type="file" accept=".dwg" hidden>
   <input id="excel-input" type="file" accept=".xlsx" hidden>
   <input id="backup-input" type="file" accept=".json" hidden>
   <div id="toast" role="status" aria-live="polite"></div>

@@ -256,6 +256,24 @@
       return `<tr><td><button class="part-link" data-detail="${index}">${icon('box')}${escape(r.input.partNumber || '(blank part number)')}</button></td>${numbers.map((n,i)=>`<td class="numeric">${i===1?stackingControl(r,index):n}</td>`).join('')}<td><span>${count(r.input.qtyBox)} parts/box × ${count(r.input.qtyOnPallet)} boxes/pallet</span><br><small class="muted">${decimal(r.input.consumptionPerShift)} parts/shift · ${decimal(r.input.doh)} input DOH<br>${count(r.input.length)} × ${count(r.input.width)} × ${count(r.input.height)} mm</small></td><td class="${r.isValid?'':'invalid-cell'}">${r.isValid ? '<span class="badge good">Validated</span>' : escape(r.errors.join(' '))}</td><td><button class="icon-btn" data-edit="${r.sourceIndex??index}" title="Edit ${escape(r.input.partNumber)}" aria-label="Edit ${escape(r.input.partNumber)}">${icon('edit')}</button><button class="icon-btn" data-delete="${r.sourceIndex??index}" title="Delete ${escape(r.input.partNumber)}" aria-label="Delete ${escape(r.input.partNumber)}">${icon('trash')}</button></td></tr>`;
     }).join('') || '<tr><td colspan="19" style="text-align:center;padding:35px">No matching part numbers.</td></tr>'}</tbody><tfoot><tr><th>Whole project totals</th><td>${count(c.totalRequiredPallets)}</td><td></td><td>${count(c.totalFloorPositions)}</td><td>${count(c.totalFloorRows)}</td><td>${area(c.floorWithoutGangways)}</td><td>${area(c.floorWithGangways)}</td><td></td><td></td><td></td><td>${count(c.totalRackBays)}</td><td>${count(c.totalRackRuns)}</td><td>${area(c.rackWithoutGangways)}</td><td>${area(c.rackWithGangways)}</td><td>${area(c.rackUnusedShelfArea)}</td><td>${area(c.rackUtilizationPercent)}</td><td colspan="3"></td></tr></tfoot></table></div><div class="table-footer"><span>${count(indexed.length)} matching part numbers · All areas in m², shown to two decimals</span><span class="project-floor-total">Whole project Floor storage m²: ${c.settingsErrors?.length?'—':area(c.floorWithoutGangways)} m²</span><div class="pagination"><button data-page="-1" ${page===0?'disabled':''}>Previous</button><span>${page+1} / ${pages}</span><button data-page="1" ${page===pages-1?'disabled':''}>Next</button></div></div>`;
   }
+  function renderImplementation(){
+    const config=project().implementation||{},file=config.dwg;
+    $('main').innerHTML=heading('WAREHOUSE IMPLEMENTATION','Implementation','Upload the existing warehouse drawing or mark an empty area for a new implementation.')+`<section class="panel implementation-panel"><h2>Warehouse area</h2><label class="checkbox-field"><input id="implementation-greenfield" type="checkbox" ${config.greenfield?'checked':''}><span><strong>Greenfeild</strong><small class="muted">The area is blank, with no existing racks, equipment or other installations.</small></span></label><div class="notice">${config.greenfield?'Greenfeild selected: plan for an empty area. An existing warehouse DWG is optional.':'Existing warehouse: upload its AutoCAD DWG drawing as the implementation reference.'}</div><h3>Existing warehouse drawing</h3><p class="muted">Upload an AutoCAD .dwg file. The original drawing is saved locally for this project.</p><button class="btn btn-primary" data-action="upload-dwg">${icon('upload')}Upload DWG</button>${file?`<div class="implementation-file"><div><strong>${escape(file.name)}</strong><p class="muted">${decimal(file.size/1024/1024)} MB · Added ${escape(new Date(file.uploadedAt).toLocaleDateString('en-GB'))}</p></div><button class="btn btn-secondary" data-action="download-dwg">${icon('download')}Download DWG</button></div>`:'<p class="muted">No DWG uploaded for this project.</p>'}<p class="muted small-note">DWG is stored as a reference file; drawing preview and automatic geometry extraction are not available. Keep a separate copy when moving to another PC—the JSON workspace backup does not include DWG files.</p></section>`;
+  }
+  function drawingStore(mode,action){
+    return new Promise((resolve,reject)=>{const request=indexedDB.open('logen.project.drawings',1);request.onupgradeneeded=()=>request.result.createObjectStore('drawings');request.onerror=()=>reject(new Error('Drawing storage is unavailable.'));request.onsuccess=()=>{const db=request.result;let result;const tx=db.transaction('drawings',mode);const task=action(tx.objectStore('drawings'));task.onsuccess=()=>{result=task.result;};tx.oncomplete=()=>{db.close();resolve(result);};tx.onerror=()=>{db.close();reject(new Error('Could not save or read the drawing. Browser storage may be full.'));};tx.onabort=tx.onerror;};});
+  }
+  async function uploadDrawing(file){
+    if(!file)return;
+    await work('Saving warehouse drawing…',async()=>{
+      if(!/\.dwg$/i.test(file.name))throw new Error('Choose an AutoCAD .dwg file.');
+      const signature=await file.slice(0,6).text();if(!/^AC\d{4}$/.test(signature))throw new Error('This file does not have a recognized AutoCAD DWG header. Choose the original .dwg file.');
+      const p=project();await drawingStore('readwrite',store=>store.put(file,p.id));
+      const implementation={...p.implementation,dwg:{name:file.name,size:file.size,uploadedAt:new Date().toISOString()}};
+      p.implementation=implementation;p.updatedAt=new Date().toISOString();save();render();toast('Warehouse DWG saved locally.');
+    });
+  }
+  async function downloadDrawing(){const p=project();await work('Opening warehouse drawing…',async()=>{const file=await drawingStore('readonly',store=>store.get(p.id));if(!file)throw new Error('This drawing is not stored on this device. Upload the DWG again.');download(file,p.implementation?.dwg?.name||'Warehouse.dwg','application/acad');});}
   function renderProjects() {
     const deleted=state.deletedProjects||[];
     $('main').innerHTML = heading('YOUR LOCAL WORKSPACE', 'Warehouse projects', 'Each project keeps its own inventory and warehouse settings on this device.', `<button class="btn btn-secondary danger-text" data-delete-project="${escape(state.activeId)}">${icon('trash')}Delete current project</button><button class="btn btn-primary" data-action="new-project">${icon('plus')}New warehouse project</button>`) +
@@ -271,7 +289,7 @@
     $('nav-count').textContent=p.parts.length;
     document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===view));
     const c=calc();
-    if (view==='parts') renderParts(c); else if(view==='consumption') renderConsumption(c); else if(view==='projects') renderProjects(); else renderDashboard(c);
+    if (view==='parts') renderParts(c); else if(view==='consumption') renderConsumption(c); else if(view==='projects') renderProjects(); else if(view==='implementation') renderImplementation(); else renderDashboard(c);
   }
   function go(target) { if(busy)return;view=target;page=0;render();window.scrollTo({top:0,behavior:'instant'}); }
   async function newProject() {
@@ -356,6 +374,7 @@
     update({settings:{...project().settings,[key]:number,...(key==='customCoverageDays'?{coverageMode:'custom'}:{})}},true);
   });
   document.addEventListener('change',event=>{
+    if(event.target.id==='implementation-greenfield'){update({implementation:{...project().implementation,greenfield:event.target.checked}});return;}
     if(event.target.id==='category-filter'){selectedCategory=JSON.parse(event.target.value);page=0;render();return;}
     if(event.target.hasAttribute('data-floor-stacking-mode')&&!busy&&!loadError){
       productionDrafts.manualStacking=undefined;
@@ -382,6 +401,8 @@
       if(b.dataset.restoreProject)return restoreProject(b.dataset.restoreProject);
       switch(b.dataset.action){
         case 'improve-warehouse':await improveWarehouse();break;
+        case 'upload-dwg':$('dwg-input').click();break;
+        case 'download-dwg':await downloadDrawing();break;
         case 'import':$('excel-input').click();break;
         case 'template':await template();break;
         case 'export':await exportResults();break;
@@ -404,6 +425,7 @@
   $('new-project').addEventListener('click',newProject);
   $('settings-nav').addEventListener('click',()=>{if(!loadError)settings();});
   $('method-help').addEventListener('click',help);
+  $('dwg-input').addEventListener('change',async event=>{const file=event.target.files[0];event.target.value='';await uploadDrawing(file);});
   $('excel-input').addEventListener('change',async event=>{const file=event.target.files[0];event.target.value='';await importFile(file);});
   $('backup-input').addEventListener('change',async event=>{const file=event.target.files[0];event.target.value='';await restore(file);});
   window.addEventListener('unhandledrejection',event=>{console.error(event.reason);toast(event.reason?.message||'An unexpected error occurred. Your last saved workspace is retained.',true);});
