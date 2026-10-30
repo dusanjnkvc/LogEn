@@ -133,7 +133,7 @@
     input.maxLength = options.maxLength ?? 120;
     input.placeholder = options.placeholder ?? '';
     input.autocomplete = 'off';
-    input.required = true;
+    input.required = options.required!==false;
     const error = $('small', 'field-error');
     input.addEventListener('input', () => {
       error.textContent = '';
@@ -325,9 +325,16 @@
         const gangwayHint = $('p', 'muted formula-hint');
         floor.append(gangwayHint);
         const rack = section(body, 'Primary rack type', 'Enter the usable footprint and height of one shelf. These dimensions already exclude structure and required clearance.');
+        let primaryEnabled=current.primaryRackEnabled!==false;
+        const primaryDelete=$('button','btn btn-ghost danger-text');primaryDelete.type='button';
+        function primaryState(){primaryDelete.textContent=primaryEnabled?'Delete primary rack type':'Restore primary rack type';rackGrid.hidden=!primaryEnabled;structure.hidden=!primaryEnabled;rackName.input.disabled=!primaryEnabled;}
+        primaryDelete.addEventListener('click',()=>{primaryEnabled=!primaryEnabled;primaryState();update();});rack.append(primaryDelete);
+        function rackOptions(target,value){const controls={};for(const [key,label] of [['rackAllowRotation','Allow rotation · prefer shorter side in front'],['rackAllowStacking','Allow vertical stacking · identical part numbers only'],['rackAllowDepthRows','Allow two pallets front-to-back · maximum two']]){const wrap=$('label','checkbox-field'),input=$('input');input.type='checkbox';input.name=key;input.checked=value[key]===true;controls[key]=input;wrap.append(input,$('span','',label));target.append(wrap);}return controls;}
+        const primaryOptions=rackOptions(rack,current);
+        const optionValues=controls=>Object.fromEntries(Object.entries(controls).map(([k,v])=>[k,v.checked]));
         const rackName=textField(rack,'Rack type name',current.rackTypeName,{maxLength:80});
         const rackGrid = $('div', 'form-grid'); rack.append(rackGrid);
-        rack.append($('p', 'muted formula-hint', 'Required storage pallets are the rack unit quantity. Rack floor footprint uses (usable length + structural length) × (usable depth + structural depth). Shelf capacity and surface use usable dimensions only. Both horizontal orientations are always checked. Legacy surface allowance and clearances are retained in saved data but are not applied again to usable dimensions.'));
+        rack.append($('p', 'muted formula-hint', 'Required storage pallets are the rack unit quantity. Rack floor footprint uses (usable length + structural length) × (usable depth + structural depth). Shelf capacity and surface use usable dimensions only. Rotation, vertical stacking and two-deep storage are disabled unless explicitly enabled for this rack type. Legacy surface allowance and clearances are retained in saved data but are not applied again to usable dimensions.'));
 
         field(rackGrid, 'rackLevels', 'Rack levels', true, true, 'levels');
         field(rackGrid, 'maxRackRunLength', 'Maximum rack run length', true);
@@ -353,26 +360,23 @@
           const name=textField(card,'Rack type name',value.name||'Rack type '+(cards.length+2),{maxLength:80});
           const grid=$('div','form-grid');card.append(grid);const inputs={};
           for(const [key,label,positive,integer] of typeFields)inputs[key]=numberField(grid,key,label,cfg[key],{positive:!!positive,integer:!!integer,unit:key==='rackLevels'?'levels':'mm'});
-          const item={id:value.id||'rack-'+Date.now()+'-'+Math.random().toString(36).slice(2),name,inputs,element:card};cards.push(item);
+          const options=rackOptions(card,value);
+          const item={options,id:value.id||'rack-'+Date.now()+'-'+Math.random().toString(36).slice(2),name,inputs,element:card};cards.push(item);
           const remove=$('button','btn btn-ghost small','Remove rack type');remove.type='button';remove.addEventListener('click',()=>{cards.splice(cards.indexOf(item),1);card.remove();update();});card.append(remove);cardList.append(card);
         }
         (Array.isArray(current.rackTypes)?current.rackTypes:[]).filter(t=>t&&typeof t==='object').forEach(addRackType);
         const addType=$('button','btn btn-secondary','Add rack type');addType.type='button';addType.setAttribute('data-add-rack-type','');
         addType.addEventListener('click',()=>{if(cards.length>=19){errors.textContent='A project supports up to 20 rack types.';errors.hidden=false;return;}let n=2;const names=[rackName.input.value,...cards.map(c=>c.name.input.value)];while(names.includes('Rack type '+n))n++;addRackType({name:'Rack type '+n});update();});additional.append(addType);
-        const rotationLabel = $('label', 'checkbox-field');
-        const rotation = $('input'); rotation.type = 'checkbox'; rotation.checked = true; rotation.disabled = true;
-        const rotationCopy = $('span');
-        rotationCopy.append($('strong', '', 'Allow 90° pallet rotation'), $('small', 'muted', 'Both horizontal orientations are always checked for the highest shelf capacity. No vertical rotation or stacking inside a slot.'));
-        rotationLabel.append(rotation, rotationCopy);
-        body.append(rotationLabel, notice('Gangway-inclusive footprints are allocated planning estimates. Shared gangways must be counted once in a physical layout.'));
-        const draft = () => ({ ...current, ...draftNumbers(fields), rackTypeName:rackName.input.value.trim(), rackTypes:cards.map(c=>({id:c.id,name:c.name.input.value.trim(),...draftNumbers(c.inputs)})), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, allowRotation: rotation.checked, stackabilityEnabled: current.stackabilityEnabled });
+        body.append(notice('Gangway-inclusive footprints are allocated planning estimates. Shared gangways must be counted once in a physical layout.'));
+        primaryState();
+        const draft = () => ({ ...current, ...draftNumbers(fields), primaryRackEnabled:primaryEnabled,...optionValues(primaryOptions),rackTypeName:rackName.input.value.trim(), rackTypes:cards.map(c=>({id:c.id,name:c.name.input.value.trim(),...draftNumbers(c.inputs),...optionValues(c.options)})), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, stackabilityEnabled: current.stackabilityEnabled });
         const update = () => {
           const settings = draft();
           planningPreview(preview, sample, settings, true);
           gangwayHint.textContent = `Allocated gangway width = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm physical width. Both allocations use half a shared gangway.`;
         };
         for (const input of Object.values(fields)) input.input.addEventListener('input', update);
-        shifts.addEventListener('change', update); coverage.addEventListener('change', update); rotation.addEventListener('change', update);
+        shifts.addEventListener('change', update); coverage.addEventListener('change', update);
         update();
         return {
           focus: shifts,
@@ -395,11 +399,12 @@
     const current = initial ? globalThis.LogEnDomain.normalizePart(initial, settings) : { ...sample, partNumber: '' };
     return modal({
       title: initial ? 'Edit part number' : 'Add part number',
-      subtitle: 'The eight Excel columns. Saved floor stacking is read-only.',
+      subtitle: 'The Excel input fields, including optional category. Saved floor stacking is read-only.',
       button: initial ? 'Save part number' : 'Add part number',
       build(body) {
         const name = textField(body, 'Part Number', current.partNumber, { placeholder: 'e.g. PN-001' });
-        const stock = section(body, 'Packaging & consumption per shift', `${display(settings.shiftsPerDay)} shifts/day. Multiply by selected shifts, round daily pallet demand up once, then apply DOH.`);
+        const category = textField(body, 'Category (optional)', current.category||'', {required:false});
+        const stock = section(body, 'Packaging & consumption per shift', `${display(settings.shiftsPerDay)} shifts/day. Multiply by selected shifts and DOH, then round only the final required pallets.`);
         const grid = $('div', 'form-grid'); stock.append(grid);
         const fields = {};
         const field = (target, key, label, unit, positive = false, integer = false) => {
@@ -418,7 +423,7 @@
         field(dimensionGrid, 'height', 'Height', 'mm', true);
         body.append($('p','muted',`Saved floor stacking factor: ${display(current.stacking)} (read-only). Height limits still apply.`));
         body.append(notice('Consumption means individual parts per shift. QTY in Box is parts per box; QTY boxes per Pallet is boxes per pallet. Existing historical metadata is preserved when editing.'));
-        const draft = () => ({ ...current, partNumber: name.input.value.trim() || 'Preview', ...draftNumbers(fields), providedCoverageDays: Number(fields.doh.input.value), packagingInferred: false, inputErrors: [] });
+        const draft = () => ({ ...current, partNumber: name.input.value.trim() || 'Preview', category:category.input.value.trim(), ...draftNumbers(fields), providedCoverageDays: Number(fields.doh.input.value), packagingInferred: false, inputErrors: [] });
         const update = () => planningPreview(preview, draft(), settings);
         for (const input of Object.values(fields)) input.input.addEventListener('input', update);
         update();
@@ -547,7 +552,7 @@
       const plan=calculation.sharedRack;
       if(!plan?.available){body.append(notice(plan?.error||'Rack layout unavailable.',true));return {read:()=>true};}
       body.append($('p','',`${display(plan.quantity)} units · ${display(plan.bays)} vertical bays · ${plan.typeUsage.length} rack types · ${area(plan.withoutGangways)} without gangways`));
-      body.append(notice('Feasible shelf packing estimate, not a guaranteed optimum. All units fit usable length/depth/height. No stacking inside a shelf. Part-level diagrams show standalone estimates; this overview and dashboard use shared allocation.'));
+      body.append(notice('Feasible shelf packing estimate, not a guaranteed optimum. All units fit usable length/depth/height. Storage follows each rack type’s rotation, stacking and maximum-two-depth options. Part-level diagrams show standalone estimates; this overview and dashboard use shared allocation.'));
       const selectorLabel=$('label','field');selectorLabel.append($('span','','Rack bay'));
       const baySelect=$('select');baySelect.setAttribute('aria-label','Rack bay');
       for(let b=0;b<plan.bays;b++){const option=$('option','',`Bay ${b+1} of ${plan.bays} — ${plan.bayLayouts[b].typeName}`);option.value=String(b);baySelect.append(option);}
@@ -570,7 +575,7 @@
           const selectBox=()=>{
             if(selectedRect){selectedRect.setAttribute('stroke','#111');selectedRect.setAttribute('aria-pressed','false');}
             selectedRect=rect;rect.setAttribute('stroke','#fff');rect.setAttribute('aria-pressed','true');
-            selectedInfo.textContent=`PN: ${box.partNumber} · Bay ${bay+1} · Shelf ${level+1} · Box ${boxIndex+1} · Position X ${display(box.x)} mm, Y ${display(box.y)} mm · ${display(box.length)} × ${display(box.depth)} mm`;
+            selectedInfo.textContent=`PN: ${box.partNumber} · Bay ${bay+1} · Shelf ${level+1} · Box ${boxIndex+1} · Position X ${display(box.x)} mm, Y ${display(box.y)} mm · ${display(box.length)} × ${display(box.depth)} mm · Stack layer ${box.stackLayer||1} · Depth row ${(box.depthRow||0)+1}`;
           };
           rect.addEventListener('click',selectBox);rect.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectBox();}});
           const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=box.partNumber;rect.append(title);svg.append(rect);

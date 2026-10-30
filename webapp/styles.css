@@ -30,3 +30,8 @@
 .floor-stacking-options{padding:18px 22px;margin-bottom:20px;display:flex;gap:18px;align-items:end;flex-wrap:wrap}.floor-stacking-options .field{min-width:230px;flex:1}.floor-stacking-options p{flex-basis:100%;margin:0;font-size:11px;line-height:1.7}
 
 .rack-type-card{border:1px solid var(--border);border-radius:10px;padding:16px;margin:15px 0}.rack-type-card .form-grid{margin:16px 0}.rack-type-card>.field{max-width:420px}
+
+.production-totals { grid-template-columns: repeat(6,minmax(0,1fr)); }
+.category-filter {align-self:center;min-width:0;}
+@media(max-width:1000px){.production-totals{grid-template-columns:repeat(3,minmax(0,1fr));}}
+@media(max-width:600px){.production-totals{grid-template-columns:repeat(2,minmax(0,1fr));}}

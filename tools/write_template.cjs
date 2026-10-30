@@ -11,8 +11,8 @@ async function main() {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes);
   const sheet = workbook.getWorksheet('Input Data');
-  const expected = ['Part Number','QTY in Box','QTY boxes per Pallet','Consumption per shift','DOH (Days on hand)','L(mm)','W(mm)','H(mm)'];
-  assert.equal(sheet.columnCount,8);
+  const expected = ['Part Number','QTY in Box','QTY boxes per Pallet','Consumption per shift','DOH (Days on hand)','L(mm)','W(mm)','H(mm)','Category'];
+  assert.equal(sheet.columnCount,9);
   assert.deepEqual(sheet.getRow(1).values.slice(1),expected);
   const imported = await service.importBytes(bytes);
   const result = LogEnDomain.calculateProject(imported.parts,LogEnDomain.createDefaultSettings());
@@ -20,6 +20,6 @@ async function main() {
   assert.equal(result.totalRequiredPallets,7);
   const target = path.join(__dirname,'..','LogEn_Shift_Inventory_Template.xlsx');
   fs.writeFileSync(target,bytes);
-  console.log('Generated and re-imported '+target+' — exact 8 columns, sample requires 7 pallets.');
+  console.log('Generated and re-imported '+target+' — exact 9 columns, sample requires 7 pallets.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

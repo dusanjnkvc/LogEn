@@ -12,7 +12,7 @@
       rackStructuralDepth: 200, rackStructuralHeight: 150,
       maxRackRunLength: 15000, rackFrontageClearance: 100,
       rackDepthClearance: 100, rackVerticalClearance: 100,
-      allowRotation: false, stockMode: 'consumption',
+      allowRotation: false, rackAllowRotation:false, rackAllowStacking:false, rackAllowDepthRows:false, primaryRackEnabled:true, stockMode: 'consumption',
       workingDaysPerMonth: 22, shiftsPerDay: 2,
       coverageMode: 'input', customCoverageDays: 5, stackabilityEnabled: false
     };
@@ -41,11 +41,13 @@
   const allocatedGangwayWidth = settings => settings.gangwayWidth;
 
   const rackTypeFields = ['rackSlotLength','rackSlotDepth','rackSlotHeight','rackLevels','rackStructuralLength','rackStructuralDepth','rackStructuralHeight','betweenBoxesAllowance','maxRackRunLength'];
+  const rackOptionFields=['rackAllowRotation','rackAllowStacking','rackAllowDepthRows'];
   function configuredRackTypes(s) {
     const primary={...s,id:'primary',name:s.rackTypeName||'Rack type 1',rackTypes:[]};
-    return [primary,...(Array.isArray(s.rackTypes)?s.rackTypes:[]).filter(t=>t&&typeof t==='object').map((t,i)=>{
+    return [...(s.primaryRackEnabled===false?[]:[primary]),...(Array.isArray(s.rackTypes)?s.rackTypes:[]).filter(t=>t&&typeof t==='object').map((t,i)=>{
       const cfg={...s,id:String(t.id||'type-'+i),name:String(t.name||''),rackTypes:[]};
       for(const key of rackTypeFields)cfg[key]=t[key]===undefined?s[key]:t[key];
+      for(const key of rackOptionFields)cfg[key]=t[key]===true;
       return cfg;
     })];
   }
@@ -82,7 +84,7 @@
       const names=new Set([String(s.rackTypeName||'Rack type 1').trim().toLowerCase()]),ids=new Set(['primary']);
       for(const [i,raw] of s.rackTypes.entries()){
         if(!raw||typeof raw!=='object'){errors.push('Rack type '+(i+2)+' is invalid.');continue;}
-        const type=configuredRackTypes({...s,rackTypes:[raw]})[1];
+        const type=configuredRackTypes({...s,primaryRackEnabled:true,rackTypes:[raw]})[1];
         if(!type.name.trim()||names.has(type.name.trim().toLowerCase()))errors.push('Each rack type needs a unique non-empty name.');names.add(type.name.trim().toLowerCase());
         if(ids.has(type.id))errors.push('Rack type identifiers must be unique.');ids.add(type.id);
         for(const error of validateSettings({...type,rackTypeName:type.name,rackTypes:[]}))errors.push(type.name+': '+error);
@@ -114,6 +116,7 @@
     return {
       ...input,
       partNumber: String(input.partNumber ?? ''),
+      category: String(input.category ?? '').trim(),
       qtyBox, qtyOnPallet, partsPerPallet, consumptionPerShift, doh,
       stacking: has('stacking') ? input.stacking : 1,
       stockQty,
@@ -189,7 +192,7 @@
 
   function rackFit(input, settings) {
     if(![input.length,input.width,input.height].every(v=>Number.isFinite(v)&&v>0))return 'N/A';
-    return configuredRackTypes(settings).some(t=>input.height<=t.rackSlotHeight&&((input.length<=t.rackSlotLength&&input.width<=t.rackSlotDepth)||(input.width<=t.rackSlotLength&&input.length<=t.rackSlotDepth)))?'YES':'NO';
+    return configuredRackTypes(settings).some(t=>rackForPart(0,input,t))?'YES':'NO';
   }
   function surfaceAreas(depth, width, lanes, quantity, allowance, pitch, gangwayMetres) {
     if (![depth,width,lanes,quantity,allowance,pitch,gangwayMetres].every(v => Number.isFinite(v) && v >= 0))
@@ -200,15 +203,17 @@
   }
   // Usable dimensions already exclude any configured physical allowances.
   // Both horizontal orientations are evaluated; no vertical stacking.
-  function calculateBoxRack(requiredBoxes, length, width, height, slotLength, slotDepth, slotHeight, levels, gap = 0, structuralLength = 0, structuralDepth = 0) {
+  function calculateBoxRack(requiredBoxes, length, width, height, slotLength, slotDepth, slotHeight, levels, gap = 0, structuralLength = 0, structuralDepth = 0, options = {}) {
     if (![structuralLength,structuralDepth].every(v=>Number.isFinite(v)&&v>=0)) throw new Error('Rack structural allowances must be finite and non-negative.');
     if (!Number.isFinite(gap) || gap < 0) throw new Error('Between boxes allowance must be finite and non-negative.');
     if (![length,width,height,slotLength,slotDepth,slotHeight].every(v => Number.isFinite(v) && v > 0) ||
         !Number.isSafeInteger(requiredBoxes) || requiredBoxes < 0 || !Number.isSafeInteger(levels) || levels < 1)
       throw new Error('Rack sizing requires whole non-negative boxes, positive dimensions and whole positive levels.');
-    const capacity = (l,w) => height <= slotHeight ? floor((slotLength + gap) / (l + gap)) * floor((slotDepth + gap) / (w + gap)) : 0;
+    const stackLayers=options.rackAllowStacking?floor(slotHeight/height):1;
+    const capacity = (l,w) => height <= slotHeight ? floor((slotLength + gap) / (l + gap)) * Math.min(options.rackAllowDepthRows?2:1,floor((slotDepth + gap) / (w + gap))) * stackLayers : 0;
     const original = capacity(length,width), rotatedCapacity = capacity(width,length);
-    const boxesPerSlot = Math.max(original,rotatedCapacity);
+    const rotated=!!options.rackAllowRotation && (width<length ? rotatedCapacity>0 : original===0&&rotatedCapacity>0);
+    const boxesPerSlot = rotated?rotatedCapacity:original;
     const fits = boxesPerSlot > 0;
     const capacityPerBay = boxesPerSlot * levels;
     if (!Number.isSafeInteger(capacityPerBay)) throw new Error('Rack capacity exceeds supported precision.');
@@ -217,18 +222,18 @@
     const bayArea = (slotLength + structuralLength) * (slotDepth + structuralDepth) / 1000000;
     const withoutGangways = bays * bayArea;
     const availableShelfArea = bays * usableBayArea * levels;
-    const occupiedShelfArea = fits ? requiredBoxes * length * width / 1000000 : 0;
+    const occupiedShelfArea = fits ? ceilDivide(requiredBoxes,stackLayers) * length * width / 1000000 : 0;
     const unusedShelfArea = Math.max(0,availableShelfArea - occupiedShelfArea);
     const utilizationPercent = availableShelfArea > 0 ? occupiedShelfArea / availableShelfArea * 100 : null;
     const values = [bayArea,withoutGangways,availableShelfArea,occupiedShelfArea,unusedShelfArea];
     if (!values.every(Number.isFinite)) throw new Error('Rack surface exceeds supported precision.');
     return {fits, requiredBoxes, nonFittingBoxes: fits ? 0 : requiredBoxes, boxesPerSlot,
-      capacityPerBay, bays, bayArea, usableBayArea, withoutGangways, rotated: rotatedCapacity > original,
+      capacityPerBay, bays, bayArea, usableBayArea, withoutGangways, rotated, stackLayers,
       availableShelfArea, occupiedShelfArea, unusedShelfArea, unusedPerLevel: unusedShelfArea / levels,
       utilizationPercent, unusedPercent: utilizationPercent === null ? null : 100-utilizationPercent};
   }
   function rackForPart(quantity,input,t) {
-    const sizing=calculateBoxRack(quantity,input.length,input.width,input.height,t.rackSlotLength,t.rackSlotDepth,t.rackSlotHeight,t.rackLevels,t.betweenBoxesAllowance,t.rackStructuralLength,t.rackStructuralDepth);
+    const sizing=calculateBoxRack(quantity,input.length,input.width,input.height,t.rackSlotLength,t.rackSlotDepth,t.rackSlotHeight,t.rackLevels,t.betweenBoxesAllowance,t.rackStructuralLength,t.rackStructuralDepth,t);
     if(!sizing.fits)return null;
     const effectiveBayLength=t.rackSlotLength+t.rackStructuralLength,effectiveBayDepth=t.rackSlotDepth+t.rackStructuralDepth,effectiveBayHeight=t.rackSlotHeight+t.rackStructuralHeight;
     const maxBaysPerRun=floor(t.maxRackRunLength/effectiveBayLength),runs=ceilDivide(sizing.bays,maxBaysPerRun);
@@ -334,12 +339,12 @@
     for(const r of rows) for(let unit=0;unit<r.requiredPallets;unit++) {
       let best=null;
       for(let shelf=0;shelf<shelves.length;shelf++) shelves[shelf].free.forEach((rect,index)=>{
-        for(const [w,d] of [[r.input.length,r.input.width],[r.input.width,r.input.length]])
+        for(const [w,d] of [[front,dep]])
           if(w<=rect.w && d<=rect.d) { const score=rect.w*rect.d-w*d; if(!best||score<best.score)best={shelf,index,w,d,score}; }
       });
       if(!best){shelves.push({free:[{x:0,y:0,w:s.rackSlotLength,d:s.rackSlotDepth}],placements:[]});best={shelf:shelves.length-1,index:0,w:r.input.length,d:r.input.width};if(best.w>s.rackSlotLength||best.d>s.rackSlotDepth)[best.w,best.d]=[best.d,best.w];}
       const sh=shelves[best.shelf],rect=sh.free.splice(best.index,1)[0];
-      sh.placements.push({partNumber:r.input.partNumber,x:rect.x,y:rect.y,length:best.w,depth:best.d});
+      sh.placements.push({partNumber:r.input.partNumber,x:rect.x,y:rect.y,length:best.w,depth:best.d,z:0,height:r.input.height,stackLayer:1,depthRow:rect.depthRow||0});
       if(rect.w>best.w+s.betweenBoxesAllowance)sh.free.push({x:rect.x+best.w+s.betweenBoxesAllowance,y:rect.y,w:rect.w-best.w-s.betweenBoxesAllowance,d:best.d});
       if(rect.d>best.d+s.betweenBoxesAllowance)sh.free.push({x:rect.x,y:rect.y+best.d+s.betweenBoxesAllowance,w:rect.w,d:rect.d-best.d-s.betweenBoxesAllowance});
     }
@@ -355,7 +360,7 @@
         const t=bay.settings;bay.number=i+1;bay.typeId=t.id;bay.typeName=t.name;
         const usable=t.rackSlotLength*t.rackSlotDepth/1000000,footprint=(t.rackSlotLength+t.rackStructuralLength)*(t.rackSlotDepth+t.rackStructuralDepth)/1000000;
         bay.withoutGangways=footprint;bay.availableShelfArea=usable*t.rackLevels;
-        bay.occupiedShelfArea=bay.shelves.reduce((n,sh)=>n+sh.placements.reduce((v,p)=>v+p.length*p.depth/1000000,0),0);
+        bay.occupiedShelfArea=bay.shelves.reduce((n,sh)=>n+sh.placements.reduce((v,p)=>v+(p.z?0:p.length*p.depth/1000000),0),0);
         bay.unusedShelfArea=Math.max(0,bay.availableShelfArea-bay.occupiedShelfArea);bay.utilizationPercent=bay.availableShelfArea?bay.occupiedShelfArea/bay.availableShelfArea*100:null;
         net+=footprint;aisle+=(t.rackSlotLength+t.rackStructuralLength)*s.gangwayWidth/2000000;occupied+=bay.occupiedShelfArea;available+=bay.availableShelfArea;unusedPerLevel+=bay.unusedShelfArea/t.rackLevels;
         const u=usage.get(t.id)||{typeId:t.id,typeName:t.name,settings:t,bays:0,withoutGangways:0};u.bays++;u.withoutGangways+=footprint;usage.set(t.id,u);
@@ -364,7 +369,6 @@
       const typeUsage=[...usage.values()];let runs=0;for(const u of typeUsage){u.runs=ceilDivide(u.bays,floor(u.settings.maxRackRunLength/(u.settings.rackSlotLength+u.settings.rackStructuralLength)));runs+=u.runs;}
       return {available:true,shelves,bayLayouts,typeUsage,bays:bayLayouts.length,runs,quantity,withoutGangways:net,gangwayArea:aisle,withGangways:net+aisle,occupied,availableShelfArea:available,unused:Math.max(0,available-occupied),unusedPerLevel,utilization:available?occupied/available*100:null};
     }
-    if(types.length===1){const old=singleRackPlan(results,s);if(!old.available)return old;const bays=Array.from({length:old.bays},(_,i)=>({settings:types[0],shelves:old.shelves.slice(i*s.rackLevels,(i+1)*s.rackLevels)}));return finish(bays,old.quantity);}
     const rows=results.filter(r=>r.isRackValid&&r.isPlanningValid).map(r=>({input:r.input,quantity:r.requiredPallets,fitCount:types.filter(t=>rackForPart(0,r.input,t)).length})).sort((a,b)=>a.fitCount-b.fitCount||b.input.length*b.input.width-a.input.length*a.input.width);
     const quantity=rows.reduce((n,r)=>n+r.quantity,0);if(quantity>10000)return {available:false,error:'Shared rack preview supports up to 10,000 units.'};
     const remaining=rows.map(r=>r.quantity),bayLayouts=[];let steps=0;
@@ -374,20 +378,29 @@
         if(r.input.height>t.rackSlotHeight)return;
         for(let unit=0;unit<stock[index];unit++){
           if(++steps>5000000)throw new Error('Mixed rack allocation is too complex; reduce inventory or the number of rack types.');
+          if(t.rackAllowStacking){
+            let tower=null;
+            for(const sh of shelves){
+              const base=sh.placements.find(p=>p.partNumber===r.input.partNumber && !p.z && sh.placements.filter(q=>q.x===p.x&&q.y===p.y).length<Math.floor(t.rackSlotHeight/r.input.height));
+              if(base){tower={sh,base};break;}
+            }
+            if(tower){const layer=tower.sh.placements.filter(p=>p.x===tower.base.x&&p.y===tower.base.y).length;tower.sh.placements.push({...tower.base,z:layer*r.input.height,stackLayer:layer+1});count++;used[index]++;continue;}
+          }
+          const sizing=rackForPart(0,r.input,t);if(!sizing)break;
+          const front=sizing.rotated?r.input.width:r.input.length,dep=sizing.rotated?r.input.length:r.input.width;
           let best=null;
           shelves.forEach((sh,k)=>sh.free.forEach((rect,j)=>{
-            for(const [w,d] of [[r.input.length,r.input.width],[r.input.width,r.input.length]])if(w<=rect.w&&d<=rect.d){const score=rect.w*rect.d-w*d,capacity=Math.floor((rect.w+t.betweenBoxesAllowance)/(w+t.betweenBoxesAllowance))*Math.floor((rect.d+t.betweenBoxesAllowance)/(d+t.betweenBoxesAllowance));if(!best||score<best.score||score===best.score&&capacity>best.capacity)best={k,j,w,d,score,capacity};}
+            for(const [w,d] of [[front,dep]])if(w<=rect.w&&d<=rect.d){const score=rect.w*rect.d-w*d,capacity=Math.floor((rect.w+t.betweenBoxesAllowance)/(w+t.betweenBoxesAllowance))*Math.floor((rect.d+t.betweenBoxesAllowance)/(d+t.betweenBoxesAllowance));if(!best||score<best.score||score===best.score&&capacity>best.capacity)best={k,j,w,d,score,capacity};}
           }));
           if(!best&&shelves.length<t.rackLevels){
             const sizing=rackForPart(0,r.input,t);if(!sizing)break;
             const w=sizing.rotated?r.input.width:r.input.length,d=sizing.rotated?r.input.length:r.input.width;
-            shelves.push({free:[{x:0,y:0,w:t.rackSlotLength,d:t.rackSlotDepth}],placements:[]});best={k:shelves.length-1,j:0,w,d};
+            const free=[{x:0,y:0,w:t.rackSlotLength,d:t.rackAllowDepthRows?d:t.rackSlotDepth,depthRow:0}];if(t.rackAllowDepthRows&&t.rackSlotDepth>d+t.betweenBoxesAllowance)free.push({x:0,y:d+t.betweenBoxesAllowance,w:t.rackSlotLength,d:t.rackSlotDepth-d-t.betweenBoxesAllowance,depthRow:1});shelves.push({free,placements:[]});best={k:shelves.length-1,j:0,w,d};
           }
           if(!best)break;
           const sh=shelves[best.k],rect=sh.free.splice(best.j,1)[0],g=t.betweenBoxesAllowance;
-          sh.placements.push({partNumber:r.input.partNumber,x:rect.x,y:rect.y,length:best.w,depth:best.d});
-          if(rect.w>best.w+g)sh.free.push({x:rect.x+best.w+g,y:rect.y,w:rect.w-best.w-g,d:best.d});
-          if(rect.d>best.d+g)sh.free.push({x:rect.x,y:rect.y+best.d+g,w:rect.w,d:rect.d-best.d-g});
+          sh.placements.push({partNumber:r.input.partNumber,x:rect.x,y:rect.y,length:best.w,depth:best.d,z:0,height:r.input.height,stackLayer:1,depthRow:rect.depthRow||0});
+          if(rect.w>best.w+g)sh.free.push({x:rect.x+best.w+g,y:rect.y,w:rect.w-best.w-g,d:rect.d,depthRow:rect.depthRow||0});
           occupied+=best.w*best.d/1000000;count++;used[index]++;
         }
       });
@@ -414,16 +427,17 @@
       return finish(bayLayouts,quantity);
     }catch(error){return {available:false,error:error.message};}
   }
-  function calculateProject(parts, settings) {
+  function calculateProject(parts, settings, category = null) {
     const s = { ...createDefaultSettings(), ...settings };
     const settingsErrors = validateSettings(s);
     const counts = new Map();
     const keyFor = p => String(p.partNumber == null ? '' : p.partNumber).trim().toUpperCase();
     parts.forEach(p => counts.set(keyFor(p), (counts.get(keyFor(p)) || 0) + 1));
-    const results = parts.map(input => {
+    const results = parts.map((input,sourceIndex) => {
       if (settingsErrors.length)
-        return resultFor(normalizePart(input, s), ['Warehouse settings are invalid. Correct the settings to calculate this part.']);
+        return {...resultFor(normalizePart(input, s), ['Warehouse settings are invalid. Correct the settings to calculate this part.']),sourceIndex};
       const result = calculatePart(input, s);
+      result.sourceIndex=sourceIndex;
       result.rackFit = rackFit(result.input, s);
       if (counts.get(keyFor(input)) > 1) {
         result.errors.push('Duplicate Part Number. Consolidate this part into one input row.');
@@ -431,7 +445,7 @@
         result.isFloorValid = result.isRackValid = result.isPlanningValid = false;
       }
       return result;
-    });
+    }).filter(r=>category===null || String(r.input.category||'').trim()===category);
     const valid = results.filter(r => r.isValid);
     const floors = results.filter(r => r.isFloorValid);
     const racks = results.filter(r => r.isRackValid);
@@ -482,5 +496,5 @@
     return project;
   }
 
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, configuredRackTypes, rackTypeFields, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, configuredRackTypes, rackTypeFields, rackOptionFields, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
 })(globalThis);

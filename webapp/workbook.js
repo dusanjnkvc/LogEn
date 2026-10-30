@@ -1,13 +1,14 @@
 /* Offline XLSX import/export. ExcelJS is bundled into the final HTML file. */
 (function (global) {
   'use strict';
-  const HEADERS = Object.freeze(['Part Number', 'QTY in Box', 'QTY boxes per Pallet', 'Consumption per shift', 'DOH (Days on hand)', 'L(mm)', 'W(mm)', 'H(mm)']);
+  const HEADERS = Object.freeze(['Part Number', 'QTY in Box', 'QTY boxes per Pallet', 'Consumption per shift', 'DOH (Days on hand)', 'L(mm)', 'W(mm)', 'H(mm)', 'Category']);
   const FIELDS = ['partNumber', 'qtyBox', 'qtyOnPallet', 'consumptionPerShift', 'doh', 'length', 'width', 'height'];
   const MONTHLY_HEADERS = ['Part Number', 'Stock Quantity', 'Parts per Pallet', 'Monthly Consumption', 'Input Coverage (days)', 'L (mm)', 'W (mm)', 'H (mm)'];
   const MONTHLY_FIELDS = ['partNumber', 'stockQty', 'partsPerPallet', 'monthlyConsumption', 'providedCoverageDays', 'length', 'width', 'height'];
   const LEGACY_HEADERS = ['Part Number', 'QTY Box', 'QTY Pallet', 'QTY on Pallet', 'Consumption', 'DOH', 'L (mm)', 'W (mm)', 'H (mm)'];
   const LEGACY_FIELDS = ['partNumber', 'qtyBox', 'qtyPallet', 'qtyOnPallet', 'consumption', 'doh', 'length', 'width', 'height'];
   const ALIASES = {
+    category: ['Category'],
     partNumber: ['Part Number', 'Part No', 'PartNo', 'PN'],
     stockQty: ['Stock Quantity', 'Current Stock', 'Total Stock', 'Stock Qty', 'Current Stock Quantity'],
     partsPerPallet: ['Parts per Pallet', 'QTY per Pallet', 'Quantity per Pallet', 'Pallet Capacity'],
@@ -37,7 +38,7 @@
     if (value.error != null) return String(value.error);
     return String(value);
   };
-  const inputValues = part => FIELDS.map(field => part[field] ?? null);
+  const inputValues = part => [...FIELDS.map(field => part[field] ?? null),part.category||''];
   const planningValues = (planning, input, settings) => !planning ? PLANNING_HEADERS.map(() => null) : [planning.qtyBox, planning.qtyOnPallet, planning.partsPerPallet, planning.consumptionPerShift, planning.palletsPerShift, planning.roundedPalletsPerShift, settings.shiftsPerDay, planning.targetCoverageDays, planning.palletsPerDay, planning.plannedPalletsPerDay, planning.requiredPallets, planning.dailyConsumption, planning.stockQty ?? 'Not provided', planning.currentPallets ?? 'N/A — stock not provided', planning.currentPalletPositions ?? 'N/A — stock not provided', planning.actualCoverageDays ?? (planning.noConsumption ? 'No consumption' : 'N/A — stock not provided'), input.doh, planning.coverageDifferenceDays ?? 'N/A', Boolean(input.packagingInferred), `CEILING(${input.consumptionPerShift} / ${input.qtyBox} / ${input.qtyOnPallet} × ${settings.shiftsPerDay} × ${planning.targetCoverageDays}) = ${planning.requiredPallets}`];
 
   function add(sheet, values, kind) {
@@ -79,11 +80,11 @@
     async templateBytes() {
       const workbook = this._workbook();
       const sheet = table(workbook, 'Input Data', HEADERS);
-      add(sheet, ['SAMPLE-001', 20, 40, 500, 5, 1200, 800, 1000]);
+      add(sheet, ['SAMPLE-001', 20, 40, 500, 5, 1200, 800, 1000, 'Bulk']);
       const notes = workbook.addWorksheet('Instructions');
       add(notes, ['LogEn — warehouse input template'], 'header');
       [
-        'Keep exactly these eight template headings. Replace or delete SAMPLE-001 before adding your parts.',
+        'Keep these nine template headings (Category is optional when importing older files). Replace or delete SAMPLE-001 before adding your parts.',
         'QTY in Box = individual parts in one box. QTY boxes per Pallet = boxes on one pallet.',
         'Consumption per shift = individual parts consumed during one shift. This is neither daily nor monthly consumption.',
         'DOH (Days on hand) = required coverage days for that part. Choose input DOH or a custom project DOH override.',
@@ -91,7 +92,7 @@
         'Multiply raw pallet demand per shift by selected shifts and DOH without intermediate rounding; round up only the final required pallets.',
         'Shifts per day must be 1, 2 or 3; the default is 2. Custom project DOH defaults to 5 days.',
         'L(mm), W(mm) and H(mm) are loaded pallet dimensions in millimeters.',
-        'The eight-column template omits stacking: floor stacking defaults to 1. An optional extra Stacking column is supported. Choose imported stacking in Part details to use saved factors, automatic height calculation, or one global manual factor.',
+        'The template omits stacking: floor stacking defaults to 1. An optional extra Stacking column is supported. Choose imported stacking in Part details to use saved factors, automatic height calculation, or one global manual factor.',
         'Current stock quantity is optional. If absent, actual stock coverage remains unavailable rather than being treated as zero stock.',
         'Old monthly and daily templates remain supported with explicit conversion notices. Legacy consumption is converted once using the production settings selected at import.',
         'If old data has only direct parts-per-pallet capacity, packaging is inferred as one box containing that capacity. Review inferred packaging before using calculated demand.',
@@ -124,7 +125,7 @@
               if (matches.length) mapping.set(field, matches[0]);
             }
             if (mapping.size !== schema.fields.length) continue;
-            for (const field of ['stacking', 'stockQty']) {
+            for (const field of ['stacking', 'stockQty', 'category']) {
               if (mapping.has(field)) continue;
               const matches = [...new Set(ALIASES[field].map(normalize).flatMap(alias => candidate.get(alias) || []))];
               if (matches.length > 1) duplicates.push(field);
@@ -168,7 +169,7 @@
           if (!Number.isFinite(number)) { errors.push('Excel row ' + rowIndex + ': ' + label + ' must be a finite number. Formula cells are not evaluated; paste values before importing.'); return 0; }
           return number;
         };
-        const part = { partNumber: String(value('partNumber') ?? '').trim(), stacking: numeric('stacking', 'Stacking', true, 1), inputErrors: errors };
+        const part = { partNumber: String(value('partNumber') ?? '').trim(), category:String(value('category')??'').trim(), stacking: numeric('stacking', 'Stacking', true, 1), inputErrors: errors };
         const schema = schemas.find(schema => schema.kind === kind);
         for (let index = 1; index < schema.fields.length; index++) {
           const field = schema.fields[index];
@@ -225,7 +226,7 @@
         add(rack, ['Physical bays', calculation.sharedRack.bays]);
         add(rack, ['Shared rack net m²', calculation.sharedRack.withoutGangways]);
         add(rack, ['Bay', 'Shelf', 'Part Number', 'Y (mm)', 'Unit length (mm)', 'Unit depth (mm)', 'Rack type'], 'header');
-        calculation.sharedRack.shelves.forEach((shelf,i) => shelf.placements.forEach(p => add(rack, [shelf.bayNumber, shelf.level,p.partNumber,p.y,p.length,p.depth,shelf.typeName])));
+        calculation.sharedRack.shelves.forEach((shelf,i) => shelf.placements.forEach(p => add(rack, [shelf.bayNumber, shelf.level,p.partNumber,p.y,p.length,p.depth,shelf.typeName,p.stackLayer||1,(p.depthRow||0)+1])));
       }
       const comparison = workbook.addWorksheet('Warehouse Comparison');
       add(comparison, ['LogEn — ' + project.name, 'Footprint (m²)'], 'header');
@@ -321,7 +322,7 @@
         ['Between boxes allowance', s.betweenBoxesAllowance ?? 0, 'mm; between units in both shelf directions only, no edge or vertical gap'], ['Rack structural height allowance', s.rackStructuralHeight, 'mm'], ['Maximum rack run length', s.maxRackRunLength, 'mm'],
         ['Legacy rack frontage clearance (unused)', s.rackFrontageClearance, 'mm; usable shelf dimensions already exclude required clearance'],
         ['Legacy rack depth clearance (unused)', s.rackDepthClearance, 'mm'], ['Legacy rack vertical clearance (unused)', s.rackVerticalClearance, 'mm'],
-        ['Rack horizontal orientations', 'Both always evaluated', 'no vertical rotation or stacking within one slot'],
+        ['Rack storage options', 'Per rack type; default off', 'Rotation prefers shorter frontage; stacking identical PN only; depth maximum two'],
       ].forEach(row => add(settings, row));
       add(settings, []);
       [
@@ -329,13 +330,13 @@
         'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Keep all intermediate decimals; round up only the final required pallet quantity.',
         'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Keep all intermediate decimals; round up only the final required pallet quantity.',
         'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Keep all intermediate decimals; round up only the final required pallet quantity.',
-        'DOH mode input uses each part’s DOH; custom uses the project DOH override. No current stock quantity is required by the eight-column template.',
+        'DOH mode input uses each part’s DOH; custom uses the project DOH override. Category is optional; current stock quantity is not required.',
         'Choose the floor stacking source in Part details: height, imported or one manual factor. Imported factors are retained when another source is selected. Legacy projects retain their prior stacking until a source is chosen.',
         'Floor stacking = MIN(selected source factor, FLOOR(maximum floor stacking height / loaded pallet H)). Automatic uses the height limit directly; imported uses the saved factor; manual uses the one project factor. Floor positions = CEILING(required pallets / effective stacking).',
         'Ground length = pallet L + clearance; ground width = pallet W + clearance. Pallets per row = FLOOR(maximum row depth LIMIT / ground length). Limit 0 means one unrestricted row per part. Rows = CEILING(floor positions / pallets per row).',
         'GS net = deepest occupied lane depth (mm) * lane width (mm) * lane count / 1000000; partial lanes reserve the same depth.',
         'GS with gangway = GS net + lane width (mm) * lanes * physical gangway (m) / 2000.',
-        'Boxes per slot = MAX(FLOOR((shelf L + g) / (unit L + g)) * FLOOR((shelf D + g) / (unit W + g)), FLOOR((shelf L + g) / (unit W + g)) * FLOOR((shelf D + g) / (unit L + g))); g is Between boxes allowance, between units only; unit height must fit usable shelf height. Both orientations, no vertical stacking.',
+        'Boxes per slot = frontage positions × depth rows (1, or at most 2 when enabled) × stack layers (1, or FLOOR(usable H/unit H) when enabled); g is Between boxes allowance, between units only; unit height must fit usable shelf height. Storage options apply per rack type: preferred shorter frontage when rotation enabled, identical-PN stacks when enabled, maximum two depth rows when enabled.',
         'Required storage pallets are rack units, using existing L/W/H. Usable shelf dimensions already exclude clearances/structure. Structural length/depth allowances are added only to rack floor footprint, not usable shelf area.',
         'Capacity per bay = boxes per slot × rack levels. Rack bays = CEILING(required pallets / capacity per bay). Floor stacking never applies to racks.',
         'PR net = whole rack bays * (usable shelf length + structural length) * (usable shelf depth + structural depth) / 1000000. Levels do not multiply the floor footprint.',
@@ -346,8 +347,8 @@
       settings.getColumn(1).width = 115;
       settings.getColumn(2).width = 35;
       settings.getColumn(3).width = 65;
-      add(settings, []);add(settings, ['Configured rack types','ID','Usable L (mm)','Usable D (mm)','Usable H (mm)','Levels','Structural L (mm)','Structural D (mm)','Structural H (mm)','Between boxes (mm)','Max run (mm)'], 'header');
-      global.LogEnDomain.configuredRackTypes(s).forEach(t=>add(settings,[t.name,t.id,t.rackSlotLength,t.rackSlotDepth,t.rackSlotHeight,t.rackLevels,t.rackStructuralLength,t.rackStructuralDepth,t.rackStructuralHeight,t.betweenBoxesAllowance,t.maxRackRunLength]));
+      add(settings, []);add(settings, ['Configured rack types','ID','Usable L (mm)','Usable D (mm)','Usable H (mm)','Levels','Structural L (mm)','Structural D (mm)','Structural H (mm)','Between boxes (mm)','Max run (mm)','Allow rotation','Allow stacking','Allow two-deep'], 'header');
+      global.LogEnDomain.configuredRackTypes(s).forEach(t=>add(settings,[t.name,t.id,t.rackSlotLength,t.rackSlotDepth,t.rackSlotHeight,t.rackLevels,t.rackStructuralLength,t.rackStructuralDepth,t.rackStructuralHeight,t.betweenBoxesAllowance,t.maxRackRunLength,t.rackAllowRotation,t.rackAllowStacking,t.rackAllowDepthRows]));
       for(let col=4;col<=11;col++)settings.getColumn(col).width=24;
       const layout = workbook.addWorksheet('Rack Layout', {views:[{state:'frozen',ySplit:6}]});
       const plan = calculation.sharedRack;
@@ -356,10 +357,10 @@
       add(layout, ['Shelf units use Required storage pallets. Different PNs may share shelves.']);
       add(layout, ['Primary shelf L / D / H (mm); additional types in Warehouse Settings', s.rackSlotLength, s.rackSlotDepth, s.rackSlotHeight, 'Levels', s.rackLevels, 'Between boxes allowance (mm)', s.betweenBoxesAllowance ?? 0]);
       add(layout, ['Feasible packing estimate; not a guaranteed optimum. Usable placement coordinates exclude structural allowances and gangways.']);
-      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'Placed length (mm)', 'Placed depth (mm)', 'Rack type'], 'header');
+      add(layout, ['Bay', 'Shelf', 'Position', 'Part Number', 'Quantity', 'Placed length (mm)', 'Placed depth (mm)', 'Rack type', 'Stack layer', 'Depth row'], 'header');
       if (plan?.available) {
-        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[shelf.bayNumber,shelf.level,j+1,p.partNumber,1,p.length,p.depth,shelf.typeName])));
-        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:8}};
+        plan.shelves.forEach((shelf,i)=>shelf.placements.forEach((p,j)=>add(layout,[shelf.bayNumber,shelf.level,j+1,p.partNumber,1,p.length,p.depth,shelf.typeName,p.stackLayer||1,(p.depthRow||0)+1])));
+        if(layout.rowCount>6)layout.autoFilter={from:{row:6,column:1},to:{row:layout.rowCount,column:10}};
       } else add(layout, [plan?.error || 'Rack layout unavailable. Correct settings and input errors.']);
       add(layout, []);add(layout, ['Non-fitting PNs and rows requiring review', 'Required pallets', 'Status'], 'header');
       calculation.results.filter(r=>!r.isRackValid||!r.isPlanningValid).forEach(r=>add(layout,[r.input.partNumber,r.isPlanningValid?r.requiredPallets:'Unavailable',r.rackFit==='NO'?'Does not fit':'Needs review',r.errors.join(' | ')]));
@@ -397,12 +398,12 @@
               const levelCell=drawing.getCell(firstRow,5);levelCell.value=`L${level+1}`;levelCell.font={bold:true,size:12};levelCell.alignment={vertical:'middle',horizontal:'center'};
               shelves.forEach((shelf,b)=>{
                 if(!shelf){drawing.mergeCells(boxRows[0],7+b*13,boxRows[0],18+b*13);const empty=drawing.getCell(boxRows[0],7+b*13);empty.value=level>=group[b].settings.rackLevels?'No shelf at this level':'Empty shelf';empty.font={color:{argb:'FFADB5BD'},italic:true};empty.alignment={horizontal:'center',vertical:'middle'};return;}
-                const units=[...shelf.placements].sort((a,b)=>a.y-b.y||a.x-b.x);
+                const units=[...shelf.placements].sort((a,b)=>a.y-b.y||a.x-b.x||(a.z||0)-(b.z||0));
                 units.forEach((box,index)=>{
                   const band=Math.floor(index/3),within=index%3,number=Math.min(3,units.length-band*3),span=12/number;
                   const left=7+b*13+within*span,right=left+span-1,row=boxRows[band];
                   drawing.mergeCells(row,left,row,right);
-                  const cell=drawing.getCell(row,left);cell.value=box.partNumber;
+                  const cell=drawing.getCell(row,left);cell.value=box.partNumber;cell.note=`Stack layer ${box.stackLayer||1}; depth row ${(box.depthRow||0)+1}; ${box.length} × ${box.depth} mm`;
                   cell.font={name:'Calibri',size:11,bold:true,color:{argb:BLACK}};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:YELLOW}};
                   cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};
                   const edge={style:'medium',color:{argb:dark}};cell.border={top:edge,bottom:edge,left:edge,right:edge};

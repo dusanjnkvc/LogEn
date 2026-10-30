@@ -43,9 +43,9 @@ Current Chrome surface formulas (full precision internally, m² displayed to two
 - PR net = required whole vertical rack bays × usable shelf length × depth / 1,000,000. Each bay ground footprint is counted once.
 - PR allocated = PR net + required whole rack bays × (usable shelf length + structural length) in mm × physical gangway metres / 2000.
 
-Lanes use existing row count, row width (pallet width + clearance), and deepest occupied row depth. Ground length is pallet length + clearance; occupied lane depth uses this adjusted length per position, with no additional gaps. A partial final row reserves a complete lane. Depth limit 0 remains unrestricted. Shelf capacity is the maximum grid capacity of both horizontal orientations, FLOOR(shelf L / unit L) × FLOOR(shelf D / unit W), with unit height fitting usable shelf height. No vertical stacking. Required storage pallets are the required rack units, as requested; existing part L/W/H describe each unit. Bays = CEILING(required units / (units per slot × levels)). These are half-shared-gangway allocations, not physical layouts. Gangway input remains in mm, default 4500.
+Lanes use existing row count, row width (pallet width + clearance), and deepest occupied row depth. Ground length is pallet length + clearance; occupied lane depth uses this adjusted length per position, with no additional gaps. A partial final row reserves a complete lane. Depth limit 0 remains unrestricted. Shelf capacity is the maximum grid capacity of both horizontal orientations, FLOOR(shelf L / unit L) × FLOOR(shelf D / unit W), with unit height fitting usable shelf height. Rotation, vertical stacking and two-deep storage default off. Required storage pallets are the required rack units, as requested; existing part L/W/H describe each unit. Bays = CEILING(required units / (units per slot × levels)). These are half-shared-gangway allocations, not physical layouts. Gangway input remains in mm, default 4500.
 
-Part Details includes Rack YES/NO/N/A from exact pallet length/width versus usable rack slot length/depth. Both horizontal orientations are always checked. Usable shelf dimensions already exclude required structure/clearance; these allowances are not applied a second time. Shelf surface available = bays × shelf footprint × levels; occupied = required units × unit footprint. Waste = available − occupied; per-level equivalent = waste / levels. Overall utilization is total occupied / total available, never a sum of percentages. Shelf waste is not unused floor space and is not subtracted from floor area. Legacy surface allowance is retained in saved data but is unused. Non-fitting pallet totals use required pallets, count duplicate part numbers only once by excluding duplicate planning rows, and flag unavailable quantities. Missing dimensions show N/A. The bounded table viewport has sticky headers/totals and one synchronized native horizontal scrollbar.
+Part Details includes Rack YES/NO/N/A from exact pallet length/width versus usable rack slot length/depth. Rack storage options apply per type. Usable shelf dimensions already exclude required structure/clearance; these allowances are not applied a second time. Shelf surface available = bays × shelf footprint × levels; occupied = required units × unit footprint. Waste = available − occupied; per-level equivalent = waste / levels. Overall utilization is total occupied / total available, never a sum of percentages. Shelf waste is not unused floor space and is not subtracted from floor area. Legacy surface allowance is retained in saved data but is unused. Non-fitting pallet totals use required pallets, count duplicate part numbers only once by excluding duplicate planning rows, and flag unavailable quantities. Missing dimensions show N/A. The bounded table viewport has sticky headers/totals and one synchronized native horizontal scrollbar.
 
 The Chrome/offline implementation is the delivered app. Flutter source under lib/ is a retained legacy implementation and has not been migrated to these new surface formulas.
 
@@ -55,7 +55,7 @@ Chrome stores projects for this file in the current browser profile. Keep the HT
 
 **Projects → Delete project** asks for confirmation. Deleted projects keep their inventory and settings in **Deleted projects**, where **Restore project** recovers them. Deleting the final active project leaves an empty warehouse ready for use.
 
-Earlier daily/monthly workbooks and saved projects are migrated once to a fixed per-shift rate using their previous production settings. Where direct pallet capacity existed without box quantities, it is represented as one box per pallet with a clear review notice. Review the packaging or import the new template. Missing current stock is kept unknown; the new eight-column input does not invent stock quantities or use them to override the required-pallet formula.
+Earlier daily/monthly workbooks and saved projects are migrated once to a fixed per-shift rate using their previous production settings. Where direct pallet capacity existed without box quantities, it is represented as one box per pallet with a clear review notice. Review the packaging or import the new template. Missing current stock is kept unknown; the new nine-column input does not invent stock quantities or use them to override the required-pallet formula.
 
 ## Validation and source
 
@@ -64,7 +64,7 @@ Calculation tests cover selected-shift daily rounding, Stackability, shifts 1–
 - `webapp/`: browser UI, calculation engine, editors, Excel services and tests; ExcelJS 4.4.0 is bundled with its MIT license.
 - `lib/`, `android/`, `test/`: Flutter implementation and tests. The ready-to-use deliverable is the Chrome HTML app; no Android APK is included.
 - `tools/build_offline.py`: rebuild the self-contained HTML.
-- `tools/write_template.cjs`: generate and verify the eight-column XLSX through the same service as the app.
+- `tools/write_template.cjs`: generate and verify the nine-column XLSX through the same service as the app.
 - `tools/check_offline.py`: verify self-containment.
 - `tools/preview_server.cjs`: development-only loopback preview, not required by the delivered file.
 
@@ -99,3 +99,11 @@ Warehouse Settings supports named rack types: the primary type plus additional t
 Near completion the mixed rack heuristic compares complete one- and two-bay finishes, preferring less floor area and unused surface, to avoid opening a small partial bay when a larger required bay can absorb those units. Up to 20 configured rack types are supported. A bounded packing effort reports an explicit unavailable warning rather than silently omitting inventory if a layout is excessively complex.
 
 Current web checks: `node tools/check_floor_stacking.cjs`, `node tools/check_mixed_racks.cjs`, and `node tools/check_box_rack.cjs`. These cover the current calculation rules, controls, persistence, shared packing and Excel export.
+
+## Rack storage options and categories
+
+Each rack type can be deleted, including the primary type (which can be restored). Rotation prefers the shorter side along frontage when it fits, with fallback to the other orientation. Without rotation, entered L stays along frontage. Vertical stacking is opt-in, identical PN only, limited by usable shelf height. Front-to-back storage is opt-in and capped at two rows. Gaps apply horizontally, not between vertical layers. Shelf occupancy counts each stack base once. Mixed bay selection remains a feasible packing estimate.
+
+The template includes Category; older eight-column inputs remain supported. The Category selector beside Required storage pallets scopes calculations, shared layouts and exports. Stored inventory remains complete, and duplicate validation spans the original project. Blank categories appear as Uncategorized.
+
+Targeted validation: `node tools/check_rack_policies.cjs`, `node tools/check_box_rack.cjs`, `node tools/check_floor_stacking.cjs`, `node tools/check_mixed_racks.cjs`.
