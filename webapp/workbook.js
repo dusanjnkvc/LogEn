@@ -382,7 +382,6 @@
             for(let i=0;i<span;i++)drawing.getColumn(post+bay*stride+1+i).width=48*(edges[i+1]-edges[i]);
           }
           const edgeIndex=value=>edges.indexOf(value);
-          const byPN=new Map(calculation.results.map(r=>[r.input.partNumber,r]));
           for(let first=0;first<plan.bays;first+=4){
             const group=plan.bayLayouts.slice(first,first+4),lastColumn=post+group.length*stride;
             const headingRow=first===0?5:drawing.rowCount+2;
@@ -408,8 +407,8 @@
                     for(const box of units){
                       const left=start+edgeIndex(box.x/cfg.rackSlotLength),right=start+edgeIndex((box.x+box.length)/cfg.rackSlotLength)-1;
                       if(right>left)drawing.mergeCells(row,left,row,right);
-                      const cell=drawing.getCell(row,left);cell.value=box.partNumber;const part=byPN.get(box.partNumber);
-                      cell.note=`PN: ${box.partNumber}\nBoxes in this position: ${part?.input.qtyOnPallet??'Unavailable'} (1 storage pallet)\nTotal required storage pallets for PN: ${part?.requiredPallets??'Unavailable'}\nTotal required boxes for PN: ${part?.isPlanningValid?part.requiredPallets*part.input.qtyOnPallet:'Unavailable'}\nGround storage for entire PN, without gangways: ${part?.isFloorValid?part.floor.withoutGangways.toFixed(2)+' m²':'Unavailable — review floor validation'}\nGround storage for entire PN, with allocated gangways: ${part?.isFloorValid?part.floor.withGangways.toFixed(2)+' m²':'Unavailable — review floor validation'}\nStack layer ${box.stackLayer||1}; depth row ${(box.depthRow||0)+1}; X ${box.x} mm; ${box.length} × ${box.depth} mm`;
+                      const cell=drawing.getCell(row,left);cell.value=box.partNumber;
+                      cell.note=`PN: ${box.partNumber}\nQTY: 1 pallet\nDimension: ${box.length} × ${box.depth} mm\nLocation: Bay ${first+b+1}, Level ${level+1}, Position ${shelf.placements.indexOf(box)+1}`;
                       cell.font={name:'Calibri',size:11,bold:true,color:{argb:BLACK}};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:YELLOW}};cell.alignment={horizontal:'center',vertical:'middle',wrapText:true,shrinkToFit:true};
                       const border={style:'thin',color:{argb:dark}};cell.border={top:border,bottom:border,left:border,right:border};
                     }
