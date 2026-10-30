@@ -312,7 +312,7 @@
           [['input', 'DOH from each imported part'], ['custom', 'Project DOH override']]);
         field(productionGrid, 'customCoverageDays', 'Project DOH override', false, false, 'days');
         stock.append($('p', 'muted formula-hint', 'Required pallets = consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH, then round up only the final result.'));
-        stock.append($('p','muted','Floor stacking is read-only; existing saved factors and height limits are preserved.'));
+        stock.append($('p','muted','Choose the floor stacking mode in Part details. Existing per-part factors and height limits are preserved.'));
         const preview = $('div', 'planning-preview');
         stock.append(preview);
         const floor = section(body, 'Floor storage & gangways', 'Excel-style allocations reserve half a shared gangway; the physical width below remains unchanged.');
@@ -460,7 +460,7 @@
         if (!floor) floorSection.append(notice('Floor storage cannot be calculated. Review the validation errors above.', true));
         else {
           formula(floorSection, 'Maximum stacking by height', `FLOOR(${n(settings.maxFloorStackingHeight)} mm ÷ ${n(input.height)} mm)`, `${n(floor.maximumStacking)} pallets`);
-          formula(floorSection, 'Effective stacking', settings.stackabilityEnabled ? `MIN(${n(input.stacking)} allowed, ${n(floor.maximumStacking)} by height)` : 'Stackability is off: use 1 pallet high. The saved per-part factor is retained.', `${n(floor.effectiveStacking)} pallets`);
+          formula(floorSection, 'Effective stacking', `Source: ${floor.stackingSource}. MIN(${n(floor.allowedStacking)} allowed, ${n(floor.maximumStacking)} by height). Imported value ${n(input.stacking)} is preserved.`, `${n(floor.effectiveStacking)} pallets`);
           formula(floorSection, 'Floor pallet positions', `CEILING(${n(result.requiredPallets)} pallets ÷ ${n(floor.effectiveStacking)})`, `${n(floor.positions)} positions`);
           formula(floorSection, 'Pallets per row · depth limit', settings.maxFloorRowDepth === 0
             ? 'Unrestricted row depth: one dedicated row holds all floor positions.'

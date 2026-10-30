@@ -5,7 +5,7 @@
 
   function createDefaultSettings() {
     return {
-      maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
+      stackingMode: 'legacy', manualStacking: 1, maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
       gangwayWidth: 4500, floorPalletClearance: 100,
       rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
       rackSlotHeight: 1100, betweenBoxesAllowance: 0, rackStructuralLength: 150,
@@ -40,8 +40,13 @@
   // Each storage allocation uses the full configured physical aisle width.
   const allocatedGangwayWidth = settings => settings.gangwayWidth;
 
+  function floorStackingMode(s) {
+    return !s.stackingMode || s.stackingMode==='legacy' ? (s.stackabilityEnabled?'imported':'manual') : s.stackingMode;
+  }
   function validateSettings(s) {
     const errors = [];
+    if (!['legacy','height','imported','manual'].includes(s.stackingMode)) errors.push('Choose automatic, imported or manual floor stacking.');
+    if (s.stackingMode==='manual' && (!Number.isSafeInteger(s.manualStacking) || s.manualStacking<1)) errors.push('Manual floor stacking must be a whole number of at least 1.');
     for (const [key, label] of Object.entries(positiveSettings)) {
       if (!Number.isFinite(s[key]) || s[key] <= 0)
         errors.push(label + ' must be a finite number greater than zero.');
@@ -249,7 +254,9 @@
         customCoverageDays: s.customCoverageDays
       };
       const maximumStacking = floor(s.maxFloorStackingHeight / input.height);
-      const effectiveStacking = Math.min(s.stackabilityEnabled ? input.stacking : 1, maximumStacking);
+      const stackingSource = floorStackingMode(s);
+      const allowedStacking = stackingSource==='height' ? maximumStacking : stackingSource==='imported' ? input.stacking : s.stackingMode==='manual' ? s.manualStacking : 1;
+      const effectiveStacking = Math.min(allowedStacking, maximumStacking);
       const positions = effectiveStacking >= 1 ? ceilDivide(requiredPallets, effectiveStacking) : 0;
       const floorLength = input.length + s.floorPalletClearance;
       const floorWidth = input.width + s.floorPalletClearance;
@@ -276,7 +283,7 @@
         const withGangways = withoutGangways + gangwayArea;
         if (![withoutGangways, formulaPositions, formulaStorageArea, gangwayArea, withGangways].every(Number.isFinite))
           throw new Error('Floor area exceeds supported numeric precision.');
-        floorResult = { floorLength, floorWidth, maximumStacking, effectiveStacking, positions,
+        floorResult = { stackingSource, allowedStacking, floorLength, floorWidth, maximumStacking, effectiveStacking, positions,
           palletsPerRow, rows, rowWidth, rowDepth, totalOccupiedDepth, fullRowDepth,
           lastRowDepth, lastRowPallets, withoutGangways,
           storageArea, formulaPositions,
@@ -403,5 +410,5 @@
     return project;
   }
 
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
 })(globalThis);

@@ -25,7 +25,7 @@ Use **LogEn_Shift_Inventory_Template.xlsx**, also available from **Download temp
 
 QTY in Box means individual parts per box. QTY boxes per Pallet means boxes carried by a pallet. Consumption per shift is individual parts consumed in one shift. L, W and H describe a loaded pallet in millimeters. Replace the sample, save as `.xlsx`, import, and review the confirmation.
 
-Floor stacking is read-only in the app. Existing saved factors and project stacking state are preserved, including their height limits. New parts default to factor 1. Import/export and backups retain saved values.
+Floor stacking values in each row remain read-only. Use the three stacking modes in Part details to calculate by height, use imported factors, or apply one manual factor to every part. Existing saved factors and project state are preserved until a mode is chosen.
 
 ## Required-pallet formula
 
@@ -91,3 +91,5 @@ Results exports include a Layout Graphic graphical worksheet with front views of
 Layout Graphic shows four bays side by side per group, with levels in descending order and PN-labelled boxes on each shelf. Empty levels are shown; any extra row within a level represents units in shelf depth, not vertical stacking. This schematic uses the existing allocation unchanged.
 
 Layout Graphic begins at E5 with no introductory text in A1–A3. Rack Layout omits both X and Y coordinate columns.
+
+Part details provides floor stacking modes: calculate ROUNDDOWN(Maximum floor stacking height / pallet H), use imported Stacking, or one manual whole factor for all parts. All modes respect the height limit; imported factors remain saved when switching modes. Legacy projects retain their prior effective stacking until a mode is selected. Rack calculations and pallet demand are unaffected.

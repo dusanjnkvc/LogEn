@@ -36,6 +36,8 @@
 .metric-drilldown{display:block;width:100%;text-align:left;background:transparent;border:0;color:inherit;padding:0;cursor:pointer;font:inherit}.metric-drilldown:hover span{text-decoration:underline}.metric-drilldown:focus-visible{outline:2px solid var(--yellow,#ffce24);outline-offset:5px;border-radius:3px}
 
 .stat-value-row{display:flex;align-items:center;gap:8px;white-space:nowrap}.stat-value-row .badge{flex:none;margin:0;line-height:1.2}.stat-value-row .stat-value{line-height:1.2}
+
+.floor-stacking-options{padding:18px 22px;margin-bottom:20px;display:flex;gap:18px;align-items:end;flex-wrap:wrap}.floor-stacking-options .field{min-width:230px;flex:1}.floor-stacking-options p{flex-basis:100%;margin:0;font-size:11px;line-height:1.7}
 </style>
 </head>
 <body>
@@ -135,7 +137,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   function createDefaultSettings() {
     return {
-      maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
+      stackingMode: 'legacy', manualStacking: 1, maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
       gangwayWidth: 4500, floorPalletClearance: 100,
       rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
       rackSlotHeight: 1100, betweenBoxesAllowance: 0, rackStructuralLength: 150,
@@ -170,8 +172,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // Each storage allocation uses the full configured physical aisle width.
   const allocatedGangwayWidth = settings => settings.gangwayWidth;
 
+  function floorStackingMode(s) {
+    return !s.stackingMode || s.stackingMode==='legacy' ? (s.stackabilityEnabled?'imported':'manual') : s.stackingMode;
+  }
   function validateSettings(s) {
     const errors = [];
+    if (!['legacy','height','imported','manual'].includes(s.stackingMode)) errors.push('Choose automatic, imported or manual floor stacking.');
+    if (s.stackingMode==='manual' && (!Number.isSafeInteger(s.manualStacking) || s.manualStacking<1)) errors.push('Manual floor stacking must be a whole number of at least 1.');
     for (const [key, label] of Object.entries(positiveSettings)) {
       if (!Number.isFinite(s[key]) || s[key] <= 0)
         errors.push(label + ' must be a finite number greater than zero.');
@@ -379,7 +386,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         customCoverageDays: s.customCoverageDays
       };
       const maximumStacking = floor(s.maxFloorStackingHeight / input.height);
-      const effectiveStacking = Math.min(s.stackabilityEnabled ? input.stacking : 1, maximumStacking);
+      const stackingSource = floorStackingMode(s);
+      const allowedStacking = stackingSource==='height' ? maximumStacking : stackingSource==='imported' ? input.stacking : s.stackingMode==='manual' ? s.manualStacking : 1;
+      const effectiveStacking = Math.min(allowedStacking, maximumStacking);
       const positions = effectiveStacking >= 1 ? ceilDivide(requiredPallets, effectiveStacking) : 0;
       const floorLength = input.length + s.floorPalletClearance;
       const floorWidth = input.width + s.floorPalletClearance;
@@ -406,7 +415,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const withGangways = withoutGangways + gangwayArea;
         if (![withoutGangways, formulaPositions, formulaStorageArea, gangwayArea, withGangways].every(Number.isFinite))
           throw new Error('Floor area exceeds supported numeric precision.');
-        floorResult = { floorLength, floorWidth, maximumStacking, effectiveStacking, positions,
+        floorResult = { stackingSource, allowedStacking, floorLength, floorWidth, maximumStacking, effectiveStacking, positions,
           palletsPerRow, rows, rowWidth, rowDepth, totalOccupiedDepth, fullRowDepth,
           lastRowDepth, lastRowPallets, withoutGangways,
           storageArea, formulaPositions,
@@ -533,7 +542,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return project;
   }
 
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject });
 })(globalThis);
 
 ;
@@ -630,7 +639,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         'Multiply raw pallet demand per shift by selected shifts and DOH without intermediate rounding; round up only the final required pallets.',
         'Shifts per day must be 1, 2 or 3; the default is 2. Custom project DOH defaults to 5 days.',
         'L(mm), W(mm) and H(mm) are loaded pallet dimensions in millimeters.',
-        'The eight-column template omits stacking: floor stacking defaults to 1. An optional extra Stacking column is supported. Enable Stackability in Shifts & days on hand to edit and apply the saved factor for each part; unchecked uses effective stacking 1 without erasing saved factors.',
+        'The eight-column template omits stacking: floor stacking defaults to 1. An optional extra Stacking column is supported. Choose imported stacking in Part details to use saved factors, automatic height calculation, or one global manual factor.',
         'Current stock quantity is optional. If absent, actual stock coverage remains unavailable rather than being treated as zero stock.',
         'Old monthly and daily templates remain supported with explicit conversion notices. Legacy consumption is converted once using the production settings selected at import.',
         'If old data has only direct parts-per-pallet capacity, packaging is inferred as one box containing that capacity. Review inferred packaging before using calculated demand.',
@@ -744,11 +753,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }
       for (let column = 1; column <= original.columnCount; column++) original.getColumn(column).width = column === 1 ? 27 : 22;
 
-      const floorHeaders = [...HEADERS, 'Allowed Floor Stacking', 'Status', 'Validation Errors', 'Required Parts', 'Required Pallets', 'Maximum Stacking by Height', 'Effective Floor Stacking', 'Floor Positions', 'Pallets Per Row', 'Required Floor Rows', 'Row Width (m)', 'Deepest Actual Occupied Row Depth (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', 'Full Row Actual Depth (m)', 'Last Row Actual Depth (m)', 'Last Row Pallets', 'Total Occupied Row Depth (m)', ...PLANNING_HEADERS, 'Floor positions (whole)', 'Formula Storage Base (m²)', 'Floor With Gangways Formula'];
+      const floorHeaders = [...HEADERS, 'Imported Floor Stacking (saved)', 'Status', 'Validation Errors', 'Required Parts', 'Required Pallets', 'Maximum Stacking by Height', 'Effective Floor Stacking', 'Floor Positions', 'Pallets Per Row', 'Required Floor Rows', 'Row Width (m)', 'Deepest Actual Occupied Row Depth (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', 'Full Row Actual Depth (m)', 'Last Row Actual Depth (m)', 'Last Row Pallets', 'Total Occupied Row Depth (m)', ...PLANNING_HEADERS, 'Floor positions (whole)', 'Formula Storage Base (m²)', 'Floor With Gangways Formula', 'Floor stacking source', 'Selected stacking factor'];
       const floor = table(workbook, 'Floor Pallet Calculations', floorHeaders, floorHeaders.map((header, index) => /\(m²\)|\(days\)|Consumption|Pallets per Day|equivalent/.test(header) ? index : -1).filter(index => index >= 0));
       calculation.results.forEach(result => {
         const value = result.floor;
-        add(floor, [...inputValues(result.input), result.input.stacking, result.isFloorValid ? (result.isValid ? 'Valid' : 'Included in floor totals — rack validation warning') : 'Invalid floor — excluded from floor totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, result.isFloorValid ? value?.storageArea : null, result.isFloorValid ? value?.gangwayArea : null, result.isFloorValid ? value?.withGangways : null, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `GS net + lane width * lanes * gangway metres / 2000 = ${value.withoutGangways} + ${value.rowWidth * 1000} * ${value.rows} * ${project.settings.gangwayWidth / 1000} / 2000` : null]);
+        add(floor, [...inputValues(result.input), result.input.stacking, result.isFloorValid ? (result.isValid ? 'Valid' : 'Included in floor totals — rack validation warning') : 'Invalid floor — excluded from floor totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, result.isFloorValid ? value?.storageArea : null, result.isFloorValid ? value?.gangwayArea : null, result.isFloorValid ? value?.withGangways : null, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `GS net + lane width * lanes * gangway metres / 2000 = ${value.withoutGangways} + ${value.rowWidth * 1000} * ${value.rows} * ${project.settings.gangwayWidth / 1000} / 2000` : null, value?.stackingSource, value?.allowedStacking]);
       });
       const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Boxes per Rack Slot (Required storage pallets)', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS, 'Rack Fit', 'Usable Shelf Footprint (m²)', 'Available Shelf Surface (m²)', 'Occupied Shelf Surface (m²)', 'Unused Rack Surface (m²)', 'Unused Surface per Level (m²)', 'Rack Utilization (%)', 'Unused Shelf Surface (%)'];
       const rack = table(workbook, 'Rack Calculations', rackHeaders, rackHeaders.map((h,i) => /m²|%/.test(h) ? i : -1).filter(i => i >= 0));
@@ -840,7 +849,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         ['Project', project.name], ['Source workbook', project.sourceName || 'Manual entry'], ['Exported at (UTC)', new Date().toISOString()],
         ['Stock formula', 'Round combined selected-shift daily demand, then apply DOH', 'Always used for both floor and rack scenarios'],
         ['Shifts per day', s.shiftsPerDay, 'integer: 1, 2 or 3'],
-        ['Stackability', Boolean(s.stackabilityEnabled), 'enabled: saved per-part factor capped by height; disabled: effective stacking 1; saved factors retained'],
+        ['Floor stacking mode', global.LogEnDomain.floorStackingMode(s), 'height: maximum floor stacking height / pallet H rounded down; imported: saved factor; manual: one project factor'], ['Manual floor stacking', s.manualStacking ?? 1, 'whole factor used only in manual mode'], ['Legacy Stackability', Boolean(s.stackabilityEnabled), 'enabled: saved per-part factor capped by height; disabled: effective stacking 1; saved factors retained'],
         ['DOH mode', s.coverageMode, 'input = each part DOH; custom = project DOH override'],
         ['Project DOH override', s.customCoverageDays, 'days; applied when DOH mode is custom'],
         ['Legacy import working days per month', s.workingDaysPerMonth ?? 22, 'only needed to migrate older monthly data; canonical per-shift consumption stays fixed'],
@@ -867,8 +876,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Keep all intermediate decimals; round up only the final required pallet quantity.',
         'Required pallets = consumption per shift / parts per box / boxes per pallet × shifts per day × DOH. Keep all intermediate decimals; round up only the final required pallet quantity.',
         'DOH mode input uses each part’s DOH; custom uses the project DOH override. No current stock quantity is required by the eight-column template.',
-        'Stackability disabled uses floor stacking 1. When enabled, each part uses its saved stacking factor capped by the height limit. Saved per-part factors are retained when disabled.',
-        'Floor stacking = MIN(Stackability enabled ? saved Stacking : 1, FLOOR(maximum floor stacking height / loaded pallet H)). Floor positions = CEILING(required pallets / effective stacking).',
+        'Choose the floor stacking source in Part details: height, imported or one manual factor. Imported factors are retained when another source is selected. Legacy projects retain their prior stacking until a source is chosen.',
+        'Floor stacking = MIN(selected source factor, FLOOR(maximum floor stacking height / loaded pallet H)). Automatic uses the height limit directly; imported uses the saved factor; manual uses the one project factor. Floor positions = CEILING(required pallets / effective stacking).',
         'Ground length = pallet L + clearance; ground width = pallet W + clearance. Pallets per row = FLOOR(maximum row depth LIMIT / ground length). Limit 0 means one unrestricted row per part. Rows = CEILING(floor positions / pallets per row).',
         'GS net = deepest occupied lane depth (mm) * lane width (mm) * lane count / 1000000; partial lanes reserve the same depth.',
         'GS with gangway = GS net + lane width (mm) * lanes * physical gangway (m) / 2000.',
@@ -1274,7 +1283,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           [['input', 'DOH from each imported part'], ['custom', 'Project DOH override']]);
         field(productionGrid, 'customCoverageDays', 'Project DOH override', false, false, 'days');
         stock.append($('p', 'muted formula-hint', 'Required pallets = consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH, then round up only the final result.'));
-        stock.append($('p','muted','Floor stacking is read-only; existing saved factors and height limits are preserved.'));
+        stock.append($('p','muted','Choose the floor stacking mode in Part details. Existing per-part factors and height limits are preserved.'));
         const preview = $('div', 'planning-preview');
         stock.append(preview);
         const floor = section(body, 'Floor storage & gangways', 'Excel-style allocations reserve half a shared gangway; the physical width below remains unchanged.');
@@ -1422,7 +1431,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (!floor) floorSection.append(notice('Floor storage cannot be calculated. Review the validation errors above.', true));
         else {
           formula(floorSection, 'Maximum stacking by height', `FLOOR(${n(settings.maxFloorStackingHeight)} mm ÷ ${n(input.height)} mm)`, `${n(floor.maximumStacking)} pallets`);
-          formula(floorSection, 'Effective stacking', settings.stackabilityEnabled ? `MIN(${n(input.stacking)} allowed, ${n(floor.maximumStacking)} by height)` : 'Stackability is off: use 1 pallet high. The saved per-part factor is retained.', `${n(floor.effectiveStacking)} pallets`);
+          formula(floorSection, 'Effective stacking', `Source: ${floor.stackingSource}. MIN(${n(floor.allowedStacking)} allowed, ${n(floor.maximumStacking)} by height). Imported value ${n(input.stacking)} is preserved.`, `${n(floor.effectiveStacking)} pallets`);
           formula(floorSection, 'Floor pallet positions', `CEILING(${n(result.requiredPallets)} pallets ÷ ${n(floor.effectiveStacking)})`, `${n(floor.positions)} positions`);
           formula(floorSection, 'Pallets per row · depth limit', settings.maxFloorRowDepth === 0
             ? 'Unrestricted row depth: one dedicated row holds all floor positions.'
@@ -1754,8 +1763,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function emptyInventory() {
     return `<div class="empty-state">${icon('box')}<h2>Your inventory starts here</h2><p>Import an Excel workbook or add parts manually. LogEn calculates floor and rack storage for every part automatically.</p><div class="actions"><button class="btn btn-primary" data-action="import">${icon('upload')}Import Excel</button><button class="btn btn-secondary" data-action="add">${icon('plus')}Add a part</button></div></div>`;
   }
+  function floorStackingOptions() {
+    const s=project().settings,mode=D.floorStackingMode(s);
+    return `<section class="panel floor-stacking-options"><label class="field"><span>Floor stacking mode</span><select id="floor-stacking-mode" data-floor-stacking-mode aria-label="Floor stacking mode">${[['height','Calculate from building height'],['imported','Use stacking from uploaded file'],['manual','One manual factor for all parts']].map(([key,label])=>`<option value="${key}" ${mode===key?'selected':''}>${label}</option>`).join('')}</select></label>${mode==='manual'?`<label class="field"><span>Stacking factor for all parts</span><input id="manual-floor-stacking" data-manual-floor-stacking type="text" inputmode="numeric" aria-label="Stacking factor for all parts" value="${escape(productionDrafts.manualStacking ?? (s.stackingMode==='manual'?s.manualStacking:1))}"></label>`:''}<p class="muted">${mode==='height'?`ROUNDDOWN(Maximum floor stacking height ÷ loaded pallet H). Building height comes from Warehouse Settings: ${count(s.maxFloorStackingHeight)} mm.`:mode==='imported'?'Uses each part’s imported Stacking factor. Missing Stacking defaults to 1. The eight-column template accepts an optional Stacking column.':'One whole factor applies to all parts.'} All factors are capped by Maximum floor stacking height; pallets taller than this limit show an error.</p></section>`;
+  }
   function renderParts(c) {
-    $('main').innerHTML = heading('EVERY PART, BOTH SCENARIOS', 'Part details', 'Search your inventory, review validation, and explore each calculation.', `<button class="btn btn-secondary" data-action="export">${icon('download')}Export results</button><button class="btn btn-primary" data-action="add">${icon('plus')}Add part number</button>`) + validationBanner(c) +
+    $('main').innerHTML = heading('EVERY PART, BOTH SCENARIOS', 'Part details', 'Search your inventory, review validation, and explore each calculation.', `<button class="btn btn-secondary" data-action="export">${icon('download')}Export results</button><button class="btn btn-primary" data-action="add">${icon('plus')}Add part number</button>`) + validationBanner(c) + floorStackingOptions() +
       `<div class="input-summary"><span>DOH: <strong>${escape(coverageTargetLabel(project().settings))}</strong></span><span>Shifts/day: <strong>${count(project().settings.shiftsPerDay)}</strong></span><span>Rack levels: <strong>${project().settings.rackLevels}</strong></span></div><div class="table-tools"><label class="search-field">${icon('search')}<input id="part-search" type="search" placeholder="Search part number…" aria-label="Search part number" value="${escape(query)}"></label><label class="toggle-label"><input id="invalid-filter" type="checkbox" ${invalidOnly ? 'checked' : ''}>Only invalid parts</label><div class="actions"><button class="btn btn-secondary" data-action="consumption">${icon('chart')}Shift calculation details</button><button class="btn btn-secondary" data-action="import">${icon('upload')}Import Excel</button><button class="btn btn-ghost" data-action="template">${icon('download')}Template</button></div></div><section class="panel" id="parts-table"></section>`;
     renderPartsTable(c);
     $('part-search').addEventListener('input', e => {query=e.target.value;page=0;renderPartsTable(calc());});
@@ -1854,12 +1867,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     } catch(error){toast(error.message||'This backup could not be read.',true);}
   }
   async function help() {
-    await modal({title:'From shift consumption to warehouse space',eyebrow:'HOW LOGEN WORKS',body:`<div class="help-steps"><div class="help-step"><strong>01 / PREPARE</strong><h3>Download the eight-column template</h3><p>Part Number, QTY in Box, QTY boxes per Pallet, Consumption per shift, DOH (Days on hand), L(mm), W(mm), H(mm).</p></div><div class="help-step"><strong>02 / IMPORT</strong><h3>Import your parts</h3><p>All file processing happens locally. L, W and H are loaded pallet dimensions. Floor stacking is read-only. Existing saved factors and height limits are used; new parts default to one pallet high.</p></div><div class="help-step"><strong>03 / CONFIGURE</strong><h3>Choose shifts and DOH</h3><p>Select 1, 2 or 3 shifts per day. Use each part’s Excel DOH or apply a chosen DOH override to all parts.</p></div><div class="help-step"><strong>04 / COMPARE</strong><h3>Review and export</h3><p>The same required pallet count drives floor and rack m² calculations. Inspect substituted formulas and export the five-sheet workbook.</p></div></div><h3>Your required-pallet formula</h3><div class="formula-box"><code>ROUNDUP(Consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH, 0)</code></div><p class="muted">Multiply raw pallets per shift by selected shifts and DOH without rounding. Round up only the final result. Example: 0.16 pallets/shift × 2 shifts × 10 DOH = 3.2 → 4 required pallets. Physical floor positions, rows and rack bays remain whole capacity units.</p><h3>Projects and offline use</h3><p class="muted">Projects → Delete project asks for confirmation. Restore a deleted project with all inventory and settings from Deleted projects. The file embeds all code, Excel tools and the logo. Back up projects before moving this file or clearing browser data.</p><h3>Excel-style surface allocations</h3><p class="muted">GS net = lane depth × lane width × lanes / 1,000,000 (all dimensions mm). GS allocated = GS net + lane width × lanes × physical gangway width in metres / 2000. PR net = required rack bays × (usable shelf length + structural length) × (usable shelf depth + structural depth) / 1,000,000. PR allocated = PR net + required rack bays × (usable shelf length + structural length) in mm × physical gangway width in metres / 2000. Both allocate half a shared gangway. Both horizontal orientations are checked using usable shelf length, depth and height. No vertical stacking inside a slot. Required storage pallets supply the rack unit quantity. Unused shelf area is not unused warehouse floor area and is never subtracted from the rack footprint. These are allocations, not physical aisle layouts.</p>`,confirm:'Got it',cancel:''});
+    await modal({title:'From shift consumption to warehouse space',eyebrow:'HOW LOGEN WORKS',body:`<div class="help-steps"><div class="help-step"><strong>01 / PREPARE</strong><h3>Download the eight-column template</h3><p>Part Number, QTY in Box, QTY boxes per Pallet, Consumption per shift, DOH (Days on hand), L(mm), W(mm), H(mm).</p></div><div class="help-step"><strong>02 / IMPORT</strong><h3>Import your parts</h3><p>All file processing happens locally. L, W and H are loaded pallet dimensions. Choose automatic, imported or global manual floor stacking in Part details. Per-part saved factors are preserved; height limits always apply.</p></div><div class="help-step"><strong>03 / CONFIGURE</strong><h3>Choose shifts and DOH</h3><p>Select 1, 2 or 3 shifts per day. Use each part’s Excel DOH or apply a chosen DOH override to all parts.</p></div><div class="help-step"><strong>04 / COMPARE</strong><h3>Review and export</h3><p>The same required pallet count drives floor and rack m² calculations. Inspect substituted formulas and export the five-sheet workbook.</p></div></div><h3>Your required-pallet formula</h3><div class="formula-box"><code>ROUNDUP(Consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH, 0)</code></div><p class="muted">Multiply raw pallets per shift by selected shifts and DOH without rounding. Round up only the final result. Example: 0.16 pallets/shift × 2 shifts × 10 DOH = 3.2 → 4 required pallets. Physical floor positions, rows and rack bays remain whole capacity units.</p><h3>Projects and offline use</h3><p class="muted">Projects → Delete project asks for confirmation. Restore a deleted project with all inventory and settings from Deleted projects. The file embeds all code, Excel tools and the logo. Back up projects before moving this file or clearing browser data.</p><h3>Excel-style surface allocations</h3><p class="muted">GS net = lane depth × lane width × lanes / 1,000,000 (all dimensions mm). GS allocated = GS net + lane width × lanes × physical gangway width in metres / 2000. PR net = required rack bays × (usable shelf length + structural length) × (usable shelf depth + structural depth) / 1,000,000. PR allocated = PR net + required rack bays × (usable shelf length + structural length) in mm × physical gangway width in metres / 2000. Both allocate half a shared gangway. Both horizontal orientations are checked using usable shelf length, depth and height. No vertical stacking inside a slot. Required storage pallets supply the rack unit quantity. Unused shelf area is not unused warehouse floor area and is never subtracted from the rack footprint. These are allocations, not physical aisle layouts.</p>`,confirm:'Got it',cancel:''});
   }
   function renderRecovery() {
     $('main').innerHTML=heading('WORKSPACE RECOVERY','Saved data needs attention','The saved workspace has been kept intact.')+`<div class="notice error">${escape(loadError)}</div><section class="panel backup-panel"><div><h2>Recover your workspace</h2><p>Restore a JSON backup, or recover the previous local save.</p></div><div class="actions"><button class="btn btn-primary" data-action="restore">Restore backup</button><button class="btn btn-secondary" data-action="recover">Recover previous save</button><button class="btn btn-secondary" data-action="raw-backup">Download saved data</button></div></section>`;
   }
   document.addEventListener('input',event=>{
+    if(event.target.hasAttribute('data-manual-floor-stacking')&&!busy&&!loadError){
+      productionDrafts.manualStacking=event.target.value;
+      const manualStacking=event.target.value.trim()===''?NaN:Number(event.target.value);
+      update({settings:{...project().settings,stackingMode:'manual',manualStacking}},true);return;
+    }
     const key=event.target.dataset.production;
     if(!key||busy||loadError)return;
     productionDrafts[key]=event.target.value;
@@ -1867,6 +1885,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     update({settings:{...project().settings,[key]:number,...(key==='customCoverageDays'?{coverageMode:'custom'}:{})}},true);
   });
   document.addEventListener('change',event=>{
+    if(event.target.hasAttribute('data-floor-stacking-mode')&&!busy&&!loadError){
+      productionDrafts.manualStacking=undefined;
+      const s=project().settings;update({settings:{...s,stackingMode:event.target.value,manualStacking:Number.isSafeInteger(s.manualStacking)&&s.manualStacking>=1?s.manualStacking:1}},true);return;
+    }
     if(!event.target.hasAttribute('data-production-coverage')||busy||loadError)return;
     update({settings:{...project().settings,coverageMode:event.target.value}},true);
   });
