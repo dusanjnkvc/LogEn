@@ -292,14 +292,17 @@
       const allowedStacking = stackingSource==='height' ? maximumStacking : stackingSource==='imported' ? input.stacking : s.stackingMode==='manual' ? s.manualStacking : 1;
       const effectiveStacking = Math.min(allowedStacking, maximumStacking);
       const positions = effectiveStacking >= 1 ? ceilDivide(requiredPallets, effectiveStacking) : 0;
-      const floorLength = input.length + s.floorPalletClearance;
-      const floorWidth = input.width + s.floorPalletClearance;
+      const floorRotated = s.maxFloorRowDepth > 0 && floor(s.maxFloorRowDepth / (input.length + s.floorPalletClearance)) < 1 && floor(s.maxFloorRowDepth / (input.width + s.floorPalletClearance)) >= 1;
+      const depthSide = floorRotated ? input.width : input.length;
+      const frontageSide = floorRotated ? input.length : input.width;
+      const floorLength = depthSide + s.floorPalletClearance;
+      const floorWidth = frontageSide + s.floorPalletClearance;
       const palletsPerRow = s.maxFloorRowDepth === 0 ? Math.max(positions, 1) :
         floor(s.maxFloorRowDepth / floorLength);
       if (maximumStacking < 1)
         errors.push('Floor: loaded pallet height exceeds maximum floor stacking height.');
       if (palletsPerRow < 1)
-        errors.push('Floor: pallet length cannot fit within the maximum row depth.');
+        errors.push('Floor: neither pallet orientation, including clearance, can fit within the maximum row depth.');
       if (effectiveStacking >= 1 && palletsPerRow >= 1) {
         const rows = ceilDivide(positions, palletsPerRow);
         const rowWidth = floorWidth / 1000;
@@ -317,7 +320,7 @@
         const withGangways = withoutGangways + gangwayArea;
         if (![withoutGangways, formulaPositions, formulaStorageArea, gangwayArea, withGangways].every(Number.isFinite))
           throw new Error('Floor area exceeds supported numeric precision.');
-        floorResult = { stackingSource, allowedStacking, floorLength, floorWidth, maximumStacking, effectiveStacking, positions,
+        floorResult = { stackingSource, allowedStacking, floorLength, floorWidth, floorRotated, depthSide, frontageSide, maximumStacking, effectiveStacking, positions,
           palletsPerRow, rows, rowWidth, rowDepth, totalOccupiedDepth, fullRowDepth,
           lastRowDepth, lastRowPallets, withoutGangways,
           storageArea, formulaPositions,

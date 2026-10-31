@@ -1,4 +1,4 @@
-/* LogEn — local-only application controller. No network APIs are used. */
+/* LogEn — local-only application controller. CAD jobs use the loopback helper. */
 (() => {
   'use strict';
   const D = globalThis.LogEnDomain;
@@ -260,7 +260,7 @@
   function renderImplementation(){
     const config=project().implementation||{},file=config.dwg,types=D.configuredRackTypes(project().settings);
     const rackRows=(config.existingRacks||[]).map((row,index)=>`<div class="existing-rack-row"><label class="field"><span>Rack type</span><select data-existing-type="${index}" aria-label="Rack type ${index+1}">${!types.some(t=>t.id===row.typeId)?'<option value="">Choose rack type</option>':''}${types.map(t=>`<option value="${escape(t.id)}" ${t.id===row.typeId?'selected':''}>${escape(t.name)} · ${count(t.rackSlotLength)} × ${count(t.rackSlotDepth)} × ${count(t.rackSlotHeight)} mm · ${count(t.rackLevels)} levels</option>`).join('')}</select></label><label class="field"><span>Available bays</span><input type="number" min="0" max="1000" step="1" data-existing-bays="${index}" aria-label="Available bays ${index+1}" value="${Number.isSafeInteger(row.bays)?row.bays:''}"></label><button class="btn btn-ghost" data-remove-existing="${index}">Remove</button></div>`).join('');
-    $('main').innerHTML=heading('WAREHOUSE PLANNING','Warehouse Designer','Set the warehouse constraints and allocate inventory to available racks and ground storage.')+`<section class="panel implementation-panel"><h2>Warehouse area</h2><label class="checkbox-field"><input id="implementation-greenfield" type="checkbox" ${config.greenfield?'checked':''}><span><strong>Greenfeild</strong><small class="muted">The area is blank, with no existing racks, equipment or other installations.</small></span></label>${config.greenfield?`<label class="checkbox-field implementation-option"><input id="implementation-wall-storage" type="checkbox" ${config.allowWallStorage?'checked':''}><span>Allowed storing on the wall.</span></label><p class="muted">Wall storage permission is saved for layout planning. Uploaded DWG walls are not automatically detected; this checkbox does not change aisle or area formulas.</p><button class="btn btn-secondary" data-action="improve-warehouse">Change Improve Warehouse threshold</button>`:`<label class="checkbox-field implementation-option"><input id="implementation-existing-racks" type="checkbox" ${config.useExistingRacks?'checked':''}><span>Use existing racks · add rack types and available bays</span></label>${config.useExistingRacks?`<div id="existing-racks">${rackRows||'<p class="muted">Add the rack types and number of bays already present.</p>'}</div><div class="actions"><button class="btn btn-secondary" data-action="add-existing-rack" ${types.length?'':'disabled'}>${icon('plus')}Add existing rack type</button><button class="btn btn-ghost" data-action="settings">Manage rack types and dimensions</button></div><p class="muted">Types and storage options come from Warehouse settings. Inventory comes from Part details. Smallest pallet quantities are placed first; PNs are never split between racks and ground. Enter whole available bays; unused bays still occupy floor area.</p>`:''}`}</section><section class="panel implementation-panel"><h2>Storage allocation</h2><p class="muted">${selectedCategory===null?'All categories':escape(selectedCategory||'Uncategorized')} · ${config.greenfield?'Greenfeild uses Improve Warehouse: quantities at or below the saved threshold go to racks; larger quantities go to ground storage.':'PNs with the fewest required pallets are assigned first. Each PN stays entirely in racks or entirely on ground; if its full quantity cannot fit, the whole PN goes to ground storage.'}</p><div id="implementation-results"></div></section><section class="panel implementation-panel"><div class="drawing-heading"><h2>Existing warehouse drawing</h2><button class="improve-warehouse" data-action="implementation-rack-layout" aria-label="✦ Create Layout →"><span class="ai-sparkle" aria-hidden="true">✦</span><span>Create Layout</span><span aria-hidden="true">→</span></button></div><p class="muted">Upload an AutoCAD .dwg file. The original drawing is saved locally for this project.</p><button class="btn btn-primary" data-action="upload-dwg">${icon('upload')}Upload DWG</button>${file?`<div class="implementation-file"><div><strong>${escape(file.name)}</strong><p class="muted">${decimal(file.size/1024/1024)} MB · Added ${escape(new Date(file.uploadedAt).toLocaleDateString('en-GB'))}</p></div><button class="btn btn-secondary" data-action="download-dwg">${icon('download')}Download DWG</button></div><div class="actions"><button class="btn btn-primary" data-action="convert-dwg-pdf">Create PDF from DWG</button>${config.pdf?'<button class="btn btn-secondary" data-action="download-dwg-pdf">Download PDF</button>':''}</div>${config.pdf?`<p class="muted">PDF: ${escape(config.pdf.name)}</p>`:''}`:'<p class="muted">No DWG uploaded for this project.</p>'}<h3>Local AutoCAD conversion</h3><p class="muted">Install and start the LogEn AutoCAD helper on this PC. Requires licensed AutoCAD with Core Console and DWG To PDF.pc3. Conversion runs on this PC and plots model-space extents to A3 landscape; it does not add the storage plan to the drawing.</p><button class="btn btn-secondary" data-action="download-cad-helper">Download AutoCAD helper</button><p class="muted small-note">DWG/PDF files stay in this browser on this device and are not included in the JSON backup. Save separate copies before changing PCs. A PDF is a plotted drawing, not automatically generated rack placement geometry.</p></section>`;
+    $('main').innerHTML=heading('WAREHOUSE PLANNING','Warehouse Designer','Set the warehouse constraints and allocate inventory to available racks and ground storage.')+`<section class="panel implementation-panel"><h2>Warehouse area</h2><label class="checkbox-field"><input id="implementation-greenfield" type="checkbox" ${config.greenfield?'checked':''}><span><strong>Greenfeild</strong><small class="muted">The area is blank, with no existing racks, equipment or other installations.</small></span></label>${config.greenfield?`<label class="checkbox-field implementation-option"><input id="implementation-wall-storage" type="checkbox" ${config.allowWallStorage?'checked':''}><span>Allowed storing on the wall.</span></label><p class="muted">Create Layout uses this permission when reserving perimeter gangways inside the selected DWG boundary.</p><button class="btn btn-secondary" data-action="improve-warehouse">Change Improve Warehouse threshold</button>`:`<label class="checkbox-field implementation-option"><input id="implementation-existing-racks" type="checkbox" ${config.useExistingRacks?'checked':''}><span>Use existing racks · add rack types and available bays</span></label>${config.useExistingRacks?`<div id="existing-racks">${rackRows||'<p class="muted">Add the rack types and number of bays already present.</p>'}</div><div class="actions"><button class="btn btn-secondary" data-action="add-existing-rack" ${types.length?'':'disabled'}>${icon('plus')}Add existing rack type</button><button class="btn btn-ghost" data-action="settings">Manage rack types and dimensions</button></div><p class="muted">Types and storage options come from Warehouse settings. Inventory comes from Part details. Smallest pallet quantities are placed first; PNs are never split between racks and ground. Enter whole available bays; unused bays still occupy floor area.</p>`:''}`}</section><section class="panel implementation-panel"><h2>Storage allocation</h2><p class="muted">${selectedCategory===null?'All categories':escape(selectedCategory||'Uncategorized')} · ${config.greenfield?'Greenfeild uses Improve Warehouse: quantities at or below the saved threshold go to racks; larger quantities go to ground storage.':'PNs with the fewest required pallets are assigned first. Each PN stays entirely in racks or entirely on ground; if its full quantity cannot fit, the whole PN goes to ground storage.'}</p><div id="implementation-results"></div></section><section class="panel implementation-panel"><div class="drawing-heading"><h2>Existing warehouse drawing</h2><button class="improve-warehouse" data-action="create-physical-layout" aria-label="✦ Create Layout →"><span class="ai-sparkle" aria-hidden="true">✦</span><span>Create Layout</span><span aria-hidden="true">→</span></button></div><p class="muted">Upload an AutoCAD .dwg file. The original drawing is saved locally for this project.</p><button class="btn btn-primary" data-action="upload-dwg">${icon('upload')}Upload DWG</button>${file?`<div class="implementation-file"><div><strong>${escape(file.name)}</strong><p class="muted">${decimal(file.size/1024/1024)} MB · Added ${escape(new Date(file.uploadedAt).toLocaleDateString('en-GB'))}</p></div><button class="btn btn-secondary" data-action="download-dwg">${icon('download')}Download DWG</button></div><div class="actions"><button class="btn btn-primary" data-action="convert-dwg-pdf">Create PDF from DWG</button>${config.pdf?'<button class="btn btn-secondary" data-action="download-dwg-pdf">Download PDF</button>':''}</div>${config.pdf?`<p class="muted">PDF: ${escape(config.pdf.name)}</p>`:''}`:'<p class="muted">No DWG uploaded for this project.</p>'}<div class="layout-output-actions"><button class="btn btn-primary" data-action="download-layout-output">${icon('download')}Download Output data</button><p class="muted small-note">Layout DWG and its Parts List in Excel, together in one ZIP download.</p></div></section>`;
     renderImplementationResults();
   }
   function renderImplementationResults(){
@@ -297,6 +297,75 @@
   }
   async function downloadDrawingPDF(){const p=project();await work('Opening PDF…',async()=>{const pdf=await drawingStore('readonly',store=>store.get(p.id+':pdf'));if(!pdf)throw new Error('Create the PDF on this device first.');download(pdf,p.implementation.pdf?.name||'Warehouse.pdf','application/pdf');});}
   function downloadCADHelper(){const encoded='__AUTOCAD_HELPER__';download(Uint8Array.from(atob(encoded),c=>c.charCodeAt(0)),'LogEn_AutoCAD_Helper.zip','application/zip');}
+  async function cadRequest(path,body,type){
+    let response;
+    try{response=await fetch('http://127.0.0.1:8765/'+path,{method:'POST',headers:{'Content-Type':type,'X-LogEn-Client':'dwg-converter'},body,signal:AbortSignal.timeout(240000)});}
+    catch(error){await offerCADHelper();throw new Error('Start the latest LogEn AutoCAD helper on this PC, then try Create Layout again. '+(error.name==='TimeoutError'?'The CAD job timed out.':''));}
+    if(response.status===404){await offerCADHelper();throw new Error('Update and restart the AutoCAD helper, then try Create Layout again.');}
+    if(!response.ok){const error=await response.json().catch(()=>({error:'AutoCAD could not finish this drawing job.'}));throw new Error(error.error);}
+    return response.json();
+  }
+  async function offerCADHelper(){if(await modal({title:'Connect AutoCAD on this PC',body:'<p>Layout drawing jobs run locally through the LogEn AutoCAD helper. Extract the latest helper ZIP, stop the previous LogEn helper if it is running, and start the new one. AutoCAD must be installed and licensed on this PC.</p>',confirm:'Download helper',cancel:'Close'}))downloadCADHelper();}
+  const base64Bytes=value=>Uint8Array.from(atob(value),c=>c.charCodeAt(0));
+  function drawingBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error('Could not read the original DWG.'));reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(file);});}
+  async function createPhysicalLayout(){
+    const p=project();
+    if(!p.implementation?.greenfield)throw new Error('Select Greenfeild to generate a new layout in a blank warehouse area. Existing-rack allocation remains available through View filled racks.');
+    await work('Reading the warehouse DWG with AutoCAD on this PC…',async()=>{
+      const plan=implementationPlan(),settings=structuredClone(p.settings),stamp=p.implementation?.dwg?.uploadedAt;
+      if(!plan.available)throw new Error(plan.errors.join(' '));
+      const file=await drawingStore('readonly',s=>s.get(p.id));if(!file||!stamp)throw new Error('Upload the warehouse DWG on this device first.');
+      const cached=await drawingStore('readonly',s=>s.get(p.id+':geometry'));
+      const geometry=cached?.stamp===stamp?cached.value:await cadRequest('geometry',file,'application/octet-stream');
+      if(!Array.isArray(geometry.entities))throw new Error('The helper did not return drawing geometry. Update and restart the AutoCAD helper.');
+      if(p.implementation?.dwg?.uploadedAt!==stamp)throw new Error('The DWG changed. Open Create Layout again.');
+      await drawingStore('readwrite',s=>s.put({stamp,value:geometry},p.id+':geometry'));
+      const sourceKey=LogEnLayout.sourceKey(plan,settings,p.implementation,stamp),stored=await drawingStore('readonly',s=>s.get(p.id+':physical-layout'));
+      const saved=stored?.sourceKey===sourceKey?stored.layout:null;
+      if(stored?.layout&&!saved)toast('Inventory, settings or the DWG changed. Generate an updated layout from the Parts List.');
+      LogEnLayoutUI.open({plan,settings,geometry,name:p.name,options:{...p.implementation.layoutOptions,allowWallStorage:!!p.implementation.allowWallStorage},saved,
+        onSave:async({options,layout})=>{
+          if(p.implementation?.dwg?.uploadedAt!==stamp)throw new Error('The DWG changed. Reopen Create Layout.');
+          await drawingStore('readwrite',s=>s.put({sourceKey,layout},p.id+':physical-layout'));
+          p.implementation={...p.implementation,layoutOptions:options};p.updatedAt=new Date().toISOString();save();
+        },
+        onHelper:downloadCADHelper,
+        onExport:async layout=>{
+          const output=await layoutOutput(p,plan,settings,file,sourceKey,layout);
+          await downloadLayoutBundle(p,plan,layout,output);
+          return {pdf:!!output.pdf,pdfError:output.pdfError,downloadPDF:()=>output.pdf&&download(output.pdf,output.filename+'.pdf','application/pdf')};
+        }});
+    });
+  }
+  const layoutKey=layout=>JSON.stringify({groups:layout.groups,unplaced:layout.unplaced,options:layout.options,env:layout.env});
+  async function layoutOutput(p,plan,settings,file,sourceKey,layout){
+    const current=D.calculateImplementation(p.parts,p.settings,{...p.implementation,improvementThreshold:p.improvementThreshold},selectedCategory);
+    if(LogEnLayout.sourceKey(current,p.settings,p.implementation,p.implementation?.dwg?.uploadedAt)!==sourceKey)throw new Error('The Parts List, settings or DWG changed. Regenerate the layout before downloading output.');
+    const checked=LogEnLayout.validate(layout,plan,settings);
+    if(checked.validationErrors.length)throw new Error('Resolve invalid drawing geometry before export: '+checked.validationErrors.map(v=>v.message).join(' '));
+    const key=layoutKey(layout),cached=await drawingStore('readonly',s=>s.get(p.id+':layout-output'));
+    if(cached?.sourceKey===sourceKey&&cached.layoutKey===key&&cached.dwg)return cached;
+    const result=await cadRequest('layout',JSON.stringify({dwg:await drawingBase64(file),scale:layout.options.scale,objects:LogEnLayout.cadObjects(layout),aisles:LogEnLayout.aisles(layout,settings)}),'application/json');
+    const bytes=base64Bytes(result.dwg||'');if(!/^AC\d{4}$/.test(new TextDecoder().decode(bytes.slice(0,6))))throw new Error('The helper did not return a valid layout DWG.');
+    const filename=safeName(p.implementation.dwg.name.replace(/\.dwg$/i,''))+(layout.complete?'_Layout':'_Partial_Layout'),dwg=new Blob([bytes],{type:'application/acad'});
+    let pdf=null;if(result.pdf){const value=base64Bytes(result.pdf);if(new TextDecoder().decode(value.slice(0,5))==='%PDF-')pdf=new Blob([value],{type:'application/pdf'});}
+    const output={sourceKey,layoutKey:key,filename,dwg,pdf,pdfError:result.pdfError,createdAt:new Date().toISOString()};
+    await drawingStore('readwrite',s=>s.put(output,p.id+':layout-output'));return output;
+  }
+  async function downloadLayoutBundle(p,plan,layout,output){
+    const excel=await W.layoutBytes(p,plan,layout),zip=await LogEnOutputZIP.pack([{name:output.filename+'.dwg',data:output.dwg},{name:output.filename+'_Parts.xlsx',data:excel}]);
+    download(zip,output.filename+'_Output.zip','application/zip');
+  }
+  async function downloadLayoutOutput(){
+    const p=project();await work('Preparing layout DWG and Excel output…',async()=>{
+      const stored=await drawingStore('readonly',s=>s.get(p.id+':physical-layout'));
+      if(!stored?.layout)throw new Error('Use Create Layout, then generate and save a layout first.');
+      const layout=stored.layout,plan=implementationPlan(),settings=p.settings;
+      if(!layout.complete&&!await modal({title:'Download partial layout?',body:`<p>${count(layout.unplacedRack)} rack pallet positions and ${count(layout.unplacedGround)} ground positions remain unplaced. The DWG will contain only placed objects; Excel will also list the unplaced quantities.</p>`,confirm:'Download partial output'}))return;
+      const file=await drawingStore('readonly',s=>s.get(p.id));if(!file)throw new Error('Upload the original warehouse DWG on this device first.');
+      const output=await layoutOutput(p,plan,settings,file,stored.sourceKey,layout);await downloadLayoutBundle(p,plan,layout,output);toast('Output ZIP downloaded: layout DWG and matching Excel Parts List.');
+    });
+  }
   function drawingStore(mode,action){
     return new Promise((resolve,reject)=>{const request=indexedDB.open('logen.project.drawings',1);request.onupgradeneeded=()=>request.result.createObjectStore('drawings');request.onerror=()=>reject(new Error('Drawing storage is unavailable.'));request.onsuccess=()=>{const db=request.result;let result;const tx=db.transaction('drawings',mode);const task=action(tx.objectStore('drawings'));task.onsuccess=()=>{result=task.result;};tx.oncomplete=()=>{db.close();resolve(result);};tx.onerror=()=>{db.close();reject(new Error('Could not save or read the drawing. Browser storage may be full.'));};tx.onabort=tx.onerror;};});
   }
@@ -304,9 +373,10 @@
     if(!file)return;
     await work('Saving warehouse drawing…',async()=>{
       if(!/\.dwg$/i.test(file.name))throw new Error('Choose an AutoCAD .dwg file.');
+      if(file.size>100*1024*1024)throw new Error('The local AutoCAD helper supports DWG files up to 100 MB.');
       const signature=await file.slice(0,6).text();if(!/^AC\d{4}$/.test(signature))throw new Error('This file does not have a recognized AutoCAD DWG header. Choose the original .dwg file.');
       const p=project();await drawingStore('readwrite',store=>store.put(file,p.id));
-      const implementation={...p.implementation,pdf:null,dwg:{name:file.name,size:file.size,uploadedAt:new Date().toISOString()}};
+      const implementation={...p.implementation,pdf:null,layoutOptions:null,dwg:{name:file.name,size:file.size,uploadedAt:new Date().toISOString()}};
       p.implementation=implementation;p.updatedAt=new Date().toISOString();save();render();toast('Warehouse DWG saved locally.');
     });
   }
@@ -445,9 +515,11 @@
         case 'improve-warehouse':await improveWarehouse();break;
         case 'add-existing-rack':{const type=D.configuredRackTypes(project().settings)[0];if(type)saveImplementation({existingRacks:[...(project().implementation?.existingRacks||[]),{typeId:type.id,bays:1}]});break;}
         case 'implementation-rack-layout':{const plan=implementationPlan();if(plan.available){const c=calc();await E.rackOverview({...c,sharedRack:plan.rack,results:plan.rows.filter(r=>r.rackPallets>0&&!r.errors.length).map(r=>({...c.results.find(original=>original.input.partNumber===r.input.partNumber),requiredPallets:r.rackPallets,isRackValid:true,isPlanningValid:true,rackFit:'YES',errors:[]})),totalRequiredPallets:plan.rackPallets,nonFittingPallets:0,nonFittingPartCount:0,nonFittingUnknownQuantity:0},project().settings);}break;}
+        case 'create-physical-layout':await createPhysicalLayout();break;
         case 'convert-dwg-pdf':await convertDrawingPDF();break;
         case 'download-dwg-pdf':await downloadDrawingPDF();break;
         case 'download-cad-helper':downloadCADHelper();break;
+        case 'download-layout-output':await downloadLayoutOutput();break;
         case 'upload-dwg':$('dwg-input').click();break;
         case 'download-dwg':await downloadDrawing();break;
         case 'import':$('excel-input').click();break;

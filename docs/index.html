@@ -104,6 +104,33 @@ select option:checked{background:var(--yellow);color:#111}
 .project-card-heading{display:flex;align-items:center;gap:8px;min-height:28px}.project-card-heading>.icon{color:var(--yellow);width:28px;height:28px}.project-card-heading .badge{margin-left:0;line-height:1.2}
 
 .drawing-heading{display:flex;align-items:center;justify-content:space-between;gap:24px}.drawing-heading h2{margin:0}.drawing-heading .improve-warehouse{flex-shrink:0}@media(max-width:650px){.drawing-heading{align-items:flex-start;flex-direction:column;gap:18px}}
+
+/* Physical DWG layout editor, within the existing Warehouse Designer. */
+dialog.physical-layout-dialog{width:min(1500px,96vw);max-width:96vw;max-height:95dvh;padding:0;overflow:hidden}
+.physical-layout-dialog[open]{display:flex;flex-direction:column}
+.physical-layout-heading{display:flex;justify-content:space-between;align-items:center;gap:18px;flex:none;padding:20px 24px}
+.physical-layout-heading h2{margin:5px 0 0}
+.physical-layout-body{display:grid;grid-template-columns:290px minmax(0,1fr);overflow:auto;min-height:0;border-block:1px solid var(--border)}
+.layout-setup{padding:20px;overflow:auto;border-right:1px solid var(--border);font-size:12px}
+.layout-setup h3{margin:0 0 18px}.layout-setup>.field{margin-bottom:16px}.layout-setup>.muted{line-height:1.8}
+.layout-setup details{border-block:1px solid var(--border);padding:14px 0;margin:12px 0}.layout-setup summary,.layout-properties summary,.layout-issues summary{cursor:pointer;font-weight:600;color:var(--text)}
+.layout-layer-list{max-height:220px;overflow:auto;padding-right:6px}.layout-layer-list>.field{margin-bottom:12px}.layout-layer-list .field>span{overflow-wrap:anywhere}
+.layout-setup .notice{padding:12px;font-size:11px}.layout-review{margin:18px 0;font-size:12px;align-items:flex-start}.layout-review input{flex:none;margin-top:3px}
+.layout-drawing-pane{padding:16px 20px;min-width:0;overflow:auto;max-height:calc(95dvh - 160px)}
+.layout-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.layout-legend{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);flex-wrap:wrap}.layout-legend i{width:10px;height:10px;display:inline-block;border-radius:2px}.rack-key{background:#365e75}.ground-key{background:#e8bd22}.aisle-key{background:#849bb580}
+.layout-canvas-wrap{height:clamp(280px,46dvh,590px);min-height:260px;border:1px solid #3c4653;border-radius:10px;overflow:hidden;background:#0f131a}
+.layout-canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}.layout-canvas [data-storage]{cursor:move}.layout-canvas [data-geometry]{cursor:pointer}.layout-canvas:focus-visible{outline:2px solid var(--yellow);outline-offset:-3px}
+.layout-properties{padding:16px;background:#13171e;border:1px solid var(--border);border-radius:10px;min-height:60px}.layout-properties h3{margin:0 0 8px}.layout-properties h4{margin:16px 0 8px}.layout-properties p{margin:8px 0;overflow-wrap:anywhere}.layout-properties details{margin:12px 0}.layout-properties details ul{max-height:160px;overflow:auto;padding-left:20px;font-size:12px}.layout-properties>.field{max-width:280px;margin-bottom:12px}
+.layout-coordinate-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:420px;margin:12px 0}.layout-coordinate-grid .field{min-width:0}.layout-properties .checkbox-field{margin:12px 0}.layout-reserved-row{display:flex;gap:10px;justify-content:space-between}
+.layout-validation-head{padding:14px 0 8px}.layout-complete{color:var(--green)}.layout-partial{color:var(--yellow)}.layout-counts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 14px}.layout-counts>div{border:1px solid var(--border);border-radius:8px;padding:12px}.layout-counts span,.layout-counts small{display:block;color:var(--muted);font-size:11px}.layout-counts strong{display:block;font-size:21px;margin:8px 0;color:var(--yellow)}
+.layout-issues{margin:16px 0;font-size:12px}.layout-issues ul{padding-left:20px;max-height:180px;overflow:auto}.layout-issues li{padding:5px 0;overflow-wrap:anywhere}.layout-unplaced-list{display:flex;flex-wrap:wrap;gap:8px;max-height:200px;overflow:auto;padding-top:12px}.layout-inline-error{margin-top:12px}.layout-inline-error[hidden]{display:none}
+.physical-layout-dialog .dialog-actions{flex:none;flex-wrap:wrap;gap:10px;padding:16px 24px}.layout-save-status{margin-right:auto;max-width:420px;font-size:12px}
+@media(max-width:800px){.physical-layout-body{grid-template-columns:1fr;display:block}.layout-setup{border-right:0;border-bottom:1px solid var(--border);overflow:visible}.layout-drawing-pane{overflow:visible;max-height:none}.physical-layout-dialog[open]{max-height:96dvh}.physical-layout-dialog .dialog-actions{padding:12px}.layout-save-status{flex-basis:100%;max-width:none}.layout-toolbar{flex-wrap:wrap}.physical-layout-heading{padding:16px}}
+
+.physical-layout-dialog [hidden]{display:none!important}
+
+.layout-output-actions{border-top:1px solid var(--border);margin-top:24px;padding-top:22px}.layout-output-actions .muted{margin-bottom:0}
 </style>
 </head>
 <body>
@@ -492,14 +519,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const allowedStacking = stackingSource==='height' ? maximumStacking : stackingSource==='imported' ? input.stacking : s.stackingMode==='manual' ? s.manualStacking : 1;
       const effectiveStacking = Math.min(allowedStacking, maximumStacking);
       const positions = effectiveStacking >= 1 ? ceilDivide(requiredPallets, effectiveStacking) : 0;
-      const floorLength = input.length + s.floorPalletClearance;
-      const floorWidth = input.width + s.floorPalletClearance;
+      const floorRotated = s.maxFloorRowDepth > 0 && floor(s.maxFloorRowDepth / (input.length + s.floorPalletClearance)) < 1 && floor(s.maxFloorRowDepth / (input.width + s.floorPalletClearance)) >= 1;
+      const depthSide = floorRotated ? input.width : input.length;
+      const frontageSide = floorRotated ? input.length : input.width;
+      const floorLength = depthSide + s.floorPalletClearance;
+      const floorWidth = frontageSide + s.floorPalletClearance;
       const palletsPerRow = s.maxFloorRowDepth === 0 ? Math.max(positions, 1) :
         floor(s.maxFloorRowDepth / floorLength);
       if (maximumStacking < 1)
         errors.push('Floor: loaded pallet height exceeds maximum floor stacking height.');
       if (palletsPerRow < 1)
-        errors.push('Floor: pallet length cannot fit within the maximum row depth.');
+        errors.push('Floor: neither pallet orientation, including clearance, can fit within the maximum row depth.');
       if (effectiveStacking >= 1 && palletsPerRow >= 1) {
         const rows = ceilDivide(positions, palletsPerRow);
         const rowWidth = floorWidth / 1000;
@@ -517,7 +547,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const withGangways = withoutGangways + gangwayArea;
         if (![withoutGangways, formulaPositions, formulaStorageArea, gangwayArea, withGangways].every(Number.isFinite))
           throw new Error('Floor area exceeds supported numeric precision.');
-        floorResult = { stackingSource, allowedStacking, floorLength, floorWidth, maximumStacking, effectiveStacking, positions,
+        floorResult = { stackingSource, allowedStacking, floorLength, floorWidth, floorRotated, depthSide, frontageSide, maximumStacking, effectiveStacking, positions,
           palletsPerRow, rows, rowWidth, rowDepth, totalOccupiedDepth, fullRowDepth,
           lastRowDepth, lastRowPallets, withoutGangways,
           storageArea, formulaPositions,
@@ -891,6 +921,33 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       return new Uint8Array(await workbook.xlsx.writeBuffer());
     }
 
+    async layoutBytes(project, plan, layout) {
+      const workbook=this._workbook(),L=global.LogEnLayout,objects=L.cadObjects(layout),rackByPN=new Map(),groundByPN=new Map();
+      for(const o of objects){if(o.kind==='rack')for(const a of o.allocations)rackByPN.set(a.pn,(rackByPN.get(a.pn)||0)+1);else groundByPN.set(o.pn,(groundByPN.get(o.pn)||0)+o.quantity);}
+      const summary=table(workbook,'Output Summary',['Layout output','Value']);
+      for(const row of [['Project',project.name],['Original DWG',project.implementation?.dwg?.name||''],['Exported at',new Date().toISOString()],['Source','Warehouse Designer Parts List; existing calculated quantities'],['Placement status',layout.complete?'Complete':'PARTIAL — see unplaced quantities and affected PNs'],['Required rack pallet positions',layout.rackRequired],['Generated assigned rack positions',layout.generatedRack],['Unplaced rack pallet positions',layout.unplacedRack],['Required ground positions (known)',layout.groundRequired],['Generated ground positions',layout.generatedGround],['Unplaced ground positions (known)',layout.unplacedGround],['Physical gangway width (mm)',project.settings.gangwayWidth],['Storage against walls allowed',Boolean(layout.options.allowWallStorage)],['Drawing scale (mm per DWG unit)',layout.options.scale],['Boundary DWG handle',layout.options.boundaryId]])add(summary,row);
+      summary.getColumn(1).width=44;summary.getColumn(2).width=90;
+      const headers=['Part Number','Category','Storage Type','Required Pallets','Assigned Rack Pallets','Assigned Ground Pallets','Placed Rack Pallets','Placed Ground Pallets','Unplaced Pallets','Required Ground Positions','Floor Stacking','L (mm)','W (mm)','H (mm)','QTY in Box','QTY boxes per Pallet','Consumption per shift','Input DOH','Layout Status / Validation','Floor Orientation','Pallet Side along Depth (mm)','Pallet Side across Row (mm)'];
+      const parts=table(workbook,'Layout Parts List',headers);parts.views=[{state:'frozen',xSplit:1,ySplit:1}];
+      for(const row of plan.rows){const p=row.input,rack=rackByPN.get(p.partNumber)||0,ground=groundByPN.get(p.partNumber)||0,missing=row.required===null?null:Math.max(0,row.required-rack-ground),issue=layout.affected.find(v=>v.pn===p.partNumber);
+        add(parts,[p.partNumber,p.category||'',row.storageType,row.required,row.rackPallets,row.groundPallets,rack,ground,missing,row.ground?.positions??(row.groundPallets===0?0:null),row.ground?.effectiveStacking??null,p.length,p.width,p.height,p.qtyBox,p.qtyOnPallet,p.consumptionPerShift,p.doh,[...(row.errors||[]),issue?.message,missing===0?'All required pallets placed':missing>0?'PARTIAL — unplaced pallets':'Quantity unavailable'].filter(Boolean).join(' · '),row.ground?(row.ground.floorRotated?'Rotated 90 degrees':'Original'):null,row.ground?.depthSide,row.ground?.frontageSide]);
+      }
+      parts.getColumn(19).width=80;parts.getColumn(17).numFmt='#,##0.0000';
+      const positions=table(workbook,'Ground Positions',['Object ID','Part Number','Quantity (pallets)','Stacking','L (mm)','W (mm)','H (mm)','X (mm)','Y (mm)','Footprint X (mm)','Footprint Y (mm)','Rotation (degrees)','Row ID']);
+      const bays=table(workbook,'Rack Bays',['Object ID','Bay','Rack Type','Levels','Assigned Pallets','X (mm)','Y (mm)','Footprint X (mm)','Footprint Y (mm)','Rotation (degrees)','Run ID']);
+      const allocations=table(workbook,'Rack Allocations',['Part Number','Bay Object ID','Bay','Level','Position','Quantity (pallets)','Stack Layer','Frontage (mm)','Depth (mm)']);
+      for(const o of objects){if(o.kind==='ground')add(positions,[o.id,o.pn,o.quantity,o.stacking,o.length,o.width,o.height,o.x,o.y,o.w,o.h,o.rotation,o.groupId]);else{add(bays,[o.id,o.bayNumber,o.typeName,o.levels,o.pallets,o.x,o.y,o.w,o.h,o.rotation,o.groupId]);for(const a of o.allocations)add(allocations,[a.pn,o.id,o.bayNumber,a.level,a.position,1,a.stackLayer,a.length,a.depth]);}}
+      const issues=table(workbook,'Unplaced and Validation',['Part Number / Scope','Reason']);
+      for(const issue of [...layout.affected,...layout.validationErrors])add(issues,[issue.pn,issue.message]);
+      if(!layout.affected.length&&!layout.validationErrors.length)add(issues,['All parts','No missing positions or validation errors.']);
+      issues.getColumn(2).width=100;
+      const savedSettings=table(workbook,'Warehouse Settings',['Setting','Saved Value']);
+      for(const [key,value]of Object.entries(project.settings))add(savedSettings,[key,typeof value==='object'?JSON.stringify(value):value]);
+      for(const [key,value]of Object.entries(layout.options))add(savedSettings,['Layout: '+key,typeof value==='object'?JSON.stringify(value):value]);
+      savedSettings.getColumn(2).width=95;
+      return new Uint8Array(await workbook.xlsx.writeBuffer());
+    }
+
     async importBytes(bytes, settings = {}) {
       const workbook = this._workbook();
       try { await workbook.xlsx.load(bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes); }
@@ -991,11 +1048,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }
       for (let column = 1; column <= original.columnCount; column++) original.getColumn(column).width = column === 1 ? 27 : 22;
 
-      const floorHeaders = [...HEADERS, 'Imported Floor Stacking (saved)', 'Status', 'Validation Errors', 'Required Parts', 'Required Pallets', 'Maximum Stacking by Height', 'Effective Floor Stacking', 'Floor Positions', 'Pallets Per Row', 'Required Floor Rows', 'Row Width (m)', 'Deepest Actual Occupied Row Depth (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', 'Full Row Actual Depth (m)', 'Last Row Actual Depth (m)', 'Last Row Pallets', 'Total Occupied Row Depth (m)', ...PLANNING_HEADERS, 'Floor positions (whole)', 'Formula Storage Base (m²)', 'Floor With Gangways Formula', 'Floor stacking source', 'Selected stacking factor'];
+      const floorHeaders = [...HEADERS, 'Imported Floor Stacking (saved)', 'Status', 'Validation Errors', 'Required Parts', 'Required Pallets', 'Maximum Stacking by Height', 'Effective Floor Stacking', 'Floor Positions', 'Pallets Per Row', 'Required Floor Rows', 'Row Width (m)', 'Deepest Actual Occupied Row Depth (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', 'Full Row Actual Depth (m)', 'Last Row Actual Depth (m)', 'Last Row Pallets', 'Total Occupied Row Depth (m)', ...PLANNING_HEADERS, 'Floor positions (whole)', 'Formula Storage Base (m²)', 'Floor With Gangways Formula', 'Floor stacking source', 'Selected stacking factor', 'Floor Orientation', 'Pallet side along depth (mm)', 'Pallet side across row (mm)'];
       const floor = table(workbook, 'Floor Pallet Calculations', floorHeaders, floorHeaders.map((header, index) => /\(m²\)|\(days\)|Consumption|Pallets per Day|equivalent/.test(header) ? index : -1).filter(index => index >= 0));
       calculation.results.forEach(result => {
         const value = result.floor;
-        add(floor, [...inputValues(result.input), result.input.stacking, result.isFloorValid ? (result.isValid ? 'Valid' : 'Included in floor totals — rack validation warning') : 'Invalid floor — excluded from floor totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, result.isFloorValid ? value?.storageArea : null, result.isFloorValid ? value?.gangwayArea : null, result.isFloorValid ? value?.withGangways : null, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `GS net + lane width * lanes * gangway metres / 2000 = ${value.withoutGangways} + ${value.rowWidth * 1000} * ${value.rows} * ${project.settings.gangwayWidth / 1000} / 2000` : null, value?.stackingSource, value?.allowedStacking]);
+        add(floor, [...inputValues(result.input), result.input.stacking, result.isFloorValid ? (result.isValid ? 'Valid' : 'Included in floor totals — rack validation warning') : 'Invalid floor — excluded from floor totals', (result.errors || []).join(' | '), result.requiredParts, result.requiredPallets, value?.maximumStacking, value?.effectiveStacking, value?.positions, value?.palletsPerRow, value?.rows, value?.rowWidth, value?.rowDepth, result.isFloorValid ? value?.storageArea : null, result.isFloorValid ? value?.gangwayArea : null, result.isFloorValid ? value?.withGangways : null, value?.fullRowDepth, value?.lastRowDepth, value?.lastRowPallets, value?.totalOccupiedDepth, ...planningValues(result.planning, result.input, project.settings), value?.formulaPositions, value?.formulaStorageArea, value ? `GS net + lane width * lanes * gangway metres / 2000 = ${value.withoutGangways} + ${value.rowWidth * 1000} * ${value.rows} * ${project.settings.gangwayWidth / 1000} / 2000` : null, value?.stackingSource, value?.allowedStacking, value?(value.floorRotated?'Rotated 90 degrees':'Original'):null, value?.depthSide, value?.frontageSide]);
       });
       const rackHeaders = ['Part Number', 'Status', 'Validation Errors', 'Required Pallets', 'Pallet L (mm)', 'Pallet W (mm)', 'Loaded H (mm)', 'Rotated 90 Degrees', 'Boxes per Rack Slot (Required storage pallets)', 'Rack Levels', 'Capacity Per Bay', 'Required Rack Bays', 'Effective Bay Length (mm)', 'Effective Bay Depth (mm)', 'Effective Bay Height (mm)', 'Maximum Bays Per Run', 'Required Rack Runs', 'Bays Per Run', 'Actual Run Lengths (m)', 'Total Run Frontage (m)', 'Without Gangways (m²)', 'Allocated Gangway Area (m²)', 'With Allocated Gangways (m²)', ...PLANNING_HEADERS, 'Rack Fit', 'Usable Shelf Footprint (m²)', 'Available Shelf Surface (m²)', 'Occupied Shelf Surface (m²)', 'Unused Rack Surface (m²)', 'Unused Surface per Level (m²)', 'Rack Utilization (%)', 'Unused Shelf Surface (%)', 'Selected standalone rack type'];
       const rack = table(workbook, 'Rack Calculations', rackHeaders, rackHeaders.map((h,i) => /m²|%/.test(h) ? i : -1).filter(i => i >= 0));
@@ -1118,7 +1175,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         'DOH mode input uses each part’s DOH; custom uses the project DOH override. Category is optional; current stock quantity is not required.',
         'Choose the floor stacking source in Part details: height, imported or one manual factor. Imported factors are retained when another source is selected. Legacy projects retain their prior stacking until a source is chosen.',
         'Floor stacking = MIN(selected source factor, FLOOR(maximum floor stacking height / loaded pallet H)). Automatic uses the height limit directly; imported uses the saved factor; manual uses the one project factor. Floor positions = CEILING(required pallets / effective stacking).',
-        'Ground length = pallet L + clearance; ground width = pallet W + clearance. Pallets per row = FLOOR(maximum row depth LIMIT / ground length). Limit 0 means one unrestricted row per part. Rows = CEILING(floor positions / pallets per row).',
+        'Ground depth = pallet L + clearance and frontage = pallet W + clearance. If that depth does not fit the positive row limit but W + clearance fits, rotate 90 degrees: depth = W + clearance, frontage = L + clearance. Pallets per row = FLOOR(maximum row depth LIMIT / ground length). Limit 0 means one unrestricted row per part. Rows = CEILING(floor positions / pallets per row).',
         'GS net = deepest occupied lane depth (mm) * lane width (mm) * lane count / 1000000; partial lanes reserve the same depth.',
         'GS with gangway = GS net + lane width (mm) * lanes * physical gangway (m) / 2000.',
         'Boxes per slot = FLOOR((usable length - g) / (unit frontage + g)) × depth rows (1, or at most 2 when enabled) × stack layers (1, or FLOOR(usable H/unit H) when enabled); g is Between boxes allowance, between units and at both frontage pillars; unit height must fit usable shelf height. Storage options apply per rack type: preferred shorter frontage when rotation enabled, identical-PN stacks when enabled, maximum two depth rows when enabled.',
@@ -1583,7 +1640,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         field(floorGrid, 'maxFloorRowDepth', 'Maximum floor row depth · 0 = unrestricted');
         field(floorGrid, 'gangwayWidth', 'Gangway width');
         field(floorGrid, 'floorPalletClearance', 'Floor pallet clearance');
-        floor.append($('p', 'muted formula-hint', 'Ground storage adds the full clearance to both pallet length and pallet width. Example: 100 mm changes 1200 × 800 to 1300 × 900 mm. Rack fit uses original dimensions.'));
+        floor.append($('p', 'muted formula-hint', 'Ground storage adds the full clearance to both pallet length and pallet width. Example: 100 mm changes 1200 × 800 to 1300 × 900 mm. If the length cannot fit the row depth, the pallet rotates 90° when its width plus clearance fits. A depth of 0 is unrestricted. Rack fit uses original dimensions.'));
         const gangwayHint = $('p', 'muted formula-hint');
         floor.append(gangwayHint);
         const rack = section(body, 'Primary rack type', 'Enter the usable footprint and height of one shelf. These dimensions already exclude structure and required clearance.');
@@ -1747,11 +1804,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           formula(floorSection, 'Maximum stacking by height', `FLOOR(${n(settings.maxFloorStackingHeight)} mm ÷ ${n(input.height)} mm)`, `${n(floor.maximumStacking)} pallets`);
           formula(floorSection, 'Effective stacking', `Source: ${floor.stackingSource}. MIN(${n(floor.allowedStacking)} allowed, ${n(floor.maximumStacking)} by height). Imported value ${n(input.stacking)} is preserved.`, `${n(floor.effectiveStacking)} pallets`);
           formula(floorSection, 'Floor pallet positions', `CEILING(${n(result.requiredPallets)} pallets ÷ ${n(floor.effectiveStacking)})`, `${n(floor.positions)} positions`);
+          if(floor.floorRotated)floorSection.append(notice(`Floor pallet rotated 90° to fit the row depth: ${n(floor.depthSide)} mm along depth × ${n(floor.frontageSide)} mm across the row, before clearance.`));
           formula(floorSection, 'Pallets per row · depth limit', settings.maxFloorRowDepth === 0
             ? 'Unrestricted row depth: one dedicated row holds all floor positions.'
-            : `FLOOR(${n(settings.maxFloorRowDepth)} ÷ (${n(input.length)} + ${n(settings.floorPalletClearance)}))`, n(floor.palletsPerRow));
+            : `FLOOR(${n(settings.maxFloorRowDepth)} ÷ (${n(floor.depthSide ?? input.length)} + ${n(settings.floorPalletClearance)}))`, n(floor.palletsPerRow));
           formula(floorSection, 'Dedicated floor rows', `CEILING(${n(floor.positions)} ÷ ${n(floor.palletsPerRow)})`, `${n(floor.rows)} rows`);
-          formula(floorSection, 'Adjusted ground dimensions and occupied depth', `Length: ${n(input.length)} + ${n(settings.floorPalletClearance)} = ${n(floor.floorLength)} mm; width: ${n(input.width)} + ${n(settings.floorPalletClearance)} = ${n(floor.floorWidth)} mm. Total occupied depth = ${n(floor.positions)} × ${n(floor.floorLength)} / 1000 m`, `${n(floor.totalOccupiedDepth)} m`);
+          formula(floorSection, 'Adjusted ground dimensions and occupied depth', `Along depth: ${n(floor.depthSide ?? input.length)} + ${n(settings.floorPalletClearance)} = ${n(floor.floorLength)} mm; across row: ${n(floor.frontageSide ?? input.width)} + ${n(settings.floorPalletClearance)} = ${n(floor.floorWidth)} mm. Total occupied depth = ${n(floor.positions)} × ${n(floor.floorLength)} / 1000 m`, `${n(floor.totalOccupiedDepth)} m`);
           formula(floorSection, 'A · Ground storage without gangway', `${n(floor.rowDepth * 1000)} mm lane depth × ${n(floor.rowWidth * 1000)} mm lane width × ${n(floor.rows)} lanes / 1,000,000`, area(floor.withoutGangways));
           formula(floorSection, 'B · Ground storage with gangway', `${n(floor.withoutGangways)} + (${n(floor.rowWidth * 1000)} × ${n(floor.rows)} × ${n(settings.gangwayWidth / 1000)}) / 2000`, area(floor.withGangways));
           floorSection.append(notice('Each lane reserves the deepest occupied row depth, including a partial last row. Half a shared physical gangway is allocated. A ground depth limit of zero remains unrestricted.'));
@@ -1867,7 +1925,303 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 }());
 
 ;
-/* LogEn — local-only application controller. No network APIs are used. */
+/* Physical layout uses the Warehouse Designer result, never a new demand formula. */
+(function(scope){
+  'use strict';
+  const EPS=0.001;
+  const positive=v=>Number.isFinite(v)&&v>0;
+  const bounds=points=>({minX:Math.min(...points.map(p=>p[0])),minY:Math.min(...points.map(p=>p[1])),maxX:Math.max(...points.map(p=>p[0])),maxY:Math.max(...points.map(p=>p[1]))});
+  const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+  function distance(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy||1)));return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy);}
+  function inside(p,poly){let yes=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[j],b=poly[i];if(distance(p,a,b)<EPS)return true;if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])yes=!yes;}return yes;}
+  const edges=poly=>poly.map((a,i)=>[a,poly[(i+1)%poly.length]]);
+  const properCross=(a,b,c,d)=>cross(a,b,c)*cross(a,b,d)<-EPS&&cross(c,d,a)*cross(c,d,b)<-EPS;
+  function intersectsPolygon(r,poly){const pts=corners(r);return pts.some(p=>inside(p,poly))||poly.some(p=>inside(p,pts))||edges(pts).some(([a,b])=>edges(poly).some(([c,d])=>properCross(a,b,c,d)));}
+  function validPolygon(poly){return Array.isArray(poly)&&poly.length>=3&&poly.every(p=>Array.isArray(p)&&p.length>=2&&p.slice(0,2).every(Number.isFinite))&&Math.abs(poly.reduce((n,p,i)=>n+p[0]*poly[(i+1)%poly.length][1]-p[1]*poly[(i+1)%poly.length][0],0))>EPS&&!edges(poly).some(([a,b],i)=>edges(poly).some(([c,d],j)=>j>i+1&&!(i===0&&j===poly.length-1)&&properCross(a,b,c,d)));}
+  function corners(r){return [[r.x,r.y],[r.x+r.w,r.y],[r.x+r.w,r.y+r.h],[r.x,r.y+r.h]];}
+  function contained(r,poly,margin=0){
+    const pts=corners(r);if(!pts.every(p=>inside(p,poly)))return false;
+    if(poly.some(p=>p[0]>r.x+EPS&&p[0]<r.x+r.w-EPS&&p[1]>r.y+EPS&&p[1]<r.y+r.h-EPS))return false;
+    for(const [a,b] of edges(pts)){
+      const dx=b[0]-a[0],dy=b[1]-a[1],length2=dx*dx+dy*dy||1;
+      const cuts=[0,1,...poly.filter(p=>distance(p,a,b)<EPS).map(p=>((p[0]-a[0])*dx+(p[1]-a[1])*dy)/length2)].sort((x,y)=>x-y);
+      for(let i=1;i<cuts.length;i++){const t=(cuts[i-1]+cuts[i])/2;if(!inside([a[0]+dx*t,a[1]+dy*t],poly))return false;}
+      for(const [c,d] of edges(poly)){if(properCross(a,b,c,d))return false;if(margin>EPS&&Math.min(distance(a,c,d),distance(b,c,d),distance(c,a,b),distance(d,a,b))<margin-EPS)return false;}
+    }
+    return true;
+  }
+  const overlaps=(a,b,g=0)=>a.x<b.x+b.w+g-EPS&&a.x+a.w+g>b.x+EPS&&a.y<b.y+b.h+g-EPS&&a.y+a.h+g>b.y+EPS;
+  const expand=(r,g)=>({x:r.x-g,y:r.y-g,w:r.w+2*g,h:r.h+2*g});
+  const rectFromBounds=b=>({x:b.minX,y:b.minY,w:Math.max(EPS,b.maxX-b.minX),h:Math.max(EPS,b.maxY-b.minY)});
+  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage});}
+  function makeObjects(plan,settings){
+    const groups=[],issues=[];let rackRequired=0,groundRequired=0;
+    for(const row of plan.rows){if(row.errors.length||row.required===null)issues.push({pn:row.input.partNumber,message:row.errors.join(' ')||'Required quantity is unavailable.'});rackRequired+=row.rackPallets||0;}
+    if(!plan.rack.available&&rackRequired)issues.push({pn:'Rack allocation',message:plan.rack.error||'An explicit rack position allocation is required.'});
+    let run=null;const ordinals=new Map();
+    for(const bay of plan.rack.bayLayouts||[]){
+      const t=bay.settings,w=t.rackSlotLength+t.rackStructuralLength,h=t.rackSlotDepth+t.rackStructuralDepth;
+      if(![w,h,t.maxRackRunLength,t.rackLevels].every(positive)){issues.push({pn:bay.typeName,message:'Invalid rack dimensions or levels.'});continue;}
+      if(w>t.maxRackRunLength+EPS){issues.push({pn:bay.typeName,message:'A rack bay exceeds its maximum run length.'});continue;}
+      const n=(ordinals.get(bay.typeId)||0)+1;ordinals.set(bay.typeId,n);
+      if(!run||run.typeId!==bay.typeId||run.w+w>t.maxRackRunLength+EPS){run={id:`run:${bay.typeId}:${n}`,kind:'rack',typeId:bay.typeId,w:0,h,objects:[]};groups.push(run);}
+      const allocations=bay.shelves.flatMap(sh=>sh.placements.map((p,i)=>({pn:p.partNumber,level:sh.level,position:i+1,length:p.length,depth:p.depth,x:p.x,y:p.y,z:p.z,height:p.height,depthRow:p.depthRow||1,stackLayer:p.stackLayer||1})));
+      run.objects.push({id:`rack:${bay.typeId}:${n}`,kind:'rack',dx:run.w,dy:0,w,h,rotation:0,bayNumber:bay.number,typeName:bay.typeName,levels:t.rackLevels,structuralLength:t.rackStructuralLength,structuralDepth:t.rackStructuralDepth,allocations,pallets:allocations.length});run.w+=w;
+    }
+    for(const row of plan.rows){
+      if(!row.groundPallets)continue;
+      const f=row.ground,p=row.input;
+      if(row.errors.length||!f||![p.length,p.width,p.height,f.floorLength,f.floorWidth,f.effectiveStacking,f.palletsPerRow].every(positive)||!Number.isSafeInteger(f.positions)){issues.push({pn:p.partNumber,message:'Ground dimensions, positions or stacking are unavailable.'});continue;}
+      groundRequired+=f.positions;
+      const objectWidth=f.floorRotated?p.length:p.width,objectDepth=f.floorRotated?p.width:p.length;
+      let pallets=row.groundPallets,index=0;
+      while(index<f.positions){const count=Math.min(f.palletsPerRow,f.positions-index),g={id:`ground-row:${p.partNumber}:${index+1}`,kind:'ground',w:f.floorWidth,h:f.rowDepth*1000,objects:[]};
+        for(let k=0;k<count;k++){const qty=Math.min(f.effectiveStacking,pallets);pallets-=qty;g.objects.push({id:`ground:${p.partNumber}:${index+1}`,kind:'ground',pn:p.partNumber,dx:(f.floorWidth-objectWidth)/2,dy:k*f.floorLength+(f.floorLength-objectDepth)/2,w:objectWidth,h:objectDepth,rotation:f.floorRotated?0:90,length:p.length,width:p.width,height:p.height,quantity:qty,stacking:f.effectiveStacking,position:index+1});index++;}
+        if(settings.maxFloorRowDepth>0&&g.h>settings.maxFloorRowDepth+EPS)issues.push({pn:p.partNumber,message:'Ground row exceeds maximum row depth.'});else groups.push(g);
+      }
+    }
+    return {groups,issues,rackRequired,groundRequired};
+  }
+  function environment(geometry,options){
+    const scale=options.scale,entity=geometry.entities.find(e=>e.id===options.boundaryId);
+    if(!positive(scale)||!entity?.boundaryEligible)throw new Error('Select drawing units and a closed, straight 2D warehouse boundary.');
+    const poly=entity.points.map(p=>[p[0]*scale,p[1]*scale]);if(!validPolygon(poly))throw new Error('The selected boundary is invalid or self-intersecting.');
+    const box=bounds(poly),obstacles=[],doors=[];
+    for(const e of geometry.entities){if(e.id===entity.id)continue;const role=options.entityRoles?.[e.id]||options.layerRoles?.[e.layer]||'obstacle';if(role==='reference')continue;
+      const r=rectFromBounds({minX:e.bounds[0]*scale,minY:e.bounds[1]*scale,maxX:e.bounds[2]*scale,maxY:e.bounds[3]*scale});
+      (role==='door'?doors:obstacles).push({...r,id:e.id});
+    }
+    for(const [i,r] of (options.manualObstacles||[]).entries()){if(![r.x,r.y,r.w,r.h].every(Number.isFinite)||r.w<=0||r.h<=0)throw new Error('Reserved areas need valid coordinates and positive dimensions in mm.');obstacles.push({...r,id:'reserved:'+i});}
+    if(!Number.isFinite(options.obstacleClearance)||options.obstacleClearance<0)throw new Error('Enter a non-negative obstacle clearance.');
+    return {poly,box,obstacles,doors,scale,boundaryId:entity.id};
+  }
+  function placedObjects(group){return group.objects.map(o=>({...o,x:group.x+(group.rotated?group.h-o.dy-o.h:o.dx),y:group.y+(group.rotated?o.dx:o.dy),w:group.rotated?o.h:o.w,h:group.rotated?o.w:o.h,rotation:(o.rotation+(group.rotated?90:0))%360,groupId:group.id}));}
+  const groupRect=g=>({x:g.x,y:g.y,w:g.rotated?g.h:g.w,h:g.rotated?g.w:g.h});
+  function aisleFor(g,env,gangway){const r=groupRect(g);return {x:env.spine.x+env.spine.w,y:g.y-gangway,w:Math.max(0,r.x+r.w-env.spine.x-env.spine.w),h:gangway};}
+  function placementError(group,placed,env,settings,options){
+    const r=groupRect(group),margin=options.allowWallStorage?0:settings.gangwayWidth,a=aisleFor(group,env,settings.gangwayWidth);
+    if(!contained(r,env.poly,margin))return 'Storage crosses the warehouse boundary or perimeter gangway.';
+    if(r.x<env.spine.x+env.spine.w-EPS)return 'Storage blocks the main access gangway.';
+    if(!contained(a,env.poly))return 'The access gangway leaves the warehouse boundary.';
+    const spine={x:env.spine.x,y:Math.min(env.spine.y,a.y),w:env.spine.w,h:Math.max(a.y+a.h-env.spine.y,env.spine.h)};
+    if(!contained(spine,env.poly))return 'The main access gangway is interrupted by the warehouse boundary.';
+    for(const route of env.routes||[])if(overlaps(r,route))return 'Storage blocks a reserved door or exit access route.';
+    for(const obstacle of env.obstacles)if(overlaps(r,obstacle,options.obstacleClearance)||overlaps(a,obstacle,options.obstacleClearance)||overlaps(spine,obstacle,options.obstacleClearance))return 'Storage or its access gangway intersects an obstacle clearance.';
+    for(const door of env.doors)if(overlaps(r,door,Math.max(settings.gangwayWidth,options.obstacleClearance)))return 'Storage blocks a door, exit or its access clearance.';
+    if(overlaps(r,env.spine))return 'Storage intersects the main gangway.';
+    for(const other of placed){if(other.id===group.id)continue;const rr=groupRect(other),aa=aisleFor(other,env,settings.gangwayWidth);if(overlaps(r,rr)||overlaps(r,aa)||overlaps(a,rr))return 'Storage overlaps another row/run or a reserved gangway.';}
+    return null;
+  }
+  function generate(plan,settings,geometry,options,previous=null){
+    if(!plan.available)throw new Error(plan.errors.join(' '));if(!(settings.gangwayWidth>0))throw new Error('Physical layout needs a gangway width greater than zero.');
+    const env=environment(geometry,options),source=makeObjects(plan,settings),g=settings.gangwayWidth,margin=options.allowWallStorage?0:g;
+    env.spine={x:env.box.minX+margin,y:env.box.minY,w:g,h:0};
+    env.routes=[];
+    if(env.doors.length){
+      env.spine.h=env.box.maxY-env.box.minY;
+      for(const door of env.doors){const cx=door.x+door.w/2,y=Math.max(env.box.minY,Math.min(env.box.maxY-g,door.y+door.h/2-g/2)),left=Math.min(cx,env.spine.x),right=Math.max(cx,env.spine.x+g);env.routes.push({x:left,y,w:right-left,h:g,id:'aisle:door:'+door.id,kind:'aisle'});}
+      for(const route of [env.spine,...env.routes])if(!contained(route,env.poly)||env.obstacles.some(o=>overlaps(route,o,options.obstacleClearance)))source.issues.push({pn:'Door / exit access',message:'A connected access route crosses an obstacle or leaves the boundary. Review drawing roles and reserved areas; this arrangement cannot be marked complete.'});
+    }
+    if(!options.allowWallStorage&&env.obstacles.some(o=>intersectsPolygon(o,env.poly)&&!contained(o,env.poly,g+options.obstacleClearance)))source.issues.push({pn:'Perimeter gangway',message:'An existing obstacle interrupts the reserved perimeter gangway. Review the DWG roles or revise the warehouse boundary before this arrangement can be marked complete.'});
+    if(source.groups.reduce((n,g)=>n+g.objects.length,0)>10000)throw new Error('This layout exceeds the 10,000-object drawing limit. Select a category to create a smaller layout.');
+    // A spine plus full-width connected access strips keeps storage out of aisles.
+    const placed=[],unplaced=[],old=new Map((previous?.groups||[]).map(v=>[v.id,v]));
+    const startX=env.spine.x+g,startY=env.box.minY+margin+g,endX=env.box.maxX-margin,endY=env.box.maxY-margin;
+    let rowY=startY,cursorX=startX,rowDepth=0;
+    const ordered=[...source.groups.filter(v=>v.kind==='rack'),...source.groups.filter(v=>v.kind==='ground')];
+    let attempts=0;
+    for(const group of ordered){
+      const prior=old.get(group.id);let candidate=prior?{...group,x:prior.x,y:prior.y,rotated:!!prior.rotated}:null;
+      if(candidate&&placementError(candidate,placed,env,settings,options))candidate=null;
+      if(!candidate){
+        for(let pass=0;pass<2&&!candidate;pass++){
+          const rotated=pass===1,w=rotated?group.h:group.w,h=rotated?group.w:group.h;
+          // Run orientation is physical row rotation, not pallet rotation within shelves.
+          let y=rowY,x=cursorX,depth=rowDepth;
+          while(y+h<=endY+EPS&&attempts++<150000){
+            if(x+w>endX+EPS){y+=depth+g;x=startX;depth=0;continue;}
+            const test={...group,x,y,rotated};
+            if(!placementError(test,placed,env,settings,options)){candidate=test;cursorX=x+w;rowY=y;rowDepth=Math.max(depth,h);break;}
+            // Try the next actual obstacle edge, preserving real object dimensions.
+            const blockers=env.obstacles.concat(env.doors,env.routes,placed.map(groupRect)).filter(o=>o.y<y+h&&o.y+o.h>y-g&&o.x+o.w>x);
+            const next=blockers.map(o=>o.x+o.w+Math.max(options.obstacleClearance,g)).filter(v=>v>x+EPS).sort((a,b)=>a-b)[0];
+            if(next&&next+w<=endX+EPS)x=next;else{y+=Math.max(depth,h)+g;x=startX;depth=0;}
+          }
+        }
+      }
+      if(candidate){placed.push(candidate);const r=groupRect(candidate);env.spine.h=Math.max(env.spine.h,r.y-env.spine.y);}
+      else unplaced.push(group);
+    }
+    const layout={version:1,groups:placed,unplaced,env,options:{...options},issues:source.issues,rackRequired:source.rackRequired,groundRequired:source.groundRequired};
+    return {...layout,...validate(layout,plan,settings)};
+  }
+  function validate(layout,plan,settings){
+    const errors=[...layout.issues],unplaced=layout.unplaced.slice(),valid=[];
+    const expected=makeObjects(plan,settings),expectedGroups=new Map(expected.groups.map(g=>[g.id,g]));
+    for(const group of layout.groups){const expectedGroup=expectedGroups.get(group.id);if(!expectedGroup){errors.push({pn:group.id,message:'Object is no longer in the Parts List.'});continue;}
+      const error=placementError(group,layout.groups,layout.env,settings,layout.options);
+      if(error){errors.push({pn:group.objects.map(o=>o.pn||o.typeName).join(', '),message:error});unplaced.push(group);}else valid.push(group);
+    }
+    const rackByPN=new Map(),groundByPN=new Map();let generatedRack=0,generatedGround=0;
+    for(const group of valid)for(const o of group.objects){if(o.kind==='rack'){for(const a of o.allocations){generatedRack++;rackByPN.set(a.pn,(rackByPN.get(a.pn)||0)+1);}}else{generatedGround++;groundByPN.set(o.pn,(groundByPN.get(o.pn)||0)+o.quantity);}}
+    const affected=[];
+    for(const row of plan.rows){if(row.required===null||row.errors.length){affected.push({pn:row.input.partNumber,message:row.errors.join(' ')||'Unknown demand'});continue;}
+      const placedRack=rackByPN.get(row.input.partNumber)||0,placedGround=groundByPN.get(row.input.partNumber)||0;
+      if(placedRack!==row.rackPallets||placedGround!==row.groundPallets)affected.push({pn:row.input.partNumber,message:`Rack pallets ${placedRack}/${row.rackPallets}; ground pallets ${placedGround}/${row.groundPallets}`});
+    }
+    return {generatedRack,generatedGround,unplacedRack:Math.max(0,expected.rackRequired-generatedRack),unplacedGround:Math.max(0,expected.groundRequired-generatedGround),affected,validationErrors:errors,complete:!affected.length&&!errors.length&&!unplaced.length};
+  }
+  function move(layout,id,x,y,rotated,plan,settings){const group=layout.groups.find(g=>g.id===id)||layout.unplaced.find(g=>g.id===id);if(!group)throw new Error('Select a row or rack run.');if(![x,y].every(Number.isFinite))throw new Error('Enter finite coordinates in mm.');const trial={...group,x,y,rotated};const error=placementError(trial,layout.groups,layout.env,settings,layout.options);if(error)throw new Error(error);Object.assign(group,trial);if(!layout.groups.some(g=>g.id===id)){layout.groups.push(group);layout.unplaced=layout.unplaced.filter(g=>g.id!==id);}const rect=groupRect(group);layout.env.spine.h=Math.max(layout.env.spine.h,rect.y-layout.env.spine.y);Object.assign(layout,validate(layout,plan,settings));return layout;}
+  function aisles(layout,settings){
+    const list=[{...layout.env.spine,id:'aisle:main',kind:'aisle'},...(layout.env.routes||[]),...layout.groups.map(g=>({...aisleFor(g,layout.env,settings.gangwayWidth),id:'aisle:'+g.id,kind:'aisle'}))];
+    const p=layout.env.poly,b=layout.env.box,g=settings.gangwayWidth;
+    if(!layout.options.allowWallStorage&&p.length===4&&p.every(v=>(Math.abs(v[0]-b.minX)<EPS||Math.abs(v[0]-b.maxX)<EPS)&&(Math.abs(v[1]-b.minY)<EPS||Math.abs(v[1]-b.maxY)<EPS))){list.push({x:b.minX,y:b.minY,w:b.maxX-b.minX,h:g},{x:b.minX,y:b.maxY-g,w:b.maxX-b.minX,h:g},{x:b.minX,y:b.minY+g,w:g,h:b.maxY-b.minY-2*g},{x:b.maxX-g,y:b.minY+g,w:g,h:b.maxY-b.minY-2*g});list.slice(-4).forEach((a,i)=>{a.id='aisle:perimeter:'+i;a.kind='aisle';});}
+    return list.filter(a=>a.w>EPS&&a.h>EPS);
+  }
+  function cadObjects(layout){return layout.groups.flatMap(placedObjects);}
+  scope.LogEnLayout=Object.freeze({generate,validate,move,makeObjects,environment,placedObjects,cadObjects,aisles,sourceKey,bounds,corners});
+})(globalThis);
+
+;
+/* Drawing editor. Inventory and capacities are supplied by Warehouse Designer. */
+(function(scope){
+  'use strict';
+  const L=scope.LogEnLayout,NS='http://www.w3.org/2000/svg';
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt=v=>Number(v).toLocaleString('en-GB',{maximumFractionDigits:2});
+  const el=(tag,attrs={},text)=>{const n=document.createElementNS(NS,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;return n;};
+  function open({plan,settings,geometry,options={},saved=null,onSave,onExport,onHelper,name}){
+    const dialog=document.createElement('dialog');dialog.className='physical-layout-dialog';
+    const defaults={1:25.4,2:304.8,4:1,5:10,6:1000};
+    let setup={scale:defaults[geometry.units]||0,boundaryId:'',obstacleClearance:settings.floorPalletClearance,layerRoles:{},entityRoles:{},manualObstacles:[],...options};
+    let layout=saved,selected=null,selectedEntity=null,dirty=false,exported=null,drag=null,viewBox=null;
+    const candidates=geometry.entities.filter(e=>e.boundaryEligible).sort((a,b)=>(b.bounds[2]-b.bounds[0])*(b.bounds[3]-b.bounds[1])-(a.bounds[2]-a.bounds[0])*(a.bounds[3]-a.bounds[1]));
+    const layers=[...new Set(geometry.entities.map(e=>e.layer))].sort();
+    const roleOptions=value=>[['obstacle','Blocked area'],['door','Door / exit'],['reference','Reference only']].map(([v,t])=>`<option value="${v}" ${v===value?'selected':''}>${t}</option>`).join('');
+    dialog.innerHTML=`<div class="dialog-head physical-layout-heading"><div><div class="eyebrow">WAREHOUSE DESIGNER · ${esc(name)}</div><h2>Create Layout</h2></div><button class="btn btn-secondary" data-layout-close>Close</button></div><div class="physical-layout-body"><aside class="layout-setup"><h3>Drawing setup</h3><label class="field"><span>DWG units</span><select data-layout-units aria-label="DWG units"><option value="0">Choose drawing units</option>${[[1,'Millimetres'],[10,'Centimetres'],[1000,'Metres'],[25.4,'Inches'],[304.8,'Feet']].map(([v,t])=>`<option value="${v}" ${setup.scale===v?'selected':''}>${t}</option>`).join('')}</select></label><label class="field"><span>Warehouse boundary</span><select data-layout-boundary aria-label="Warehouse boundary"><option value="">Choose closed outline</option>${candidates.map(e=>`<option value="${esc(e.id)}" ${e.id===setup.boundaryId?'selected':''}>${esc(e.layer)} · ${esc(e.id)} · ${fmt(e.bounds[2]-e.bounds[0])} × ${fmt(e.bounds[3]-e.bounds[1])} units</option>`).join('')}</select></label>${!candidates.length?'<p class="notice error">No closed straight 2D polyline was found. Add a closed warehouse outline in AutoCAD and upload the DWG again.</p>':''}<p class="muted">Gangway: <strong>${fmt(settings.gangwayWidth)} mm</strong><br>${setup.allowWallStorage?'Wall storage allowed; no perimeter aisle is reserved.':'A full-width perimeter gangway is reserved.'}</p><label class="field"><span>Obstacle clearance (mm)</span><input type="number" min="0" step="1" data-layout-clearance value="${esc(setup.obstacleClearance)}"></label><details open><summary>Drawing layers & access</summary><p class="muted">Classify layers, then click individual drawing objects to override their role. The selected boundary is excluded from obstacles.</p><div class="layout-layer-list">${layers.map((v,i)=>`<label class="field"><span title="${esc(v)}">${esc(v)}</span><select data-layout-layer="${i}" aria-label="Role of layer ${esc(v)}">${roleOptions(setup.layerRoles?.[v]||'obstacle')}</select></label>`).join('')}</div></details>${geometry.unreadableEntities?`<p class="notice error">${fmt(geometry.unreadableEntities)} drawing entities could not be read. Review them in AutoCAD and add any missing blocked areas below. They remain in the exported original drawing.</p>`:''}<details><summary>Add a reserved area</summary><p class="muted">Use drawing coordinates converted to mm. Add areas that must remain clear.</p><div class="layout-coordinate-grid">${[['x','X'],['y','Y'],['w','Length'],['h','Depth']].map(([k,t])=>`<label class="field"><span>${t} (mm)</span><input type="number" data-reserved="${k}" aria-label="Reserved ${t}"></label>`).join('')}</div><button class="btn btn-secondary small" data-add-reserved>Add area</button><div data-reserved-list></div></details><label class="checkbox-field layout-review"><input type="checkbox" data-layout-reviewed><span>I have checked the boundary, units, doors, exits and all blocked areas against the DWG.</span></label><button class="btn btn-primary" data-layout-generate>Generate from Parts List</button>${onHelper?'<details><summary>CAD connection</summary><button class="btn btn-secondary small" data-layout-helper>Download AutoCAD helper</button></details>':''}<p class="muted small-note">Uses the current Warehouse Designer allocation. Full physical aisles can require more area than the dashboard’s allocated estimates. Placement is a planning arrangement; it does not certify fire access or an optimized design.</p></aside><section class="layout-drawing-pane"><div class="layout-toolbar"><span class="layout-legend"><i class="rack-key"></i>Racks <i class="ground-key"></i>Ground <i class="aisle-key"></i>Gangways</span><div class="actions"><button class="btn btn-secondary small" data-layout-zoom="in" aria-label="Zoom in">+</button><button class="btn btn-secondary small" data-layout-zoom="out" aria-label="Zoom out">−</button><button class="btn btn-secondary small" data-layout-storage>Storage</button><button class="btn btn-secondary small" data-layout-fit>Fit</button></div></div><div class="layout-canvas-wrap"><svg class="layout-canvas" role="group" aria-label="Warehouse floor layout" tabindex="0"></svg></div><p class="muted small-note">Select a storage object to inspect its assignments. Drag a row or run, or use its coordinates below. Dimensions stay fixed. Use + / − to zoom; drag empty space to pan.</p><div class="layout-properties" data-layout-properties></div><div class="layout-inline-error notice error" role="alert" hidden></div><div data-layout-report></div></section></div><div class="dialog-actions"><span class="layout-save-status muted" aria-live="polite"></span><button class="btn btn-secondary" data-layout-save>Save layout</button><button class="btn btn-primary" data-layout-export ${layout?'':'disabled'}>Download Output data</button><button class="btn btn-secondary" data-layout-pdf hidden>Download layout PDF</button></div>`;
+    const q=s=>dialog.querySelector(s),svg=q('svg.layout-canvas'),properties=q('[data-layout-properties]'),report=q('[data-layout-report]');
+    const message=(text='')=>{q('.layout-inline-error').textContent=text;q('.layout-inline-error').hidden=!text;};
+    const role=e=>setup.entityRoles?.[e.id]||setup.layerRoles?.[e.layer]||'obstacle';
+    function changed(){dirty=true;q('[data-layout-reviewed]').checked=false;exported=null;q('[data-layout-export]').disabled=true;q('[data-layout-pdf]').hidden=true;q('.layout-save-status').textContent='Setup changed · regenerate the layout';draw();}
+    function setupValues(){setup.scale=Number(q('[data-layout-units]').value);setup.boundaryId=q('[data-layout-boundary]').value;setup.obstacleClearance=Number(q('[data-layout-clearance]').value);}
+    function saveLabel(text){q('.layout-save-status').textContent=text;}
+    async function persist(){await onSave({options:setup,layout:dirty?null:layout});saveLabel(dirty?'Drawing setup saved; regenerate to update positions.':'Layout saved on this device.');}
+    function fit(){
+      const boundary=geometry.entities.find(e=>e.id===setup.boundaryId),points=(boundary?[boundary]:geometry.entities).flatMap(e=>e.points||[]),s=setup.scale||1;
+      if(!points.length){viewBox=[0,0,100,100];return;}
+      const b=L.bounds(points),w=(b.maxX-b.minX)*s||100,h=(b.maxY-b.minY)*s||100,p=Math.max(w,h)*0.04;
+      viewBox=[b.minX*s-p,-b.maxY*s-p,w+2*p,h+2*p];
+    }
+    function rect(r,attrs={}){return el('rect',{x:r.x,y:-r.y-r.h,width:r.w,height:r.h,...attrs});}
+    function draw(){
+      if(!viewBox)fit();svg.setAttribute('viewBox',viewBox.join(' '));svg.replaceChildren();
+      const stroke=Math.max(viewBox[2],viewBox[3])/1000,s=setup.scale||1;
+      for(const e of geometry.entities){if(!e.points?.length)continue;const isBoundary=e.id===setup.boundaryId,r=role(e),pts=e.points.map(p=>`${p[0]*s},${-p[1]*s}`).join(' '),attrs={points:pts,fill:e.closed&&!isBoundary&&r!=='reference'?(r==='door'?'#ca8a0433':'#e05c6633'):'none',stroke:isBoundary?'#d8e0eb':r==='door'?'#ffb64d':r==='reference'?'#45505d':'#c16a75','stroke-width':selectedEntity===e.id?stroke*4:isBoundary?stroke*2:stroke,'data-geometry':e.id,'pointer-events':'stroke'};
+        svg.append(el(e.closed?'polygon':'polyline',attrs));
+      }
+      if(!dirty&&layout){
+        if(!setup.allowWallStorage){svg.append(el('polygon',{points:layout.env.poly.map(p=>`${p[0]},${-p[1]}`).join(' '),fill:'none',stroke:'#8394a92a','stroke-width':settings.gangwayWidth*2,'pointer-events':'none','clip-path':'url(#logen-boundary-clip)'}));const defs=el('defs'),clip=el('clipPath',{id:'logen-boundary-clip'});clip.append(el('polygon',{points:layout.env.poly.map(p=>`${p[0]},${-p[1]}`).join(' ')}));defs.append(clip);svg.append(defs);}
+        for(const a of L.aisles(layout,settings))svg.append(rect(a,{fill:'#849bb524',stroke:'#849bb54a','stroke-width':stroke,'pointer-events':'none'}));
+        for(const group of layout.groups)for(const o of L.placedObjects(group)){
+          const rack=o.kind==='rack',active=selected===group.id;
+          const shape=rect(o,{fill:rack?'#1d3443':'#e8bd22',stroke:active?'#ffffff':rack?'#8ab7ce':'#fada54','stroke-width':active?stroke*4:stroke*2,'data-storage':group.id,'data-object':o.id,tabindex:'0',role:'button','aria-label':rack?`Rack bay ${o.bayNumber}`:`Ground ${o.pn}, position ${o.position}, ${o.quantity} pallets`});svg.append(shape);
+          if(rack){for(const offset of [o.structuralLength/2,(o.rotation%180===0?o.w:o.h)-o.structuralLength/2])svg.append(el('line',o.rotation%180===0?{x1:o.x+offset,y1:-o.y,x2:o.x+offset,y2:-o.y-o.h,stroke:'#8ab7ce','stroke-width':stroke*2,'pointer-events':'none'}:{x1:o.x,y1:-o.y-offset,x2:o.x+o.w,y2:-o.y-offset,stroke:'#8ab7ce','stroke-width':stroke*2,'pointer-events':'none'}));}
+          else{const labels=[`PN: ${o.pn}`,`Size: ${fmt(o.length)} × ${fmt(o.width)} × ${fmt(o.height)} mm`,`QTY: ${fmt(o.quantity)}`,`Stacking: ${fmt(o.stacking)}`],size=Math.min(o.h/7,o.w/(Math.max(...labels.map(t=>t.length))*0.65+3));labels.forEach((text,i)=>svg.append(el('text',{x:o.x+o.w/2,y:-o.y-o.h/2+(i-1.5)*size*1.4,'font-family':'Arial, sans-serif','font-size':size,'text-anchor':'middle','dominant-baseline':'central',fill:'#161b22','pointer-events':'none'},text)));}
+        }
+      }
+      for(const [i,r]of (setup.manualObstacles||[]).entries())svg.append(rect(r,{fill:'#ec6b7540',stroke:'#ec6b75','stroke-width':stroke*2,'pointer-events':'none'}));
+    }
+    function showReserved(){q('[data-reserved-list]').innerHTML=(setup.manualObstacles||[]).map((r,i)=>`<p class="layout-reserved-row">${fmt(r.w)} × ${fmt(r.h)} mm <button class="text-link" data-remove-reserved="${i}">Remove</button></p>`).join('');}
+    function showReport(){
+      if(!layout){report.innerHTML='<p class="muted">Choose the drawing setup, then generate positions from the existing Parts List.</p>';return;}
+      const metric=(label,required,generated,missing)=>`<div><span>${label}</span><strong>${fmt(generated)} / ${fmt(required)}</strong><small>${fmt(missing)} unplaced</small></div>`;
+      report.innerHTML=`<div class="layout-validation-head ${layout.complete?'layout-complete':'layout-partial'}"><strong>${dirty?'Setup changed · regenerate':layout.complete?'All Parts List positions placed':'Partial layout · positions need attention'}</strong></div><div class="layout-counts">${metric('Rack pallet positions',layout.rackRequired,layout.generatedRack,layout.unplacedRack)}${metric('Ground storage positions',layout.groundRequired,layout.generatedGround,layout.unplacedGround)}</div>${layout.affected.length||layout.validationErrors.length?`<details open class="layout-issues"><summary>Affected Part Numbers & validation</summary><ul>${[...layout.affected,...layout.validationErrors].map(v=>`<li><strong>${esc(v.pn)}</strong>: ${esc(v.message)}</li>`).join('')}</ul></details>`:''}${layout.unplaced.length?`<details class="layout-issues"><summary>Unplaced rows / runs · select to position manually</summary><div class="layout-unplaced-list">${layout.unplaced.map(g=>`<button class="btn btn-secondary small" data-unplaced="${esc(g.id)}">${esc(g.kind==='rack'?'Rack run '+g.objects[0]?.typeName:'Ground '+g.objects[0]?.pn)} · ${fmt(g.w)} × ${fmt(g.h)} mm</button>`).join('')}</div></details>`:''}`;
+    }
+    function showProperties(objectId=null){
+      if(selectedEntity){const entity=geometry.entities.find(e=>e.id===selectedEntity);properties.innerHTML=`<h3>Drawing object</h3><p>${esc(entity.layer)} · ${esc(entity.type)} · ${esc(entity.id)}</p><label class="field"><span>Role</span><select data-entity-role aria-label="Selected drawing object role">${roleOptions(role(entity))}</select></label>${entity.boundaryEligible?'<button class="btn btn-secondary small" data-use-boundary>Use as warehouse boundary</button>':''}`;return;}
+      const group=layout?.groups.find(g=>g.id===selected)||layout?.unplaced.find(g=>g.id===selected);
+      if(!group){properties.innerHTML='<p class="muted">Click a rack bay, ground position or original drawing object to inspect it.</p>';return;}
+      const o=group.objects.find(o=>o.id===objectId)||group.objects[0],unplaced=!layout.groups.some(g=>g.id===group.id),assignments=new Map();
+      for(const a of o.allocations||[])assignments.set(`${a.pn} · L${a.level}`,(assignments.get(`${a.pn} · L${a.level}`)||0)+1);
+      properties.innerHTML=`<h3>${o.kind==='rack'?`Rack bay ${fmt(o.bayNumber)} · ${esc(o.typeName)}`:`Ground position ${fmt(o.position)} · ${esc(o.pn)}`}</h3><p class="muted">Object ${esc(o.id)}<br>${o.kind==='rack'?`${fmt(o.w)} × ${fmt(o.h)} mm · ${fmt(o.levels)} levels · ${fmt(o.pallets)} assigned pallets`:`Size ${fmt(o.length)} × ${fmt(o.width)} × ${fmt(o.height)} mm · QTY ${fmt(o.quantity)} · stacking ${fmt(o.stacking)}`}</p>${o.kind==='rack'?`<details><summary>Assigned pallet positions</summary><ul>${[...assignments].map(([pn,qty])=>`<li>${esc(pn)} · ${fmt(qty)} pallets</li>`).join('')||'<li>Empty bay</li>'}</ul></details>`:''}<button class="btn btn-secondary small" data-focus-object="${esc(o.id)}" ${unplaced?'disabled':''}>Zoom to position</button><h4>${unplaced?'Place':'Move'} ${o.kind==='rack'?'rack run':'ground row'}</h4><p class="muted small-note">${fmt(group.objects.length)} ${o.kind==='rack'?'bays':'positions'} move together, keeping their configured clearances and access gangway.</p><div class="layout-coordinate-grid"><label class="field"><span>X (mm)</span><input type="number" step="1" data-move-x value="${Math.round(group.x??layout.env.box.minX)}"></label><label class="field"><span>Y (mm)</span><input type="number" step="1" data-move-y value="${Math.round(group.y??layout.env.box.minY)}"></label></div><label class="checkbox-field"><input type="checkbox" data-move-rotate ${group.rotated?'checked':''}><span>Rotate row / run 90°</span></label><button class="btn btn-secondary small" data-apply-move>${unplaced?'Place':'Apply position'}</button>`;
+    }
+    function selectStorage(id,objectId){selected=id;selectedEntity=null;showProperties(objectId);draw();}
+    function applyMove(x,y,rotated){
+      try{if(dirty)throw new Error('Regenerate after changing drawing setup.');L.move(layout,selected,x,y,rotated,plan,settings);message();exported=null;q('[data-layout-pdf]').hidden=true;draw();showProperties();showReport();saveLabel('Position updated · save to keep edits');}catch(error){message(error.message);draw();}
+    }
+    q('[data-layout-generate]').addEventListener('click',async()=>{
+      try{setupValues();if(!q('[data-layout-reviewed]').checked)throw new Error('Review the boundary, units, doors, exits and blocked areas first.');layout=L.generate(plan,settings,geometry,setup,layout);dirty=false;selected=null;selectedEntity=null;exported=null;fit();draw();showProperties();showReport();message();q('[data-layout-export]').disabled=false;await persist();}catch(error){message(error.message);}
+    });
+    q('[data-layout-save]').addEventListener('click',()=>persist().catch(e=>message(e.message)));
+    q('[data-layout-export]').addEventListener('click',async()=>{
+      if(!layout||dirty)return;
+      if(!layout.complete&&!window.confirm(`This is a partial layout: ${layout.unplacedRack} rack pallet positions and ${layout.unplacedGround} ground positions remain unplaced. Export only the placed objects?`))return;
+      const button=q('[data-layout-export]');button.disabled=true;saveLabel('AutoCAD is creating the layout DWG and PDF on this PC…');message();
+      try{await persist();exported=await onExport(layout);saveLabel(exported.pdf?'DWG + Excel ZIP downloaded · PDF ready.':'DWG + Excel ZIP downloaded. '+(exported.pdfError||''));q('[data-layout-pdf]').hidden=!exported.pdf;}catch(error){message(error.message);saveLabel('Export did not finish.');}finally{button.disabled=false;}
+    });
+    q('[data-layout-pdf]').addEventListener('click',()=>exported?.downloadPDF());
+    q('[data-layout-units]').addEventListener('change',()=>{setupValues();fit();changed();});
+    q('[data-layout-boundary]').addEventListener('change',()=>{setupValues();fit();changed();});
+    q('[data-layout-clearance]').addEventListener('change',()=>{setupValues();changed();});
+    dialog.addEventListener('change',event=>{
+      if(event.target.matches('[data-layout-layer]')){setup.layerRoles={...setup.layerRoles,[layers[Number(event.target.dataset.layoutLayer)]]:event.target.value};changed();}
+      if(event.target.matches('[data-entity-role]')){setup.entityRoles={...setup.entityRoles,[selectedEntity]:event.target.value};changed();}
+    });
+    dialog.addEventListener('click',event=>{
+      const b=event.target.closest('button');if(!b)return;
+      if(b.matches('[data-layout-close]'))dialog.close();
+      if(b.matches('[data-layout-helper]'))onHelper?.();
+      if(b.matches('[data-focus-object]')&&layout&&!dirty){const o=L.cadObjects(layout).find(o=>o.id===b.dataset.focusObject);if(o){const pad=Math.max(o.w,o.h)*0.12;viewBox=[o.x-pad,-o.y-o.h-pad,o.w+2*pad,o.h+2*pad];draw();}}
+      if(b.matches('[data-layout-fit]')){fit();draw();}
+      if(b.matches('[data-layout-storage]')&&layout&&!dirty){const objects=L.cadObjects(layout);if(objects.length){const box=L.bounds(objects.flatMap(L.corners)),pad=Math.max(settings.gangwayWidth,(box.maxX-box.minX)*0.12);viewBox=[box.minX-pad,-box.maxY-pad,box.maxX-box.minX+2*pad,box.maxY-box.minY+2*pad];draw();}}
+      if(b.matches('[data-layout-zoom]')){const k=b.dataset.layoutZoom==='in'?0.7:1/0.7;viewBox=[viewBox[0]+viewBox[2]*(1-k)/2,viewBox[1]+viewBox[3]*(1-k)/2,viewBox[2]*k,viewBox[3]*k];draw();}
+      if(b.matches('[data-use-boundary]')){setup.boundaryId=selectedEntity;q('[data-layout-boundary]').value=selectedEntity;fit();changed();}
+      if(b.matches('[data-add-reserved]')){const r={};for(const n of dialog.querySelectorAll('[data-reserved]'))r[n.dataset.reserved]=n.value===''?NaN:Number(n.value);if(!Object.values(r).every(Number.isFinite)||r.w<=0||r.h<=0){message('Enter reserved area coordinates and positive dimensions in mm.');return;}setup.manualObstacles=[...(setup.manualObstacles||[]),r];showReserved();changed();message();}
+      if(b.matches('[data-remove-reserved]')){setup.manualObstacles.splice(Number(b.dataset.removeReserved),1);showReserved();changed();}
+      if(b.matches('[data-unplaced]'))selectStorage(b.dataset.unplaced);
+      if(b.matches('[data-apply-move]'))applyMove(Number(q('[data-move-x]').value),Number(q('[data-move-y]').value),q('[data-move-rotate]').checked);
+    });
+    function svgPoint(event){const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;return point.matrixTransform(svg.getScreenCTM().inverse());}
+    svg.addEventListener('pointerdown',event=>{
+      if(event.button!==0)return;const node=event.target.closest('[data-storage]'),entity=event.target.closest('[data-geometry]'),point=svgPoint(event);
+      if(node&&!dirty){selectStorage(node.dataset.storage,node.dataset.object);const group=layout.groups.find(g=>g.id===selected);drag={kind:'storage',point,x:group.x,y:group.y,rotated:group.rotated,id:group.id};}
+      else if(entity){selectedEntity=entity.dataset.geometry;selected=null;showProperties();draw();return;}
+      else drag={kind:'pan',point,viewBox:viewBox.slice()};
+      svg.setPointerCapture(event.pointerId);event.preventDefault();
+    });
+    svg.addEventListener('pointermove',event=>{if(drag?.kind!=='pan')return;const p=svgPoint(event);viewBox[0]-=p.x-drag.point.x;viewBox[1]-=p.y-drag.point.y;svg.setAttribute('viewBox',viewBox.join(' '));});
+    svg.addEventListener('pointerup',event=>{if(!drag)return;const p=svgPoint(event);if(drag.kind==='storage'&&Math.hypot(p.x-drag.point.x,p.y-drag.point.y)>Math.max(viewBox[2],viewBox[3])/1000)applyMove(Math.round(drag.x+p.x-drag.point.x),Math.round(drag.y-p.y+drag.point.y),!!drag.rotated);drag=null;if(svg.hasPointerCapture(event.pointerId))svg.releasePointerCapture(event.pointerId);});
+    svg.addEventListener('pointercancel',()=>{drag=null;});
+    svg.addEventListener('keydown',event=>{const node=event.target.closest('[data-storage]');if(node&&(event.key==='Enter'||event.key===' ')){selectStorage(node.dataset.storage,node.dataset.object);event.preventDefault();}});
+    dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);showReserved();showReport();showProperties();draw();dialog.showModal();return dialog;
+  }
+  scope.LogEnLayoutUI=Object.freeze({open});
+})(globalThis);
+
+;
+/* Store already-compressed DWG/XLSX files in one browser download. */
+(function(scope){
+  'use strict';
+  const crcTable=Uint32Array.from({length:256},(_,n)=>{for(let k=0;k<8;k++)n=n&1?0xedb88320^(n>>>1):n>>>1;return n>>>0;});
+  function crc(bytes){let n=0xffffffff;for(const b of bytes)n=crcTable[(n^b)&255]^(n>>>8);return (n^0xffffffff)>>>0;}
+  async function pack(files){
+    const chunks=[],central=[],encoder=new TextEncoder(),now=new Date();let offset=0,centralSize=0;
+    const time=(now.getHours()<<11)|(now.getMinutes()<<5)|(now.getSeconds()>>1),date=((now.getFullYear()-1980)<<9)|((now.getMonth()+1)<<5)|now.getDate();
+    for(const file of files){
+      const bytes=file.data instanceof Blob?new Uint8Array(await file.data.arrayBuffer()):file.data instanceof Uint8Array?file.data:new Uint8Array(file.data),name=encoder.encode(file.name),checksum=crc(bytes);
+      if(name.length>65535||bytes.length>0xffffffff)throw new Error('Output file exceeds ZIP size limits.');
+      const header=new Uint8Array(30+name.length),h=new DataView(header.buffer);h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x800,true);h.setUint16(10,time,true);h.setUint16(12,date,true);h.setUint32(14,checksum,true);h.setUint32(18,bytes.length,true);h.setUint32(22,bytes.length,true);h.setUint16(26,name.length,true);header.set(name,30);
+      const directory=new Uint8Array(46+name.length),d=new DataView(directory.buffer);d.setUint32(0,0x02014b50,true);d.setUint16(4,20,true);d.setUint16(6,20,true);d.setUint16(8,0x800,true);d.setUint16(12,time,true);d.setUint16(14,date,true);d.setUint32(16,checksum,true);d.setUint32(20,bytes.length,true);d.setUint32(24,bytes.length,true);d.setUint16(28,name.length,true);d.setUint32(42,offset,true);directory.set(name,46);
+      chunks.push(header,bytes);central.push(directory);offset+=header.length+bytes.length;centralSize+=directory.length;
+    }
+    const end=new Uint8Array(22),e=new DataView(end.buffer);e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,centralSize,true);e.setUint32(16,offset,true);
+    return new Blob([...chunks,...central,end],{type:'application/zip'});
+  }
+  scope.LogEnOutputZIP=Object.freeze({pack});
+})(globalThis);
+
+;
+/* LogEn — local-only application controller. CAD jobs use the loopback helper. */
 (() => {
   'use strict';
   const D = globalThis.LogEnDomain;
@@ -2129,7 +2483,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function renderImplementation(){
     const config=project().implementation||{},file=config.dwg,types=D.configuredRackTypes(project().settings);
     const rackRows=(config.existingRacks||[]).map((row,index)=>`<div class="existing-rack-row"><label class="field"><span>Rack type</span><select data-existing-type="${index}" aria-label="Rack type ${index+1}">${!types.some(t=>t.id===row.typeId)?'<option value="">Choose rack type</option>':''}${types.map(t=>`<option value="${escape(t.id)}" ${t.id===row.typeId?'selected':''}>${escape(t.name)} · ${count(t.rackSlotLength)} × ${count(t.rackSlotDepth)} × ${count(t.rackSlotHeight)} mm · ${count(t.rackLevels)} levels</option>`).join('')}</select></label><label class="field"><span>Available bays</span><input type="number" min="0" max="1000" step="1" data-existing-bays="${index}" aria-label="Available bays ${index+1}" value="${Number.isSafeInteger(row.bays)?row.bays:''}"></label><button class="btn btn-ghost" data-remove-existing="${index}">Remove</button></div>`).join('');
-    $('main').innerHTML=heading('WAREHOUSE PLANNING','Warehouse Designer','Set the warehouse constraints and allocate inventory to available racks and ground storage.')+`<section class="panel implementation-panel"><h2>Warehouse area</h2><label class="checkbox-field"><input id="implementation-greenfield" type="checkbox" ${config.greenfield?'checked':''}><span><strong>Greenfeild</strong><small class="muted">The area is blank, with no existing racks, equipment or other installations.</small></span></label>${config.greenfield?`<label class="checkbox-field implementation-option"><input id="implementation-wall-storage" type="checkbox" ${config.allowWallStorage?'checked':''}><span>Allowed storing on the wall.</span></label><p class="muted">Wall storage permission is saved for layout planning. Uploaded DWG walls are not automatically detected; this checkbox does not change aisle or area formulas.</p><button class="btn btn-secondary" data-action="improve-warehouse">Change Improve Warehouse threshold</button>`:`<label class="checkbox-field implementation-option"><input id="implementation-existing-racks" type="checkbox" ${config.useExistingRacks?'checked':''}><span>Use existing racks · add rack types and available bays</span></label>${config.useExistingRacks?`<div id="existing-racks">${rackRows||'<p class="muted">Add the rack types and number of bays already present.</p>'}</div><div class="actions"><button class="btn btn-secondary" data-action="add-existing-rack" ${types.length?'':'disabled'}>${icon('plus')}Add existing rack type</button><button class="btn btn-ghost" data-action="settings">Manage rack types and dimensions</button></div><p class="muted">Types and storage options come from Warehouse settings. Inventory comes from Part details. Smallest pallet quantities are placed first; PNs are never split between racks and ground. Enter whole available bays; unused bays still occupy floor area.</p>`:''}`}</section><section class="panel implementation-panel"><h2>Storage allocation</h2><p class="muted">${selectedCategory===null?'All categories':escape(selectedCategory||'Uncategorized')} · ${config.greenfield?'Greenfeild uses Improve Warehouse: quantities at or below the saved threshold go to racks; larger quantities go to ground storage.':'PNs with the fewest required pallets are assigned first. Each PN stays entirely in racks or entirely on ground; if its full quantity cannot fit, the whole PN goes to ground storage.'}</p><div id="implementation-results"></div></section><section class="panel implementation-panel"><div class="drawing-heading"><h2>Existing warehouse drawing</h2><button class="improve-warehouse" data-action="implementation-rack-layout" aria-label="✦ Create Layout →"><span class="ai-sparkle" aria-hidden="true">✦</span><span>Create Layout</span><span aria-hidden="true">→</span></button></div><p class="muted">Upload an AutoCAD .dwg file. The original drawing is saved locally for this project.</p><button class="btn btn-primary" data-action="upload-dwg">${icon('upload')}Upload DWG</button>${file?`<div class="implementation-file"><div><strong>${escape(file.name)}</strong><p class="muted">${decimal(file.size/1024/1024)} MB · Added ${escape(new Date(file.uploadedAt).toLocaleDateString('en-GB'))}</p></div><button class="btn btn-secondary" data-action="download-dwg">${icon('download')}Download DWG</button></div><div class="actions"><button class="btn btn-primary" data-action="convert-dwg-pdf">Create PDF from DWG</button>${config.pdf?'<button class="btn btn-secondary" data-action="download-dwg-pdf">Download PDF</button>':''}</div>${config.pdf?`<p class="muted">PDF: ${escape(config.pdf.name)}</p>`:''}`:'<p class="muted">No DWG uploaded for this project.</p>'}<h3>Local AutoCAD conversion</h3><p class="muted">Install and start the LogEn AutoCAD helper on this PC. Requires licensed AutoCAD with Core Console and DWG To PDF.pc3. Conversion runs on this PC and plots model-space extents to A3 landscape; it does not add the storage plan to the drawing.</p><button class="btn btn-secondary" data-action="download-cad-helper">Download AutoCAD helper</button><p class="muted small-note">DWG/PDF files stay in this browser on this device and are not included in the JSON backup. Save separate copies before changing PCs. A PDF is a plotted drawing, not automatically generated rack placement geometry.</p></section>`;
+    $('main').innerHTML=heading('WAREHOUSE PLANNING','Warehouse Designer','Set the warehouse constraints and allocate inventory to available racks and ground storage.')+`<section class="panel implementation-panel"><h2>Warehouse area</h2><label class="checkbox-field"><input id="implementation-greenfield" type="checkbox" ${config.greenfield?'checked':''}><span><strong>Greenfeild</strong><small class="muted">The area is blank, with no existing racks, equipment or other installations.</small></span></label>${config.greenfield?`<label class="checkbox-field implementation-option"><input id="implementation-wall-storage" type="checkbox" ${config.allowWallStorage?'checked':''}><span>Allowed storing on the wall.</span></label><p class="muted">Create Layout uses this permission when reserving perimeter gangways inside the selected DWG boundary.</p><button class="btn btn-secondary" data-action="improve-warehouse">Change Improve Warehouse threshold</button>`:`<label class="checkbox-field implementation-option"><input id="implementation-existing-racks" type="checkbox" ${config.useExistingRacks?'checked':''}><span>Use existing racks · add rack types and available bays</span></label>${config.useExistingRacks?`<div id="existing-racks">${rackRows||'<p class="muted">Add the rack types and number of bays already present.</p>'}</div><div class="actions"><button class="btn btn-secondary" data-action="add-existing-rack" ${types.length?'':'disabled'}>${icon('plus')}Add existing rack type</button><button class="btn btn-ghost" data-action="settings">Manage rack types and dimensions</button></div><p class="muted">Types and storage options come from Warehouse settings. Inventory comes from Part details. Smallest pallet quantities are placed first; PNs are never split between racks and ground. Enter whole available bays; unused bays still occupy floor area.</p>`:''}`}</section><section class="panel implementation-panel"><h2>Storage allocation</h2><p class="muted">${selectedCategory===null?'All categories':escape(selectedCategory||'Uncategorized')} · ${config.greenfield?'Greenfeild uses Improve Warehouse: quantities at or below the saved threshold go to racks; larger quantities go to ground storage.':'PNs with the fewest required pallets are assigned first. Each PN stays entirely in racks or entirely on ground; if its full quantity cannot fit, the whole PN goes to ground storage.'}</p><div id="implementation-results"></div></section><section class="panel implementation-panel"><div class="drawing-heading"><h2>Existing warehouse drawing</h2><button class="improve-warehouse" data-action="create-physical-layout" aria-label="✦ Create Layout →"><span class="ai-sparkle" aria-hidden="true">✦</span><span>Create Layout</span><span aria-hidden="true">→</span></button></div><p class="muted">Upload an AutoCAD .dwg file. The original drawing is saved locally for this project.</p><button class="btn btn-primary" data-action="upload-dwg">${icon('upload')}Upload DWG</button>${file?`<div class="implementation-file"><div><strong>${escape(file.name)}</strong><p class="muted">${decimal(file.size/1024/1024)} MB · Added ${escape(new Date(file.uploadedAt).toLocaleDateString('en-GB'))}</p></div><button class="btn btn-secondary" data-action="download-dwg">${icon('download')}Download DWG</button></div><div class="actions"><button class="btn btn-primary" data-action="convert-dwg-pdf">Create PDF from DWG</button>${config.pdf?'<button class="btn btn-secondary" data-action="download-dwg-pdf">Download PDF</button>':''}</div>${config.pdf?`<p class="muted">PDF: ${escape(config.pdf.name)}</p>`:''}`:'<p class="muted">No DWG uploaded for this project.</p>'}<div class="layout-output-actions"><button class="btn btn-primary" data-action="download-layout-output">${icon('download')}Download Output data</button><p class="muted small-note">Layout DWG and its Parts List in Excel, together in one ZIP download.</p></div></section>`;
     renderImplementationResults();
   }
   function renderImplementationResults(){
@@ -2165,7 +2519,76 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
   }
   async function downloadDrawingPDF(){const p=project();await work('Opening PDF…',async()=>{const pdf=await drawingStore('readonly',store=>store.get(p.id+':pdf'));if(!pdf)throw new Error('Create the PDF on this device first.');download(pdf,p.implementation.pdf?.name||'Warehouse.pdf','application/pdf');});}
-  function downloadCADHelper(){const encoded='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';download(Uint8Array.from(atob(encoded),c=>c.charCodeAt(0)),'LogEn_AutoCAD_Helper.zip','application/zip');}
+  function downloadCADHelper(){const encoded='UEsDBBQAAAAIAAAAXl15M0nLlQoAAJQkAAASAAAATGF5b3V0R2VvbWV0cnkubHNwzVltb9s4Ev5eoP9hoC+m4jqR3bTJFc0CaeorgvWlReLettgUhWwxjq6ypBXpRMLi/vthhi8iZTlp73bvLh9iiRzO68OZIcXuslFWxMloWazDp09Ywm82OWSrV/lmDSwPgaU3wPLNesGrEvC9koWAHCZwHEIQBaG36jdgIgR2l43KKs3HI1mMhKzSfEV8BAgIgtBfUhZpLoGVITAhq2UsIfg1AGZUWMYVlGEIwTNvMNGjX4IebgJYKQUcQLGRyJbL3/ARZQO7KSoeL2+hBKRpJ410ekajT+yaIEDxIclX6pZhGPoKE21Xm0VRl602tYAGvZPeKNFlVaxyrUEtgK3jEq0dkMlShNB4g2iyFCg2S4U0/+OyzBoYrNMcamTuvDcOsRmOa58srokM/zqKL4sq55UAtihqywZV6b6raOBoqJ8tmR3pWbO1xDDpqJLmgleyRIhAEssYiipdpTn6ExoQNYgG4nwFi1hwE2xRqxDGQhRLOBzTQhSFkvzBEMb7UYhM3BWTvhUTbwXKdJa8iHqWmMEQIlyCKnrzYztfA9sjtUcG8upXGYuObIii0RSEf/1gaayLh9rByiUjXFkDWxYCtUayPWQn0ly948jQhECtGeo1lkavsTy2ELMoamA8l3CgwvQtzRPC+ZLnkldQxUm6EbCO/1Hgi0wLSCVfg9gsMO4mrAkv5S3kvJawgHIM5QSWt0WVwDpNoLi5QekZB43O8OkTHXKSifJXXALPZagUcL1tnY1a5WlGi5dFnjx9AsDYiVoRzM4vprjZiS1tVI3bvrh5owZS5BpkueaYNxXfAQtmv3x4P/tM/CGwj6EvC1NM1qAJVgaiLFu9Wm6qO560M51li0224uhJQ6DSxQ5dzs4vz2aox+nlWauCjlW/rTqC3p7wfOolJg1kxdEsVmgkoHUmutjdWjfcsc4aaOI3nc3OP1y1Ifwum5JUyDhfchiwCCKIdkX2/8DOTiDn009zDON8fnn+Rj28nf61DSntS8lriQ8KNw95RMGNFrXoMkWIZfF6kcSqWpvBIZRGWVUineLRJnQ3QucXV9PLeaCR/ZrSR1Ysv6m9fxz6pdGfZeOhPxKqNMLkIhM8rpa3ELyZvT/7OfDsM7k7NHmmYzzyCENKRu7MaKJnQmD3t2nGgcV5osgOTiCYXrx9M+uIimwaEpsFWe9GwqRKmmt93XYlPR50Q7EscrXdbV30yiIB1JFJmvJcUkJV+uxw66jjVh02SpJtK0Pc/YYra1TeJy0O2rxPIu+MuMezscrFbiJu06Xbt8VppbO96tJUvYzTKoRx1OMrWcX4g6IVFSobOY6q+B2vBDfdlZXvSiemZJH1JhYZHxZq/gSCv08v59NPW7AgJncWHkiuCumDSrcgvQs95Tv6aHYde/xo6RLixqvh3VDRCAVkh8/RVt/xh5OQNoTjZex4XI5zk1vQQW0d7INEJwH8iW631tgW784xxB3tNahXQcsfqfweyVTo1v/qZEATJgywgDRPeK27n6SGpDF1SmduXssqhmVWCJ60LZDhkmaagLovIkL3jIFlxQqtHbuN61Ff42oGQ4h0HjCRc3uY3thRqnfDt9gNJrvhu3sY06JvFZ5YeJ7YVyqilF6tGB2gHmRqghadNvrfLWXbrj87Gzykkn9WQczuwOuOJKFCSmIU1iIaMCFaaGlks90jByfaycCKygLrteaAFYRlPF/JW5N5yGe+08oxsFzeGoRjFisnaohVWMbHQzUX+swUaeIckDCu9DAOQ9wh7blIzSR6ynR4B3iCafs82lzUbo1xYkFRxqdDYPFCqFfTKNlO78D2beXYyJ+EIUzIK3ukxwFStkwVT43UYctC6dfq7DCpH2Kivar9qTa6wYh++x+1p3qPOKhqo0lzpJ6XEUW8LnG/dM+N/plRyLjCHZbow1+q0PDjB7//7HiDiTWlowFuicfOUy7qlQE6harmgsgeuixAcx9bYe8w2B5MoExtTXt9QutJrnEUMRyqH0tO7ULJYwkvX2g65WM2NFrvIVhcbgeQwstDlV3cnrQPN2yv9au6Osi4d9/QQ6jvHIhQb/xUQemx9oYAtpTAbtKM5/GawwHgIwgBaXsuJn9iHXYKJM/SVbrAmwXVIi2LTS7hPq7yNF/RPYN2D/FjRclzsFKC+yBEGUwIRGHw9VMAA8YOxxHsQ/C3IuEZXnsiejTjyLKGqNOKUyoGdl+lko+yNOftPePv1wHanhb5dfBq8uw62OSpFNfBqwBYKosY2IrLu7iiI9bHi/P5FUIxeHYd8FymMuVI+2sQkuZKDF7LCgsCJoTOukL4eQbvaIUga9GZ4Q/tOxs+zZLulAtpT1nPXUZ0U/L+3fTi6+z08/uPc/ScXtjtLLCVustGy1gub0dxlo30taa9jyJMqtJsdrCON3VJJuY0ruKuehVU0GPMq6qoRqV7HEMBSG11U4aRXNKyHQfb6vwRN0K7erq+/g2Tnu75e26QlKWGwBOpMzP5zjsV/SHXY4/cR7WXOBBcfej3iaOg4xClo2bmAseBsok6dTVmKcJROQKvNr43SgTiEzi2YTj+0dYa2E8nXqsDz7tam93iFD3X7/+dK/ltlV7rVDaJogiL4hbm+5MYrf3JpEH1YYc+svx+HaSJymXqS5Jb6ezJEJNZFje82kF57FHKpuQOIQZUTajvRHZKfzYiD+O0QoVOrDcGJIGsNjyA4CbOBEeVn10Hi2KTJ3HVTDWq7BoLs52rVDL2P3W5cdr+5PXArB+v/rXO9Jd/ulWgu0VUcDBn01N7JrFFC+dscfyOedMc9lW1L1TIKh4n8SLj07ZSmapmGUFg1QZGQTEv+Llx6TcDhBJgVLKWRVZgk2ELj3NbODv9PL0MAOnQDp7LdfyN662B18H7hiaEARtHNHC6fLu4ataLIpuj0pd8WVRJl2CGGvjzqleaKGkwYEdIHJnxlxOj6YC9RC5nRS7TfFNsBCUzzz4Zr1TjnCa6d3YMpLRoiiU5B5ltsgQo0VU8lhxiyOIGP1xSd9Dso368Tp14bxV514foqSKxhw9F65w9sKzTg1/Ota3jKIogTTQ4duuKZj6mJrZ+NNcCF9XsDHdeo65DK46tY5qgOF7R58V7uIUDLbfto/HNAqXuIMW9tPTQQMBuLAaOlZgO0Ycia3B30OK/4PChhQmdFpXrtMwamnBrkA2hhvvwoSk2hAbwineboZ1SnxMVzLTJGC1vh9E2bh02hmYM9QSayY86TfcUvmO6uhF7fcmjpsZmimSqC4/H1caPIZ0430qg0R9Tmz69/DtRnvNaBn3R9Mw7jOBWWipSEPm8oJSBR8QBOxwjLujegKiO1PZ0stvV/DO1VWoLnp2+xQrUvkBwJWMsYAn2MwN2NPGANt5Src+OATt6Dvsw+R7np3kq8QipDhGs4qu4LDsZQjFR0dEzl6dnP18FuBm2pt5dvv948TaAyc65r7PTN9PZVQBHfSSnF+9+Of18FdCHp74C0eNCp04MmAKDogrhsQrR9d+VbDLeIZnQpnAi1taJQxt9N/gtJtgRjtI0cpnsvwiBYXQCWct9cVsjt0N8p4piLii2zq6YvLePYcpDSO2ew9SlSN8RktyU8Mw/Oxqp7aleFQBdwv8FUEsDBBQAAAAIAAAAXl0Vjoth9QsAAB4gAAAOAAAATGF5b3V0Sm9icy5wczG9GWtz2zbye2f6HzA83oCoRFpO08dJw5kosuy6kWXXsuvr2R4fTa4kJBCggKAlVdV/vwFAUtTLTW/mLh9iat9Y7ANYDDMeKyo46gj+AlLdCL8nRl3eo+l0oCTlI+8+NX8f3V8jlgFBy6+/QsiFNI6mkKAQWXhwDVMWxeDhB1zHDw+YrCGOhjgViPNv6dQx2oBwCzHCnzPKEpAoRH2Y+ZfPHyFW6AbmKrA2vbd4TTsUEqJ4jDw3HkcSUV6aFtyIzjiSbSmjhUcIWiI6RN495erR0vojhY7ffK8xLs8YCwu9QXs6BZ54Hn54uK0tG81/vl1h5A/RmpkQtELAUjjIbMnQCq20mRJUJjnCDq6VhDci9zCpYQd//dXq66+GxXacgVpvxKmQkzT3eywSQCG6P78MTimDx2bzGqKkzZh2j+f9LCj3ryI1Ru7VYBBLOlXXQiiEe9FCZOoMxASUXAQsnWJinT000jdcjTuCMTCWpMEZcJA0Dno0VUUs4BZyE5iqcdhoIfdzJhQkoTuMWAqtcgPWgFRFUoWNfL+Q59Kw0XIp8pmyKwp6wEdq3HJprZZHmF7rOJKhwd+79NEC9R7mCostLfQRtNxSbbfI0Ngdh88IP+ANQiWz/XSOodtY26qFYsEV5RnYbc3tOcSkZbcKjv0MnmYwMONPA2xoGdZnLl21LKZW2y+AGI2GxPdb+ySZDQ7aSeJ51tmD7Nnuo2e11F3q26/aMUG+tDmJ8P2DfOCPNWwSk6yMfvNfVQsH1EC+kEUYELRUYylmCJ/zl4jRBD1nPGGQoE77BCUwpJzawMLVzMitvBF5vm6mwzl/EZ8gzwgTyT+LZ+/+eaHg/vHRPZHRjPJRHZW16kIkUEfuFYt4aPIzjyptuc+FQm5qkqPZETwVDEzK6FUYpHcDqbJp5PeoAhkxm1O7TKaw5AtuZ0roRXaEBJTToFmUIi1zKDKeBNg60FUwmerEDHUiazmPzeYZqNOMGU3eJvgGJlMDJqTlDoWuHmEl0wthyMPGQ532iY9r92cZTR6bzT7M9JdH1gUH9zEhLa3jhEqIlZCLx2azIyFSUEK8XBP54zJTfj9jTFuu5KLMT8qnmdImVI2xTAjPIgljkaUQJLMRbrkS0owdpLbY4GMqOG6502T452KnyRC38h05RM1MrARpLLG1uVI37yRV0Gbs/UJB6q0XUy/CyZRHU3Ink4gnafiXKqRlztuT5zLKQXendx72UlAvkUTO6Xmve3LedlCD4Poa3Lk42QN93+58OLu+vO2fXPUub7axg27n9rrbu2yfOOjNBubmvNe9uDzpOuiYYEKW5XJMRTB2kdWWsToXtbG7XWiHX5MW/HTomcSzhWmU9xpTnzaYsMdGTZgrGWlP1ryDZw9UiZrNA8YRJqSma1+u2rZi+410nkYMwvtEZM8MHk0ZCAysoDBHgRzdbJ6n/ajvWS5iykAVd85NzVpsENhv5LOy/OUAfahomH+7lTCxgYUyTlVR/wpr3nnWTGECLCVBR2RcreUZJQVRRFMGuzRrjSYkIwUJsimAYB4DJCk6btS1sFwLEhJFcQxpinTcTqtG7dkz7QaCSWsblYL6jPSeckXVIjZGNQwhzKcQ617YWO/NOJpCGm6vt7a1toK+DErDZw54VkJ5Ttig+gSLPM3muI4XuI5nuI7H2NRpl69jwggJNH2LDndjgRNfyP1RYFEXtjq3n1MD0VsAx29IsQF9wX3DAKbvxULIhPJIgXZxcXgoksbaMtuIJgMaWxDZDqRRub3WfSihE+Bppa1uC/9EeWKam3WOjOJPuI5HUnclXMfG6bo85Ipu+ScuZryInlyLWkxhW37Zcq0emtjsx2YZu1iSH/VM0L55u7u0TY00sTG1odVl0QJkmM6oKgPDLJAs9bqWuHd51u0/Xbc7HwZ4ZddYAG0JxSuz4BLY7p/dtX8b4FVVC03Cw5Vpz8pa7nw7vOZHtiy03MU2alGiZtuoWYkab6PGOapiJs8mzyBNQs3r7qLuzurumPxxKmQ3isdFw1q6T5X+f43r92dMPEeM/h7pJhZ0MqYyCed8KHS485dI0oirHFyU2QN1QZ8YEK65NKlhpK84ZoNq2NHVvTAQ+R8F5UifJU3lXheHWu1wxOpYMsG6ke4I/Q11GEQcaRwaymgCaEbVWJexLFaZjBhK6As1KdFCXCAFc4VY9AwsRZSnNAHDmwZVqe6afdvza4wN4KM3QWNnM2xG7PSVkvVwUdmkqfzUd6TdLDHLLog2c7JSDMVwmIKy9bAisu56dOjlV2G7OimUiQP0d3T8Y4PYu8PSnfkVtpVuskt3vAEjhGzsi/HAa6Lze8nSjcJ3nufOa7mVRMfuxm/PXdTcMSG5Xk3vzi10TTKvuTOyAazGapEgaehG/7uMOJAV5shXZkWlJpVp8YU5kd+6dj735Upe0beyxbWBrz2Or/pNhGtb5WvKSd3DA/o77EEyE/A1jOa7uBlNDqHGQEdjVcNoMsFa+i83v+0R/jmLTIU3+lUUf6J8tIcszVF2aFGuaxLNQy9f3b4Ntrm6+uMCojSTUKD8i2hOJ9mEBPnHhlBdKn4yxodFm7+g3HPHRz8Ejbo7O/K03m8awQ+1b/WNLJ6HJg51SWi58SI0gat/bWXlxuDjrZ12LPdF6zvPjXWox4uadxx857uUfFMx65vj4C2pVwDk/x7cppxuBbftrU+99vtu71CQ/8l53+6kHvf89YRYn1ztrUHf88L/7m5x6AxcHHRTFaksRZ6YAtdeWCvU3pg5hByWMdP3Tt8UBy9VMo4UcpYPTmxu38mD03SQR5WItg7UBDkrh6yVv6IhZiKFL6O0P5HzFPwyaP/adb6M9rYzcJDzdCckS5x9F4IK7VWv3f9i4n9dXl5o4u5cAVfpF5rj2xux8/QbpA5y9BWUOcg5uTtDNwJdnZwG0/hbBznng0s0zBhDzwwgQe1vkff2TSNoNNAcvfnHD/rj4oJoQReUMToBBVILfOppvXpeqH/0RdVC5DydUqX/dIArkGsz1l9Pd1SCOaOYpHglJPPBx767bqlZyyz9ksf8a/t6e2580xf7nF/I2TMX6VGu5yLrAUu95K3fm2F8l8ci0TW62WwPOufnxcCE8qGoDktOaDTiIlU0ToMrKfR1c6Cnjbr6tAy10d2PJhDuGbHlJG05yiba5yE+ouaUWY5s9EnzKDWwtbkGyBBw/3aAcxl3QuomUs64wnxSlKNvUxiMgbHuHOJMQTHAtkg7HuuLO8oTMcuHuxZ1DYmROFARTyKZXGZqmqlXSbpSCmkpcq9NrWf+xHGtgi4oXRgaDa38GWID7ZGWm6pEaGMqiIqRgX4+uBFdnrTTBY9zBpByl8GYvENfjn7sWLVguouo0j1pTpV3/KMZTpBlif1AGfNIa2tuml/9PopnpOhEX24zFaDOGOJPiKoUMRoDTwHpyM5HKQFetfbqXNvlAn9p2gbVaZ88feh2r+xR6RiT5Z6433lIKYaJsQ3JQM0VJvXcr8G1Kf2kZdj9n0SqCo71VOz1ofK6D63v34VLYpGxxMyPJUSJHtfAfCqkQmoMub8KD2lIMWDSHsqmSaTgSIKZ7Bv0GNgUZHlbyDWHBx6TKobtJvwJDCO97j/yanYqxcT/ORX89VHgshj3W9mVwWE+Ac7boHlXKHt/4RandEtO5W7zESSGaz5k+ieFNEBd67ZUial+tlQCTSW8AFco4ojyWEymDFTpU6dwkbCp/G6ZzEbhfb7Yx2bzRryPUvj+bfFIuuPC7bEyIa3cxnDL5rUTDkVI3hZ0AiXD8KCugswMtPZW6OAMVG6xpq436t/ZCxn++9XJqY/JMl+wnq6/slzNnD8IVXJ/zbohx5Y6rNuxDV5IUJqZqaPuxos6es4U2o34KRM2bHUHz4N8s6eXkVxElVVq3qnQkPKIsfVrhYRUsBdIDj25FM8drxcODrpwIF9nWCnSFtv0jmoxxWtM/d46qyMm00jSVPDHZvPSTAHZ+YgLCZ0o1dNkLWrLprwbmug2GkhVReWVh5DlNUzEC/jnCia7hcUwI/8a4kymgPxTIWNAvtmStn1bG1AGXLFFp/pOuTLvb/8BUEsDBBQAAAAIAAAAXl1npoNFMw0AADQiAAAYAAAATG9nRW4tQXV0b0NBRC1IZWxwZXIucHMxzVltUyM5kv5OBP8hw+uLKu+4CkPTL+cOR4zbBoYZwBw223vH+FhRlbY1LUs1kgrw0vz3i5SqymUamJ69+3CfbEuZUupRKvPJdMY0W4ZXxmou59NmP7dq0B9CD5oob7sno6ODs+v+5WQ06A+vB6Oz8ejkoA1XXNpp81xpCz348P7d29b2VvNAa6X7ieVKnmucoUaZIPQgGFuVBdtb/TSNJqsMIeobg8sbsTpjS4Txylhcxmdo45+szba3mibRPLPdvhDqDtOR5nMuDfTgxzBYWJuZ7s5Omhsmf5NfbpN4zu0iv4m5CtoQyFwI+iS57s6OUAkTC2Vs90On06lN7O69jztxJ971E63tLT6DMJLKQglBCx62twCaCZMpT5lFb8IR2miw4CI9triE6JzZBTQcVudazTVbHnKB5ldaJEXzxX0Z9Id//ZUlidKYKGmUwBjvsQFRDTIYc4HSitVASctljvAVxkrbaHTzGyYWDnMhHF7REE2CMuVy3iIDyfCakfFA5dK24AHqd7mev+pM42qtx+2txzXgA2+bO1KvUt/eiiH8WXHpz9o8H4+d+IVSFoITtlK5/VndmDgzuwTkLJf+QAMlb1Hb6ETND+RQszsu5+HVzcri1XTaLAYKlNfoP2NLpDS4yXCCxnozohNuUTPhbfpWqUUI2IVWdxCUOAyURihk4I4ZoDVnKpdpDMfSWCYECJ6gNJhCqaQ0GLTw7EMAq+Cba4UbnNFGxjJtuZyDXSAsUGSo44AQB2haXGYOvx5cHY9iMnja7R6hpZuhX+Hm8ASXmRtuuStvzpRIUUMPavdSrRkGDvFBfxgF8ANcHeU8nXa7Z3hH38JWPFFj99rD4CzwC9JuQ64xsUqvpt3uQCOzWI2ExYYt+Aqj3EZnuRCkZvXKXx9Ak8sst4Xr1KwqLA3umMaFyg3G6d08KHRUbr9TKUtnpZK/65eVMqFsbBJdyNPR6ElOu93PmlvsC/FpZdGEa4vbUHljsYfgJhs54+ghrM2MLzATLMEw+DVoBztBIf8XuMglKClWoHINc5SomcUUErVcMpkaYHPGpbHAgK5JaaZXkKhsFcNQOTc07BZh+PkIkgWTczRxYUm1AsUePwYQhAbtLdPQODw+ORge9xvQaVF0q8YHp8Pnhj/1B78cXYwuz4bnJ6OJn/520fHB4PLi4GTUHzZg71mJyfHJweloeNCAXb9BYSY0ruPLwbgBjevPSou08c3s+Un/bGN6vXhN6r9Go1OSOri3KK2py4UbgpE/R+P6P9E0oHGqUhQNaBCQEwXnw8M4S940oHE8HsEsFwJuBNLjfgPh/l4n7nTgHvb+/T19OT1t0UKnXAi+RIuaFrw+IfATliH9OFN1o6BxfcgtfQxQWtRrM9bfrj9zjTPNlqRPr7HuWj9AsF6V5FtB63k8/uPy2J3yTHlEC99uvejiJ1ySi6/fSnvtSm24muC9jQ9koiiLTLvd/nhwfFw6P5czBT04w7sy9ww5m0tlLE9MfK5VgsaMKbody5mqKTkjXF7pPReS65J9Pc+XhCLxgx1eYLOOIQ6aHVOM1568nxCAMrocB/UlPyv9hct5FbTICB8T6lKXBscLFOLgHpPcOktnTBisy/jod6Y+c5mqOxKxOt+QuMDUbTO2TKZMp+tY8UeSLuM/Ecw8pH+I+aZ4XF0BLUebFfPEgWhoQy4sb9fYVHlTa/O1Q8QXyNKJOpBp36xkUtdDrZ/Tc0d6QW2d10utz4zbQ6UP7rkNd4l8dVyqruZ/4UKErY9Pc3fiyIQhXmH5ElNQuY1hsMDkC3BryrwN9GDOh4dAWcCiJr0Zn+eaESVpUy6WoNHqVZmL4XnTntr/IvVYJ4fnKEfKUxfeM63SPEFgLiYVdtsFsxvGcwMssfzWH2MziNEkpRAmBKYxjDKUjlmQFJcVXbEKErc43lvUkgmoqLhpw0xJa9qwpDAJc1RLQsJtRngR0SHGYurYpLOCpBQRhu55nUNrp18DRkrxCco5gSUsvHUM7vmgEx+hLdgIqbU77bctiCRC8G/nw8MoeAZTv2dF4DyklcUaba4ltGk1GnmEGZdMiDVT0WiUuMX0ZfJV0p3akUol/5rMZ05iJeVqw5U/w0AtM6a5UXLa7Y50Sjsfz6XSOGAGWxAR1E82LWLmeotWfY8alyP/KrPDBS7VLUa+Btnwx+p00QUmuTYI0aHSCb5ebPh1HYS+JqhYvMso0QWaTEmDYXNsNbJlWQKOLbM5ZZSyfqQCrw0Vy/+k0lVt1tdyZWWlkRkloQfmjttkAWGxHN35XqcDD8Hol+AR9jr78BCcKaLulHmDR9h3s59YChf4e47Gj72Bh+BQ6RuepijdiFe0cEgkn0Z2SeacrYRiKUyUghOm5xg8QoozlgsLD8FgHWkOGRdIep61L5ClqClON36aTM53duNdKEwuD/MP/Q9ZmOlq3S44ROrD/mF0oRk6dIqH0ipEJDrYu5AIZbweSxYYkbZWogtSRcYq7ab+HtX3ikYZqRqSMZLPZiTSqEpEj713wRdK7ChR0hJRhfVNrY/9Qw8a/YQiZWlN5PQjL9stlWjbvzG96sL697N6p2gXKjVdOB+NJ204Opi0YXQ+OR6djV/U+ckb04X6ydvwd19lRgPBUdoXtc81v2UWozO0d0p/6QJlYQdT7YopLrwYq4q4V2ECDafuyzL/NmL3ZLxMu9N2n+UtV7dRv3oCeVPVPZtOe1PKW1gIHorcLChLPW5v/QU+cdcPALxPRG74LYoVZQKhVHbDki8gEVOKlsDSJZfcWM2s0nB5cQIaDepblx7j7S2ip5bKl00yQs2ZsUq+oDXxJMlOCqHwiiaOz/tpqtGYabd7UuzYBtcdam1vuRrR0V6nUrIReISE0aMvw3tjoHLhk6WrnMFdKCgJ616NWzOGvlR2gbooqmHJVsCERpau4AZB51JyOY/dlVYV6t2CC4TQ0a4qjjYT5y5Eair7yG8yO0ky70o1/kO4u16KmygSF7IlsZVi2rMgvkRPsd4QvVlPust9MltWwv5x9ipqXyutq8jjfG/zYoKBEsKHDBMf0QF4EtP1uAg8LRYDSNV6NYAmTTqSvraaFqeTOO9085S6O7X8eywTtcwEWgQKf6B96KXU+3HDxLifpr7RM3UrFRBWubQu6rpVEM0t7L5782G/tp3bo3xnVikQFKrXid5zXTrFN+uVAo+QS8sFhE0J0Rxhv4h+NYWrpoz2pxDh77D75vnpN8V05/npvde1d0vtCoWmoOLs1ShTMqL6ySaqrzVbha0WRCYT3Bahp1q2uA/vzdJ1+krJAILqilwr4aECkXpVzCVfUiIqWWjvxrEfM0UEinZbU0/VGXeFgFMod+gG7b3Ce2i+4n/4O+zV08iVm6Yu5ETzpetGnag71MfylmnO6MVNXZVBUrulFBQ5ePOxVGsGfiiYljI1PzNXAXWAg6mjlY0n0aThuGlYrvlqdpTKrhOkV3Ccf5MiVaGCCElg8d7uZIJxGUD4zYVfTg4/rLNKUKRoVzCgXnJrMY2J9wXBR6pkfF+4AqIgpu7W3WXj7xAUCTR4xTAiVE8MK/jaj+RdxdG+e8ejg0lQAFdOFU4f7CyQCbtwxjR/82TvxwegjMMT7HlyW9UuPp4HH6HgX703H4H5uf4t44LdCOyFVzdKiWn4bKOYjPhTTWJyrK9lp3qiop/JxohoPCW0jy8j2IGAZZngicucO3S2P75gB8GfRJhKIeJHgXPUDYSlslzSvyI7vjq21JMsqzr6LlxzPnjdSf83vuBL+/LtkH3Vm7uPhJqjjHy2LF5fkN7No8JY1MGGSjwo3tYvuAoDq5k0M9QRFmAGf/KpfecproSiwkT4aNWDzjfH8xLd7kSvzpmmEqg6Y1JwUK8dTNtwpXFWrtbyxyuWpmz6bnNkbqEZ8ln47bMpL+5h9+37vQ/v9judRxQGH3Y7+x/evn/X6Ty+isbunw081ERY5sYSf3oHBB2lXNiltugnF4FegbCZMss2aYkHH0JfJBZwfHRFUloHuWRlbpwQqqB7oH4lUYNNlhK6zdpOoe1WDwuVyI21SgbjlQnNFygMHTnPqA4sCIyz4Qfid0615uevXVCNi2SCyd6LSJcpnexvfS0izqFWSxdzasuk/q+I3lUhM+12SewTM/huv2qVCCbpn5QNahWWulXyJVpVusx3NmGKJdqd9jtqxCi7dDQ9+O/+4Nf0Yf+xGbQeKjRvmeApeNdggjCNgzo902hyYXvH8lZ9QV+iVX8YVieFoEDTQ7hW/78Nvq7Bkgv79Wm0H2JmF87Xq8DfWnt8xSXdA9xkst+BJnnrK1CuXXOywMIfqdPnG1v0v+Jc8n+ibwbOuHjCf5/1zSoDtB7+6ALo4QaV/Mf/F4DXjucgp0Ze77n/kr393200/YXo+5lPNyq+VBVpOV6Urkh9M6rEHXlB+tVrXscH91QoUtl8isawOf5LTOLtv8gkKqPWwK0PUB2oan1WQXTITaaMq/TKQrYaWvf/6oq1yl1lXuh/AFBLAwQUAAAACAAAAF5dQ0Qw4HEIAAD4EAAACgAAAFJFQURNRS50eHR1V9tu40YSfSfAfyjkKYOlaXsm2QQ2sIBGkhVnNZLW9sDxYoCgRBbJjpvdTHdTsvK0H7FfuF+yqGpS0mCzL56hmuy6nXOqamnruQFtC9Qw6YOdTmbQkO7IwX/+9W8oHe6VqUHjwfbBA5oSNrM7+HZHzitr4MO7NEmT6xzmb8FhEWCyXEKlNHmonG0hNMrDP+83ECxYQ1BZXZIDa+BgewfPypR272EzzdPkfQ73xgfUWuxgEdQOA4FWBRlP5ehgDlPrCKbWeKtJ3p09L+DJsmt5V3wAdASOfu+VozJPkw85zGy/1XRRaFW8wmNAF2ApoY9B/yRB57utz+E+gOuNB2UgNARbLF5rZ3tTQmVdDMmT5/jzNPmOvR4u+xs8o6PG9p5gRl7VhlwGfactljHg/en8eZGnyfc53FcwbZxtCdC/+gxQa7sfSmIo7K17BSwK8l7Mi6Wcs/55M5s83a8WN/AYbCeuWl0OrgxF7JyNXyrnQwaOOo0FybuFbTtNgYBi6agcqpOlSWjIgJc08auG9sOFOSwFCj/brc87fy3Zjz8tyLYU3CHXvoO29wEctagMbMmrMtqUZ1841YU8TWYWjA1QaOsJeuNII3uxsXtyjw1pPbpPPoenhsaglJfvVAQLlYABONkXKiZm+jCfPM1hOXlZf36CbxcP8/nq7n6+nL1Lk0fSVARYOCJTkdKlRMC+7VHrCx+sw5qgI9cqKXHGhwYicqaOGJEx4DxNpo1l3/lzLEKPOgZTgg8OVd0EeD87q7ntg1YmQrawplKuPVKsNyp4vlKj96o6nHOPnAfrQJlS7VTJZuz2NyqYkB4cVeTIFJTBVtvilfPhCDP+orTWwSXQm2JvJ2UJjjy5HfF/ioCmZqYqA20r4Dq/wENoMNbfETJrCzQx74Fc54ivfKCdoj1jVmz5TGz5DLbMF3SKomjYrQ9YsLEtVczemgw5DBwgW4gCw+H34t2QKS9UZqO9x62m82uFncrDIEW3gGUJeMr8UIkx5+rI9TxNPnKc8fLCGs4IBrUjfTjlZ3tgx5SLJtnPU8ZuBa1YiktkggoSp6hOZ10Q1blz9g8yl7aqxhJyIlpbkr7wHbOwHhgzfIllBts+MB/JGdSnyrKTgUw4pcORt3ondpgYnYt1UJ4zoNpOq0pRCawLfJDJR3jivCNTkuOobAW0I3cQDZVYDkKiKCO9J8YBQdE7Ryb8icDBBl3wsFQ+SIT0przU1VPgf/2lI99rAfcDctob3BEUmtAAlSpIFk8FN8Kevgi9Qw2MeC6vz2CvQhPBx8nZrKCzXgXuQsyY2rScoTxNFlGrx9PB3maVwaP6gzL4x9OLWHkMWLxGhm1J+1wOWNs7KlSlCu5ZQoH66wvzNNk0B69YoAdhRuUZ25wWTtbd5+UyErzuHZVQo6n3eIC9KkOTw2dTNCQ8Y82BUXMG6HmWXwzxZcBoWwSqsScGHG7h/1zS2t1QM+yDbTGoguVMtRTIRU/zNPlkdwTO7v2ltLqt6E1dCyIc4yCio7DWlcpgYAl+5DxyxTw3cCFfSTtV8H0MAoUapL9wJTiTqmRAMRKH6vVGzkv4vccjbbjXVxVJB9qs/C0o+dgwLKFFxzGOwBW8880M9HPqAjqHphbTR7STi9bHMnUaDYfXOWsrRj4/dkG1qM9U+qhFaTJ/YzoPvwhD/iLzj+SMgQeB2s46dAeYrjcvfKf0YadqxSjlLg/r8SlOAgyIgflpojyTN2pODivanyixfN6sly/L+9X8Uv48zX95OqkNe7pcL+arXx8m078/ZsPD4mH9eTXL0uT88dfl5ON8+Ribdfx9slo8T14eB2nKmQxCQ+krcD+LUoMhYNFwAv3wYWyqafLLDAPm8EAXJDmKAinV5czow8lTqXwkUhR9FiasczhTA2OBec4ubFYjIaO2RfXg+zn/pd0bTiKPYB3yZfpwK8mYDSdjtbhOcV4j6LQNbDbelafJsSSz58Ulv3m6d5haxuvHOfbYsmi0cD5r8BV3D+tPfN8AUbbpv0bD0NIjGdhHLKWzjOQdYcF8mt0dBfQGPq1n8yVI18jg2TpdXp6knfuF4Z5bqcCaNfkAGk3pC+wog5Iq7HUQd8CHQ2Q/zzam/pNW4y8rGy+T9nXeupRhFmKQKnEths7reTAYKMw63klqNtiRGxrdcX0YutdYDumxpxYuCT2b87TygYyH9Wr5wmy7fv9DfpVf5dc3P/7wV56cgxC7G9IcO9ZChZ/6LWywZiBK5rM0ieO0rSqZBeKCwjGVtCNtOxEseaexPtz8eHV1lcPK8gzRy6i2Ixd4lt8cQmNFQ7BslVE8bQTr0gSLwvZR9Y6bx2m9OU203+fX/E7v+XzK+TQH6KxWBVOlxQOUKo46cUzmGNLkfOHh/iFz2vngLgEpAxtnO1Y9fqqO9uV1f8Q4z6fxch7CIyZjccZ5m4t9Jm1xL/DZ0F1Yr7mXDG8rU99+jfNhQG9tKfLLVp4XoEzXB9CqVeEGrq+u4NPHcZ2AKCI30HeM4Our7Orq6kiL47BryvFI2hjPCarjINaGgLe43+w2ajOy/gfV0tB4EELjiC5aZfpAchIZ/BOhDg3vOqH3N9CE0N1cXn6NtMsmvnTcemW72RJ8YCDw0uJEaQaYv4vC0Ptg2+N+OSwryAPETZp0jAjPiMjpjeBiZTfOchXh4o7/5l8EzRfD5xfDesob1/gbfDO9+fLCS+XwwxfGoKNigAm90TfsyFjg7H8EzI/7vOf4D8eJestzQdzSz5s8/Py4Xsk23HcMtkL3JaVJ56z0jFGtYvcNDfmxf8TBDNYG0NjQ8Mg4zY7rpfIj3/koLkfDysygYuRgjbLaxQFEoEKy9It0F7ZjvA+LBc+VMrqMUZQYkOvU2h3/vJkyYP4LUEsDBBQAAAAIAAAAXl12U09F2QAAAEIBAAAeAAAAU3RhcnQgTG9nRW4gQXV0b0NBRCBIZWxwZXIudmJzZU8xbsMwDNz9CkJDYAOW0T4gQ5LGyRCkRjV0Vh3GUcGYhkSh8e8LyUWWTocj7448gwLhhkSwhp1HK/j+9Y29lOrT9N5N0pi0VVVhUODqCMM/pclCNw5N6wjNHATvy05VxZXpgh7Wi7c5oHTW4yhtnp/tHcvnpQxtJErjqgiZP63b6OjSWbmVS2YN6sTDftSbKLzbvOkj0oS+mcKrqopcqvmII6iJf9AvHB8I+swnHjhh5zllg94/sI/ieOyYXD/Ddp5sCKBTIVBKwQr+vlklqmp4qaG1FLD4BVBLAQIUABQAAAAIAAAAXl15M0nLlQoAAJQkAAASAAAAAAAAAAAAAACAAQAAAABMYXlvdXRHZW9tZXRyeS5sc3BQSwECFAAUAAAACAAAAF5dFY6LYfULAAAeIAAADgAAAAAAAAAAAAAAgAHFCgAATGF5b3V0Sm9icy5wczFQSwECFAAUAAAACAAAAF5dZ6aDRTMNAAA0IgAAGAAAAAAAAAAAAAAAgAHmFgAATG9nRW4tQXV0b0NBRC1IZWxwZXIucHMxUEsBAhQAFAAAAAgAAABeXUNEMOBxCAAA+BAAAAoAAAAAAAAAAAAAAIABTyQAAFJFQURNRS50eHRQSwECFAAUAAAACAAAAF5ddlNPRdkAAABCAQAAHgAAAAAAAAAAAAAAgAHoLAAAU3RhcnQgTG9nRW4gQXV0b0NBRCBIZWxwZXIudmJzUEsFBgAAAAAFAAUARgEAAP0tAAAAAA==';download(Uint8Array.from(atob(encoded),c=>c.charCodeAt(0)),'LogEn_AutoCAD_Helper.zip','application/zip');}
+  async function cadRequest(path,body,type){
+    let response;
+    try{response=await fetch('http://127.0.0.1:8765/'+path,{method:'POST',headers:{'Content-Type':type,'X-LogEn-Client':'dwg-converter'},body,signal:AbortSignal.timeout(240000)});}
+    catch(error){await offerCADHelper();throw new Error('Start the latest LogEn AutoCAD helper on this PC, then try Create Layout again. '+(error.name==='TimeoutError'?'The CAD job timed out.':''));}
+    if(response.status===404){await offerCADHelper();throw new Error('Update and restart the AutoCAD helper, then try Create Layout again.');}
+    if(!response.ok){const error=await response.json().catch(()=>({error:'AutoCAD could not finish this drawing job.'}));throw new Error(error.error);}
+    return response.json();
+  }
+  async function offerCADHelper(){if(await modal({title:'Connect AutoCAD on this PC',body:'<p>Layout drawing jobs run locally through the LogEn AutoCAD helper. Extract the latest helper ZIP, stop the previous LogEn helper if it is running, and start the new one. AutoCAD must be installed and licensed on this PC.</p>',confirm:'Download helper',cancel:'Close'}))downloadCADHelper();}
+  const base64Bytes=value=>Uint8Array.from(atob(value),c=>c.charCodeAt(0));
+  function drawingBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error('Could not read the original DWG.'));reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(file);});}
+  async function createPhysicalLayout(){
+    const p=project();
+    if(!p.implementation?.greenfield)throw new Error('Select Greenfeild to generate a new layout in a blank warehouse area. Existing-rack allocation remains available through View filled racks.');
+    await work('Reading the warehouse DWG with AutoCAD on this PC…',async()=>{
+      const plan=implementationPlan(),settings=structuredClone(p.settings),stamp=p.implementation?.dwg?.uploadedAt;
+      if(!plan.available)throw new Error(plan.errors.join(' '));
+      const file=await drawingStore('readonly',s=>s.get(p.id));if(!file||!stamp)throw new Error('Upload the warehouse DWG on this device first.');
+      const cached=await drawingStore('readonly',s=>s.get(p.id+':geometry'));
+      const geometry=cached?.stamp===stamp?cached.value:await cadRequest('geometry',file,'application/octet-stream');
+      if(!Array.isArray(geometry.entities))throw new Error('The helper did not return drawing geometry. Update and restart the AutoCAD helper.');
+      if(p.implementation?.dwg?.uploadedAt!==stamp)throw new Error('The DWG changed. Open Create Layout again.');
+      await drawingStore('readwrite',s=>s.put({stamp,value:geometry},p.id+':geometry'));
+      const sourceKey=LogEnLayout.sourceKey(plan,settings,p.implementation,stamp),stored=await drawingStore('readonly',s=>s.get(p.id+':physical-layout'));
+      const saved=stored?.sourceKey===sourceKey?stored.layout:null;
+      if(stored?.layout&&!saved)toast('Inventory, settings or the DWG changed. Generate an updated layout from the Parts List.');
+      LogEnLayoutUI.open({plan,settings,geometry,name:p.name,options:{...p.implementation.layoutOptions,allowWallStorage:!!p.implementation.allowWallStorage},saved,
+        onSave:async({options,layout})=>{
+          if(p.implementation?.dwg?.uploadedAt!==stamp)throw new Error('The DWG changed. Reopen Create Layout.');
+          await drawingStore('readwrite',s=>s.put({sourceKey,layout},p.id+':physical-layout'));
+          p.implementation={...p.implementation,layoutOptions:options};p.updatedAt=new Date().toISOString();save();
+        },
+        onHelper:downloadCADHelper,
+        onExport:async layout=>{
+          const output=await layoutOutput(p,plan,settings,file,sourceKey,layout);
+          await downloadLayoutBundle(p,plan,layout,output);
+          return {pdf:!!output.pdf,pdfError:output.pdfError,downloadPDF:()=>output.pdf&&download(output.pdf,output.filename+'.pdf','application/pdf')};
+        }});
+    });
+  }
+  const layoutKey=layout=>JSON.stringify({groups:layout.groups,unplaced:layout.unplaced,options:layout.options,env:layout.env});
+  async function layoutOutput(p,plan,settings,file,sourceKey,layout){
+    const current=D.calculateImplementation(p.parts,p.settings,{...p.implementation,improvementThreshold:p.improvementThreshold},selectedCategory);
+    if(LogEnLayout.sourceKey(current,p.settings,p.implementation,p.implementation?.dwg?.uploadedAt)!==sourceKey)throw new Error('The Parts List, settings or DWG changed. Regenerate the layout before downloading output.');
+    const checked=LogEnLayout.validate(layout,plan,settings);
+    if(checked.validationErrors.length)throw new Error('Resolve invalid drawing geometry before export: '+checked.validationErrors.map(v=>v.message).join(' '));
+    const key=layoutKey(layout),cached=await drawingStore('readonly',s=>s.get(p.id+':layout-output'));
+    if(cached?.sourceKey===sourceKey&&cached.layoutKey===key&&cached.dwg)return cached;
+    const result=await cadRequest('layout',JSON.stringify({dwg:await drawingBase64(file),scale:layout.options.scale,objects:LogEnLayout.cadObjects(layout),aisles:LogEnLayout.aisles(layout,settings)}),'application/json');
+    const bytes=base64Bytes(result.dwg||'');if(!/^AC\d{4}$/.test(new TextDecoder().decode(bytes.slice(0,6))))throw new Error('The helper did not return a valid layout DWG.');
+    const filename=safeName(p.implementation.dwg.name.replace(/\.dwg$/i,''))+(layout.complete?'_Layout':'_Partial_Layout'),dwg=new Blob([bytes],{type:'application/acad'});
+    let pdf=null;if(result.pdf){const value=base64Bytes(result.pdf);if(new TextDecoder().decode(value.slice(0,5))==='%PDF-')pdf=new Blob([value],{type:'application/pdf'});}
+    const output={sourceKey,layoutKey:key,filename,dwg,pdf,pdfError:result.pdfError,createdAt:new Date().toISOString()};
+    await drawingStore('readwrite',s=>s.put(output,p.id+':layout-output'));return output;
+  }
+  async function downloadLayoutBundle(p,plan,layout,output){
+    const excel=await W.layoutBytes(p,plan,layout),zip=await LogEnOutputZIP.pack([{name:output.filename+'.dwg',data:output.dwg},{name:output.filename+'_Parts.xlsx',data:excel}]);
+    download(zip,output.filename+'_Output.zip','application/zip');
+  }
+  async function downloadLayoutOutput(){
+    const p=project();await work('Preparing layout DWG and Excel output…',async()=>{
+      const stored=await drawingStore('readonly',s=>s.get(p.id+':physical-layout'));
+      if(!stored?.layout)throw new Error('Use Create Layout, then generate and save a layout first.');
+      const layout=stored.layout,plan=implementationPlan(),settings=p.settings;
+      if(!layout.complete&&!await modal({title:'Download partial layout?',body:`<p>${count(layout.unplacedRack)} rack pallet positions and ${count(layout.unplacedGround)} ground positions remain unplaced. The DWG will contain only placed objects; Excel will also list the unplaced quantities.</p>`,confirm:'Download partial output'}))return;
+      const file=await drawingStore('readonly',s=>s.get(p.id));if(!file)throw new Error('Upload the original warehouse DWG on this device first.');
+      const output=await layoutOutput(p,plan,settings,file,stored.sourceKey,layout);await downloadLayoutBundle(p,plan,layout,output);toast('Output ZIP downloaded: layout DWG and matching Excel Parts List.');
+    });
+  }
   function drawingStore(mode,action){
     return new Promise((resolve,reject)=>{const request=indexedDB.open('logen.project.drawings',1);request.onupgradeneeded=()=>request.result.createObjectStore('drawings');request.onerror=()=>reject(new Error('Drawing storage is unavailable.'));request.onsuccess=()=>{const db=request.result;let result;const tx=db.transaction('drawings',mode);const task=action(tx.objectStore('drawings'));task.onsuccess=()=>{result=task.result;};tx.oncomplete=()=>{db.close();resolve(result);};tx.onerror=()=>{db.close();reject(new Error('Could not save or read the drawing. Browser storage may be full.'));};tx.onabort=tx.onerror;};});
   }
@@ -2173,9 +2596,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if(!file)return;
     await work('Saving warehouse drawing…',async()=>{
       if(!/\.dwg$/i.test(file.name))throw new Error('Choose an AutoCAD .dwg file.');
+      if(file.size>100*1024*1024)throw new Error('The local AutoCAD helper supports DWG files up to 100 MB.');
       const signature=await file.slice(0,6).text();if(!/^AC\d{4}$/.test(signature))throw new Error('This file does not have a recognized AutoCAD DWG header. Choose the original .dwg file.');
       const p=project();await drawingStore('readwrite',store=>store.put(file,p.id));
-      const implementation={...p.implementation,pdf:null,dwg:{name:file.name,size:file.size,uploadedAt:new Date().toISOString()}};
+      const implementation={...p.implementation,pdf:null,layoutOptions:null,dwg:{name:file.name,size:file.size,uploadedAt:new Date().toISOString()}};
       p.implementation=implementation;p.updatedAt=new Date().toISOString();save();render();toast('Warehouse DWG saved locally.');
     });
   }
@@ -2314,9 +2738,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         case 'improve-warehouse':await improveWarehouse();break;
         case 'add-existing-rack':{const type=D.configuredRackTypes(project().settings)[0];if(type)saveImplementation({existingRacks:[...(project().implementation?.existingRacks||[]),{typeId:type.id,bays:1}]});break;}
         case 'implementation-rack-layout':{const plan=implementationPlan();if(plan.available){const c=calc();await E.rackOverview({...c,sharedRack:plan.rack,results:plan.rows.filter(r=>r.rackPallets>0&&!r.errors.length).map(r=>({...c.results.find(original=>original.input.partNumber===r.input.partNumber),requiredPallets:r.rackPallets,isRackValid:true,isPlanningValid:true,rackFit:'YES',errors:[]})),totalRequiredPallets:plan.rackPallets,nonFittingPallets:0,nonFittingPartCount:0,nonFittingUnknownQuantity:0},project().settings);}break;}
+        case 'create-physical-layout':await createPhysicalLayout();break;
         case 'convert-dwg-pdf':await convertDrawingPDF();break;
         case 'download-dwg-pdf':await downloadDrawingPDF();break;
         case 'download-cad-helper':downloadCADHelper();break;
+        case 'download-layout-output':await downloadLayoutOutput();break;
         case 'upload-dwg':$('dwg-input').click();break;
         case 'download-dwg':await downloadDrawing();break;
         case 'import':$('excel-input').click();break;

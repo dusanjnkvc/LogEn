@@ -321,7 +321,7 @@
         field(floorGrid, 'maxFloorRowDepth', 'Maximum floor row depth · 0 = unrestricted');
         field(floorGrid, 'gangwayWidth', 'Gangway width');
         field(floorGrid, 'floorPalletClearance', 'Floor pallet clearance');
-        floor.append($('p', 'muted formula-hint', 'Ground storage adds the full clearance to both pallet length and pallet width. Example: 100 mm changes 1200 × 800 to 1300 × 900 mm. Rack fit uses original dimensions.'));
+        floor.append($('p', 'muted formula-hint', 'Ground storage adds the full clearance to both pallet length and pallet width. Example: 100 mm changes 1200 × 800 to 1300 × 900 mm. If the length cannot fit the row depth, the pallet rotates 90° when its width plus clearance fits. A depth of 0 is unrestricted. Rack fit uses original dimensions.'));
         const gangwayHint = $('p', 'muted formula-hint');
         floor.append(gangwayHint);
         const rack = section(body, 'Primary rack type', 'Enter the usable footprint and height of one shelf. These dimensions already exclude structure and required clearance.');
@@ -485,11 +485,12 @@
           formula(floorSection, 'Maximum stacking by height', `FLOOR(${n(settings.maxFloorStackingHeight)} mm ÷ ${n(input.height)} mm)`, `${n(floor.maximumStacking)} pallets`);
           formula(floorSection, 'Effective stacking', `Source: ${floor.stackingSource}. MIN(${n(floor.allowedStacking)} allowed, ${n(floor.maximumStacking)} by height). Imported value ${n(input.stacking)} is preserved.`, `${n(floor.effectiveStacking)} pallets`);
           formula(floorSection, 'Floor pallet positions', `CEILING(${n(result.requiredPallets)} pallets ÷ ${n(floor.effectiveStacking)})`, `${n(floor.positions)} positions`);
+          if(floor.floorRotated)floorSection.append(notice(`Floor pallet rotated 90° to fit the row depth: ${n(floor.depthSide)} mm along depth × ${n(floor.frontageSide)} mm across the row, before clearance.`));
           formula(floorSection, 'Pallets per row · depth limit', settings.maxFloorRowDepth === 0
             ? 'Unrestricted row depth: one dedicated row holds all floor positions.'
-            : `FLOOR(${n(settings.maxFloorRowDepth)} ÷ (${n(input.length)} + ${n(settings.floorPalletClearance)}))`, n(floor.palletsPerRow));
+            : `FLOOR(${n(settings.maxFloorRowDepth)} ÷ (${n(floor.depthSide ?? input.length)} + ${n(settings.floorPalletClearance)}))`, n(floor.palletsPerRow));
           formula(floorSection, 'Dedicated floor rows', `CEILING(${n(floor.positions)} ÷ ${n(floor.palletsPerRow)})`, `${n(floor.rows)} rows`);
-          formula(floorSection, 'Adjusted ground dimensions and occupied depth', `Length: ${n(input.length)} + ${n(settings.floorPalletClearance)} = ${n(floor.floorLength)} mm; width: ${n(input.width)} + ${n(settings.floorPalletClearance)} = ${n(floor.floorWidth)} mm. Total occupied depth = ${n(floor.positions)} × ${n(floor.floorLength)} / 1000 m`, `${n(floor.totalOccupiedDepth)} m`);
+          formula(floorSection, 'Adjusted ground dimensions and occupied depth', `Along depth: ${n(floor.depthSide ?? input.length)} + ${n(settings.floorPalletClearance)} = ${n(floor.floorLength)} mm; across row: ${n(floor.frontageSide ?? input.width)} + ${n(settings.floorPalletClearance)} = ${n(floor.floorWidth)} mm. Total occupied depth = ${n(floor.positions)} × ${n(floor.floorLength)} / 1000 m`, `${n(floor.totalOccupiedDepth)} m`);
           formula(floorSection, 'A · Ground storage without gangway', `${n(floor.rowDepth * 1000)} mm lane depth × ${n(floor.rowWidth * 1000)} mm lane width × ${n(floor.rows)} lanes / 1,000,000`, area(floor.withoutGangways));
           formula(floorSection, 'B · Ground storage with gangway', `${n(floor.withoutGangways)} + (${n(floor.rowWidth * 1000)} × ${n(floor.rows)} × ${n(settings.gangwayWidth / 1000)}) / 2000`, area(floor.withGangways));
           floorSection.append(notice('Each lane reserves the deepest occupied row depth, including a partial last row. Half a shared physical gangway is allocated. A ground depth limit of zero remains unrestricted.'));

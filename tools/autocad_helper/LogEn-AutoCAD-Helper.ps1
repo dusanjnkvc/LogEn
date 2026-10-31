@@ -7,6 +7,7 @@ if (-not $AutoCAD) {
   if ($candidates.Count) { $AutoCAD = $candidates[0].FullName }
 }
 $script:ConsolePath = $AutoCAD
+. (Join-Path $PSScriptRoot 'LayoutJobs.ps1')
 function Convert-LogEnDrawing([byte[]]$Drawing) {
   if (-not $script:ConsolePath -or -not (Test-Path -LiteralPath $script:ConsolePath)) { throw 'AutoCAD Core Console was not found. Install licensed AutoCAD or set LOGEN_AUTOCAD_CONSOLE to accoreconsole.exe before starting the helper.' }
   $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
@@ -84,16 +85,24 @@ try {
       $origin = $headers['origin']
       if ($headers['host'] -ne "127.0.0.1:$Port" -or ($origin -and $script:AllowedOrigins -notcontains $origin)) { Write-Response $stream 403 'text/plain' ([Text.Encoding]::UTF8.GetBytes('Origin not permitted.')) ''; continue }
       if ($request[0] -eq 'OPTIONS') { Write-Response $stream 204 'text/plain' ([byte[]]@()) $origin; continue }
-      if ($request[0] -eq 'GET' -and $request[1] -eq '/health') { $json = @{ service='LogEn AutoCAD helper'; autoCADAvailable=([bool]($script:ConsolePath -and (Test-Path -LiteralPath $script:ConsolePath))) } | ConvertTo-Json -Compress; Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes($json)) $origin; continue }
-      if ($request[0] -ne 'POST' -or $request[1] -ne '/convert') { Write-Response $stream 404 'text/plain' ([byte[]]@()) $origin; continue }
+      if ($request[0] -eq 'GET' -and $request[1] -eq '/health') { $json = @{ service='LogEn AutoCAD helper'; version=3; autoCADAvailable=([bool]($script:ConsolePath -and (Test-Path -LiteralPath $script:ConsolePath))) } | ConvertTo-Json -Compress; Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes($json)) $origin; continue }
+      if ($request[0] -ne 'POST' -or $request[1] -notin @('/convert','/geometry','/layout')) { Write-Response $stream 404 'text/plain' ([byte[]]@()) $origin; continue }
       if (-not $origin -or $headers['x-logen-client'] -ne 'dwg-converter' -or $headers.ContainsKey('transfer-encoding')) { Write-Response $stream 403 'text/plain' ([byte[]]@()) $origin; continue }
       [long]$length = 0
-      if (-not [long]::TryParse($headers['content-length'], [ref]$length) -or $length -lt 6 -or $length -gt 104857600) { Write-Response $stream 413 'text/plain' ([Text.Encoding]::UTF8.GetBytes('DWG must be 6 bytes to 100 MB.')) $origin; continue }
+      if (-not [long]::TryParse($headers['content-length'], [ref]$length) -or $length -lt 6 -or $length -gt $(if($request[1] -eq '/layout'){157286400}else{104857600})) { Write-Response $stream 413 'text/plain' ([Text.Encoding]::UTF8.GetBytes('DWG must be 6 bytes to 100 MB.')) $origin; continue }
       $data = New-Object byte[] ([int]$length); $read = 0
       while ($read -lt $length) { $count = $stream.Read($data,$read,[int]($length-$read)); if ($count -eq 0) { throw 'Incomplete DWG upload.' }; $read += $count }
-      if ([Text.Encoding]::ASCII.GetString($data,0,6) -notmatch '^AC\d{4}$') { throw 'The upload is not a recognized DWG file.' }
-      $pdf = Convert-LogEnDrawing $data
-      Write-Response $stream 200 'application/pdf' $pdf $origin
+      if($request[1] -eq '/layout'){
+        $plan=[Text.Encoding]::UTF8.GetString($data)|ConvertFrom-Json
+        $drawing=[Convert]::FromBase64String($plan.dwg)
+        if($drawing.Length -gt 104857600 -or [Text.Encoding]::ASCII.GetString($drawing,0,6) -notmatch '^AC\d{4}$'){throw 'Invalid original DWG.'}
+        $result=Invoke-LogEnLayoutJob $drawing 'layout' $plan
+        Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes(($result|ConvertTo-Json -Depth 100 -Compress))) $origin
+      }else{
+        if ([Text.Encoding]::ASCII.GetString($data,0,6) -notmatch '^AC\d{4}$') { throw 'The upload is not a recognized DWG file.' }
+        if($request[1] -eq '/geometry'){$result=Invoke-LogEnLayoutJob $data 'geometry';Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes(($result|ConvertTo-Json -Depth 100 -Compress))) $origin}
+        else{$pdf=Convert-LogEnDrawing $data;Write-Response $stream 200 'application/pdf' $pdf $origin}
+      }
     } catch {
       try { $errorBody = @{error=$_.Exception.Message} | ConvertTo-Json -Compress; Write-Response $stream 500 'application/json' ([Text.Encoding]::UTF8.GetBytes($errorBody)) $origin } catch {}
     } finally { $stream.Dispose(); $client.Dispose() }
