@@ -30,20 +30,25 @@ function Invoke-LogEnLayoutJob([byte[]]$Drawing, [string]$Mode, $Plan=$null) {
     else {
       $scale=[double]$Plan.scale
       if ([double]::IsNaN($scale) -or [double]::IsInfinity($scale) -or $scale -le 0 -or $scale -gt 1000000) {throw 'Invalid drawing units.'}
-      if (@($Plan.objects).Count -gt 10000 -or @($Plan.aisles).Count -gt 10000) {throw 'Generated layout exceeds 10,000 objects or access strips.'}
+      if (@($Plan.objects).Count -gt 10000 -or @($Plan.aisles).Count -gt 10000 -or @($Plan.clearances).Count -gt 10000) {throw 'Generated layout exceeds 10,000 objects or access strips.'}
       $commands.Add('(lg:init)');$commands.Add('(setq lg:entitycount 0)');$expected=0
-      $shapes=@($Plan.objects)+@($Plan.aisles)
+      $shapes=@($Plan.objects)+@($Plan.aisles)+@($Plan.clearances)
       foreach($shape in $shapes) {
         foreach($key in @('x','y','w','h')) { $n=[double]$shape.$key;if([double]::IsNaN($n)-or[double]::IsInfinity($n)-or[Math]::Abs($n)-gt 1e12){throw 'Non-finite CAD coordinates.'} }
         if($shape.w -le 0 -or $shape.h -le 0){throw 'Invalid generated object dimensions.'}
-        if($shape.kind -notin @('rack','ground','aisle')){throw 'Unknown layout object type.'}
+        if($shape.kind -notin @('rack','ground','aisle','clearance')){throw 'Unknown layout object type.'}
         if([string]$shape.id -eq '' -or ([string]$shape.id).Length -gt 240){throw 'Invalid layout object identity.'}
-        $layer=switch($shape.kind){rack{'LOGEN_RACKS'}ground{'LOGEN_GROUND'}aisle{'LOGEN_GANGWAYS'}}
+        $layer=switch($shape.kind){rack{'LOGEN_RACKS'}ground{'LOGEN_GROUND_STORAGE'}aisle{'LOGEN_GANGWAYS'}clearance{'LOGEN_CLEARANCES'}}
         $id=ConvertTo-LogEnLispString ([string]$shape.id);$x=[double]$shape.x/$scale;$y=[double]$shape.y/$scale;$w=[double]$shape.w/$scale;$h=[double]$shape.h/$scale
         $numbers=@($x,$y,$w,$h)|ForEach-Object {$_.ToString('R',[Globalization.CultureInfo]::InvariantCulture)}
-        $commands.Add('(lg:rect '+$id+' "'+$layer+'" '+($numbers -join ' ')+')');$expected++
+        if(@($shape.points).Count -ge 3){
+          if(@($shape.points).Count -gt 20000){throw 'Polygon vertex limit exceeded.'}
+          $poly=foreach($point in $shape.points){foreach($value in $point){if([double]::IsNaN([double]$value)-or[double]::IsInfinity([double]$value)-or[Math]::Abs([double]$value)-gt 1e12){throw 'Invalid polygon coordinate.'}};'('+(([double]$point[0]/$scale).ToString('R',[Globalization.CultureInfo]::InvariantCulture))+' '+(([double]$point[1]/$scale).ToString('R',[Globalization.CultureInfo]::InvariantCulture))+')'}
+          $commands.Add("(lg:polygon "+$id+' "'+$layer+'" '+"'("+($poly -join ' ')+'))')
+        }else{$commands.Add('(lg:rect '+$id+' "'+$layer+'" '+($numbers -join ' ')+')')};$expected++
         if($shape.kind -eq 'rack') {
           # Clean rack frame with structural divisions; no text labels inside racks.
+          if(@($shape.frameLines).Count -gt 0){foreach($line in $shape.frameLines){$nums=@(([double]$line[0][0]/$scale),([double]$line[0][1]/$scale),([double]$line[1][0]/$scale),([double]$line[1][1]/$scale))|ForEach-Object {$_.ToString('R',[Globalization.CultureInfo]::InvariantCulture)};$commands.Add('(lg:line '+$id+' "LOGEN_RACKS" '+($nums -join ' ')+')');$expected++}}else{
           $structural=[double]$shape.structuralLength/2.0/$scale
           if([double]::IsNaN($structural)-or[double]::IsInfinity($structural)-or$structural-lt 0){throw 'Invalid rack structure.'}
           foreach($offset in @($structural,$(if(([int]$shape.rotation % 180)-eq 0){$w-$structural}else{$h-$structural}))){
@@ -52,13 +57,16 @@ function Invoke-LogEnLayoutJob([byte[]]$Drawing, [string]$Mode, $Plan=$null) {
             $commands.Add('(lg:line '+$id+' "LOGEN_RACKS" '+($nums -join ' ')+')');$expected++
           }
         }
+        }
         if($shape.kind -eq 'ground') {
           $labels=@(('PN: '+[string]$shape.pn),('Size: '+[string]$shape.length+' x '+[string]$shape.width+' x '+[string]$shape.height+' mm'),('QTY: '+[string]$shape.quantity),('Stacking: '+[string]$shape.stacking))
           $max=($labels|ForEach-Object {$_.Length}|Measure-Object -Maximum).Maximum
-          $textHeight=[Math]::Min($h/7.0,$w/($max*0.7+3));$cx=$x+$w/2.0;$cy=$y+$h/2.0
+          $textHeight=[Math]::Min($h/7.0,$w/($max*0.7+3));$cx=$x+$w/2.0;$cy=$y+$h/2.0;$angle=0.0
+          if(@($shape.center).Count -eq 2){$cx=[double]$shape.center[0]/$scale;$cy=[double]$shape.center[1]/$scale;$angle=[double]$shape.drawAngle*[Math]::PI/180.0}
           for($i=0;$i -lt 4;$i++){
-            $nums=@($cx,($cy+(1.5-$i)*$textHeight*1.4),$textHeight)|ForEach-Object {$_.ToString('R',[Globalization.CultureInfo]::InvariantCulture)}
-            $commands.Add('(lg:text '+$id+' "LOGEN_GROUND_LABELS" '+($nums -join ' ')+' '+(ConvertTo-LogEnLispString $labels[$i])+')');$expected++
+            $delta=(1.5-$i)*$textHeight*1.4
+            $nums=@(($cx-[Math]::Sin($angle)*$delta),($cy+[Math]::Cos($angle)*$delta),$textHeight,$angle)|ForEach-Object {$_.ToString('R',[Globalization.CultureInfo]::InvariantCulture)}
+            $commands.Add('(lg:textrot '+$id+' "LOGEN_LAYOUT_LABELS" '+($nums -join ' ')+' '+(ConvertTo-LogEnLispString $labels[$i])+')');$expected++
           }
         }
       }

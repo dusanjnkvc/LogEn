@@ -18,3 +18,17 @@ Physical aisles use the full configured gangway width. Unchecked wall storage re
 AutoCAD works on a temporary copy and adds editable LINE/LWPOLYLINE/TEXT entities on separate LOGEN layers. Original entities are preserved. Generated entities carry stable LOGEN_LAYOUT XData IDs, so re-export removes only previously generated tagged entities. PDFs plot model-space extents to A3 landscape. The browser preview simplifies geometry; unreadable objects and unresolved external references require review. The reader supports straight closed polylines as boundaries, not arbitrary CAD topology.
 
 The helper, drawing and layout remain local to the PC/browser. Export copies before clearing browser data or changing PCs. Project JSON backups do not contain DWG, PDF or generated-layout attachments.
+
+## Orientation optimizer
+
+Warehouse Designer now saves Warehouse Orientation (Automatic by default), Rack back-to-back separation (0 mm by default), and Wall clearance (0 mm by default) per project. Existing physical gangway and obstacle-clearance values remain authoritative. The drawing editor lets the user approve individual wall edges for single wall rows.
+
+The optimizer generates both horizontal and vertical arrangements in a consistent building frame derived from the dominant straight boundary direction. For each orientation it searches four starting corners, two row lengths and two depth offsets. Runs respect each rack type’s maximum run length. Interior rows are paired with configured separation and outward-facing access; singles are tried when complete pairs cannot fit. Shared aisles and perimeter routes are merged geometrically rather than counted for each row. Both candidates remain available for preview, save and DWG/PDF export, including partial candidates that pass geometry checks.
+
+Ranking rejects geometry/access violations, then compares accommodated required pallets, full coverage, unusable area, circulation area and block count. Area calculations use offline Clipper polygon boolean operations and offsets at 0.1 mm precision, including concave boundaries, clipped obstacles and holes. Unused components are classified using a bounded search for configured footprint fits. Narrow tails within an otherwise usable component may remain classified as potentially usable. This is a bounded heuristic, not proof of a global optimum.
+
+The comparison reports warehouse/available/storage/gangway/clearance/free areas, pallet quantities, bay counts, utilization, complete placement and separate geometry/access and safety statuses. Fire and safety information not present in the drawing is unverified. The user must confirm required constraints; unreadable drawing entities retain an unverified status. Blocks and unsupported geometry use conservative bounds or require review. Automatic door, wall and fire-equipment semantics are not inferred.
+
+The version 4 local helper writes editable rotated polygons on LOGEN_RACKS, LOGEN_GROUND_STORAGE, LOGEN_GANGWAYS, LOGEN_CLEARANCES and LOGEN_LAYOUT_LABELS, preserving the original drawing and replacing only tagged generated entities. Output Excel includes the selected scenario and comparison metrics. Inventory, demand, stacking and rack shelf-allocation formulas are unchanged.
+
+Focused verification: `node webapp/layout-optimizer.test.cjs` covers paired racks, allocation identities, non-overlapping area partitions, rotated buildings, approved wall rows, shortages and a concave boundary. AutoCAD export is also checked with a synthetic warehouse drawing.

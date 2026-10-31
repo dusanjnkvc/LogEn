@@ -85,7 +85,7 @@ try {
       $origin = $headers['origin']
       if ($headers['host'] -ne "127.0.0.1:$Port" -or ($origin -and $script:AllowedOrigins -notcontains $origin)) { Write-Response $stream 403 'text/plain' ([Text.Encoding]::UTF8.GetBytes('Origin not permitted.')) ''; continue }
       if ($request[0] -eq 'OPTIONS') { Write-Response $stream 204 'text/plain' ([byte[]]@()) $origin; continue }
-      if ($request[0] -eq 'GET' -and $request[1] -eq '/health') { $json = @{ service='LogEn AutoCAD helper'; version=3; autoCADAvailable=([bool]($script:ConsolePath -and (Test-Path -LiteralPath $script:ConsolePath))) } | ConvertTo-Json -Compress; Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes($json)) $origin; continue }
+      if ($request[0] -eq 'GET' -and $request[1] -eq '/health') { $json = @{ service='LogEn AutoCAD helper'; version=4; autoCADAvailable=([bool]($script:ConsolePath -and (Test-Path -LiteralPath $script:ConsolePath))) } | ConvertTo-Json -Compress; Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes($json)) $origin; continue }
       if ($request[0] -ne 'POST' -or $request[1] -notin @('/convert','/geometry','/layout')) { Write-Response $stream 404 'text/plain' ([byte[]]@()) $origin; continue }
       if (-not $origin -or $headers['x-logen-client'] -ne 'dwg-converter' -or $headers.ContainsKey('transfer-encoding')) { Write-Response $stream 403 'text/plain' ([byte[]]@()) $origin; continue }
       [long]$length = 0

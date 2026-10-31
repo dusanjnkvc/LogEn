@@ -26,7 +26,7 @@
   const overlaps=(a,b,g=0)=>a.x<b.x+b.w+g-EPS&&a.x+a.w+g>b.x+EPS&&a.y<b.y+b.h+g-EPS&&a.y+a.h+g>b.y+EPS;
   const expand=(r,g)=>({x:r.x-g,y:r.y-g,w:r.w+2*g,h:r.h+2*g});
   const rectFromBounds=b=>({x:b.minX,y:b.minY,w:Math.max(EPS,b.maxX-b.minX),h:Math.max(EPS,b.maxY-b.minY)});
-  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage});}
+  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:2,orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
   function makeObjects(plan,settings){
     const groups=[],issues=[];let rackRequired=0,groundRequired=0;
     for(const row of plan.rows){if(row.errors.length||row.required===null)issues.push({pn:row.input.partNumber,message:row.errors.join(' ')||'Required quantity is unavailable.'});rackRequired+=row.rackPallets||0;}
@@ -39,7 +39,7 @@
       const n=(ordinals.get(bay.typeId)||0)+1;ordinals.set(bay.typeId,n);
       if(!run||run.typeId!==bay.typeId||run.w+w>t.maxRackRunLength+EPS){run={id:`run:${bay.typeId}:${n}`,kind:'rack',typeId:bay.typeId,w:0,h,objects:[]};groups.push(run);}
       const allocations=bay.shelves.flatMap(sh=>sh.placements.map((p,i)=>({pn:p.partNumber,level:sh.level,position:i+1,length:p.length,depth:p.depth,x:p.x,y:p.y,z:p.z,height:p.height,depthRow:p.depthRow||1,stackLayer:p.stackLayer||1})));
-      run.objects.push({id:`rack:${bay.typeId}:${n}`,kind:'rack',dx:run.w,dy:0,w,h,rotation:0,bayNumber:bay.number,typeName:bay.typeName,levels:t.rackLevels,structuralLength:t.rackStructuralLength,structuralDepth:t.rackStructuralDepth,allocations,pallets:allocations.length});run.w+=w;
+      run.objects.push({id:`rack:${bay.typeId}:${n}`,kind:'rack',dx:run.w,dy:0,w,h,rotation:0,bayNumber:bay.number,typeName:bay.typeName,typeId:bay.typeId,maxRunLength:t.maxRackRunLength,levels:t.rackLevels,structuralLength:t.rackStructuralLength,structuralDepth:t.rackStructuralDepth,allocations,pallets:allocations.length});run.w+=w;
     }
     for(const row of plan.rows){
       if(!row.groundPallets)continue;
@@ -68,7 +68,7 @@
     if(!Number.isFinite(options.obstacleClearance)||options.obstacleClearance<0)throw new Error('Enter a non-negative obstacle clearance.');
     return {poly,box,obstacles,doors,scale,boundaryId:entity.id};
   }
-  function placedObjects(group){return group.objects.map(o=>({...o,x:group.x+(group.rotated?group.h-o.dy-o.h:o.dx),y:group.y+(group.rotated?o.dx:o.dy),w:group.rotated?o.h:o.w,h:group.rotated?o.w:o.h,rotation:(o.rotation+(group.rotated?90:0))%360,groupId:group.id}));}
+  function placedObjects(group){if(group.frame)return scope.LogEnOptimizer.placedObjects(group);return group.objects.map(o=>({...o,x:group.x+(group.rotated?group.h-o.dy-o.h:o.dx),y:group.y+(group.rotated?o.dx:o.dy),w:group.rotated?o.h:o.w,h:group.rotated?o.w:o.h,rotation:(o.rotation+(group.rotated?90:0))%360,groupId:group.id}));}
   const groupRect=g=>({x:g.x,y:g.y,w:g.rotated?g.h:g.w,h:g.rotated?g.w:g.h});
   function aisleFor(g,env,gangway){const r=groupRect(g);return {x:env.spine.x+env.spine.w,y:g.y-gangway,w:Math.max(0,r.x+r.w-env.spine.x-env.spine.w),h:gangway};}
   function placementError(group,placed,env,settings,options){
@@ -129,6 +129,7 @@
     return {...layout,...validate(layout,plan,settings)};
   }
   function validate(layout,plan,settings){
+    if(layout.version===2)return scope.LogEnOptimizer.validate(layout,plan,settings);
     const errors=[...layout.issues],unplaced=layout.unplaced.slice(),valid=[];
     const expected=makeObjects(plan,settings),expectedGroups=new Map(expected.groups.map(g=>[g.id,g]));
     for(const group of layout.groups){const expectedGroup=expectedGroups.get(group.id);if(!expectedGroup){errors.push({pn:group.id,message:'Object is no longer in the Parts List.'});continue;}
@@ -144,13 +145,14 @@
     }
     return {generatedRack,generatedGround,unplacedRack:Math.max(0,expected.rackRequired-generatedRack),unplacedGround:Math.max(0,expected.groundRequired-generatedGround),affected,validationErrors:errors,complete:!affected.length&&!errors.length&&!unplaced.length};
   }
-  function move(layout,id,x,y,rotated,plan,settings){const group=layout.groups.find(g=>g.id===id)||layout.unplaced.find(g=>g.id===id);if(!group)throw new Error('Select a row or rack run.');if(![x,y].every(Number.isFinite))throw new Error('Enter finite coordinates in mm.');const trial={...group,x,y,rotated};const error=placementError(trial,layout.groups,layout.env,settings,layout.options);if(error)throw new Error(error);Object.assign(group,trial);if(!layout.groups.some(g=>g.id===id)){layout.groups.push(group);layout.unplaced=layout.unplaced.filter(g=>g.id!==id);}const rect=groupRect(group);layout.env.spine.h=Math.max(layout.env.spine.h,rect.y-layout.env.spine.y);Object.assign(layout,validate(layout,plan,settings));return layout;}
+  function move(layout,id,x,y,rotated,plan,settings){if(layout.version===2)return scope.LogEnOptimizer.move(layout,id,x,y,rotated,plan,settings);const group=layout.groups.find(g=>g.id===id)||layout.unplaced.find(g=>g.id===id);if(!group)throw new Error('Select a row or rack run.');if(![x,y].every(Number.isFinite))throw new Error('Enter finite coordinates in mm.');const trial={...group,x,y,rotated};const error=placementError(trial,layout.groups,layout.env,settings,layout.options);if(error)throw new Error(error);Object.assign(group,trial);if(!layout.groups.some(g=>g.id===id)){layout.groups.push(group);layout.unplaced=layout.unplaced.filter(g=>g.id!==id);}const rect=groupRect(group);layout.env.spine.h=Math.max(layout.env.spine.h,rect.y-layout.env.spine.y);Object.assign(layout,validate(layout,plan,settings));return layout;}
   function aisles(layout,settings){
+    if(layout.version===2)return layout.aisles;
     const list=[{...layout.env.spine,id:'aisle:main',kind:'aisle'},...(layout.env.routes||[]),...layout.groups.map(g=>({...aisleFor(g,layout.env,settings.gangwayWidth),id:'aisle:'+g.id,kind:'aisle'}))];
     const p=layout.env.poly,b=layout.env.box,g=settings.gangwayWidth;
     if(!layout.options.allowWallStorage&&p.length===4&&p.every(v=>(Math.abs(v[0]-b.minX)<EPS||Math.abs(v[0]-b.maxX)<EPS)&&(Math.abs(v[1]-b.minY)<EPS||Math.abs(v[1]-b.maxY)<EPS))){list.push({x:b.minX,y:b.minY,w:b.maxX-b.minX,h:g},{x:b.minX,y:b.maxY-g,w:b.maxX-b.minX,h:g},{x:b.minX,y:b.minY+g,w:g,h:b.maxY-b.minY-2*g},{x:b.maxX-g,y:b.minY+g,w:g,h:b.maxY-b.minY-2*g});list.slice(-4).forEach((a,i)=>{a.id='aisle:perimeter:'+i;a.kind='aisle';});}
     return list.filter(a=>a.w>EPS&&a.h>EPS);
   }
   function cadObjects(layout){return layout.groups.flatMap(placedObjects);}
-  scope.LogEnLayout=Object.freeze({generate,validate,move,makeObjects,environment,placedObjects,cadObjects,aisles,sourceKey,bounds,corners});
+  scope.LogEnLayout=Object.freeze({core:Object.freeze({contained,overlaps,inside,validPolygon,expand}),generate,validate,move,makeObjects,environment,placedObjects,cadObjects,aisles,sourceKey,bounds,corners});
 })(globalThis);
