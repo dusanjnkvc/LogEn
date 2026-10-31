@@ -541,6 +541,19 @@
   }
   function calculateImplementation(parts,settings,config={},category=null){
     const base=calculateProject(parts,settings,category),errors=[...base.settingsErrors],types=configuredRackTypes({...createDefaultSettings(),...settings}),limits={};
+    if(config.greenfield){
+      if(errors.length)return {available:false,errors};
+      const threshold=Number.isSafeInteger(config.improvementThreshold)&&config.improvementThreshold>=0?config.improvementThreshold:2;
+      const split=calculateStorageSplit(parts,settings,threshold,category,base),rackResults=new Map(split.rack.results.map(r=>[r.input.partNumber,r]));
+      const rows=base.results.map(r=>{
+        if(!r.isPlanningValid)return {input:r.input,required:null,rackPallets:0,groundPallets:null,storageType:'Unassigned',groundReason:'',errors:r.errors};
+        const toRack=r.requiredPallets<=threshold,evaluated=toRack?rackResults.get(r.input.partNumber):r;
+        return {input:r.input,required:r.requiredPallets,rackPallets:toRack?r.requiredPallets:0,groundPallets:toRack?0:r.requiredPallets,storageType:r.requiredPallets===0?'No storage required':toRack?'Rack storage':'Ground storage',groundReason:toRack?'':`Improve Warehouse: required pallets exceed the ${threshold}-pallet rack threshold.`,ground:toRack?null:r.floor,errors:(toRack?evaluated?.isRackValid:r.isFloorValid)?[]:(evaluated?.errors||r.errors)};
+      });
+      rows.sort((a,b)=>(a.required??Infinity)-(b.required??Infinity)||a.input.partNumber.localeCompare(b.input.partNumber,'en',{numeric:true}));
+      const rack={...split.rack.sharedRack,bays:split.rack.totalRackBays,withoutGangways:split.rack.rackWithoutGangways,withGangways:split.rack.rackWithGangways};
+      return {available:true,errors:[],greenfield:true,threshold,rows,rack,totalPallets:base.totalRequiredPallets,rackPallets:split.rackPallets,groundPallets:split.groundPallets,groundWithoutGangways:split.groundWithoutGangways,groundWithGangways:split.groundWithGangways,totalWithoutGangways:rack.withoutGangways+split.groundWithoutGangways,totalWithGangways:rack.withGangways+split.groundWithGangways,invalidCount:rows.filter(r=>r.errors.length).length};
+    }
     if(!config.greenfield&&config.useExistingRacks){
       for(const row of config.existingRacks||[]){
         const type=types.find(t=>t.id===row.typeId);
