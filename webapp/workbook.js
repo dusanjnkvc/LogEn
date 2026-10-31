@@ -266,6 +266,7 @@
         ['Racks without gangways (m²)', calculation.rackWithoutGangways],
         ['Racks with allocated gangways (m²)', calculation.rackWithGangways],
       ].forEach(([label, value]) => add(comparison, [label, available ? value : 'Unavailable — invalid settings'], 'kpi'));
+      add(comparison, ['Truck equivalents — ROUNDUP(floor storage m² / 33.32)', available ? Math.ceil(calculation.floorWithoutGangways / 33.32) : 'Unavailable'], 'kpi');
       add(comparison, []);
       [
         ['Totals status', !available ? 'INVALID SETTINGS — totals unavailable' : calculation.invalidCount ? 'PARTIAL TOTALS — ' + calculation.invalidCount + ' part rows need review; each storage scenario includes its calculable rows' : 'Complete — all imported part rows are valid'],

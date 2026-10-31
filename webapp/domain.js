@@ -544,6 +544,15 @@
   }
   function calculateImplementation(parts,settings,config={},category=null){
     const base=calculateProject(parts,settings,category),errors=[...base.settingsErrors],types=configuredRackTypes({...createDefaultSettings(),...settings}),limits={};
+    if((config.storageMode&&config.storageMode!=='auto')||Object.keys(config.storageOverrides||{}).length){
+      const original=calculateImplementation(parts,settings,{...config,storageMode:'auto',storageOverrides:{}},category);if(!original.available)return original;
+      const desired=r=>config.storageOverrides?.[r.input.partNumber]||(config.storageMode==='ground'?'ground':config.storageMode==='rack'?'rack':original.rows.find(v=>v.input.partNumber===r.input.partNumber)?.rackPallets>0?'rack':'ground');
+      let capacity=null;if(!config.greenfield){capacity={};if(config.useExistingRacks)for(const v of config.existingRacks||[])capacity[v.typeId]=(capacity[v.typeId]||0)+v.bays;}
+      const selected=base.results.filter(r=>r.isPlanningValid&&desired(r)==='rack'),rack=sharedRackPlan(selected,{...createDefaultSettings(),...settings},capacity);if(!rack.available)return {available:false,errors:[rack.error]};
+      const rows=base.results.map(r=>{if(!r.isPlanningValid)return {input:r.input,required:null,rackPallets:0,groundPallets:null,storageType:'Unassigned',errors:r.errors};const wantRack=desired(r)==='rack',fit=types.some(t=>rackForPart(0,r.input,t)),placed=wantRack?(capacity===null?(fit?r.requiredPallets:0):(rack.placedByPN?.[r.input.partNumber]||0)):0,missing=wantRack?r.requiredPallets-placed:0,ground=wantRack?null:r.floor;return {input:r.input,required:r.requiredPallets,rackPallets:placed,groundPallets:wantRack?0:r.requiredPallets,ground,missingRackPallets:missing,storageType:wantRack?'Rack storage':'Ground storage',groundReason:'Manual storage selection',errors:missing?[fit?'Insufficient rack capacity for the whole part number.':'Pallet is bigger than the usable shelf or does not fit the rack clearances.']:!wantRack&&!r.isFloorValid?r.errors:[]};});
+      const sum=fn=>rows.reduce((n,r)=>n+(fn(r)||0),0),groundWithoutGangways=sum(r=>r.ground?.withoutGangways),groundWithGangways=sum(r=>r.ground?.withGangways);
+      return {available:true,errors:[],greenfield:!!config.greenfield,rows,rack,totalPallets:base.totalRequiredPallets,rackPallets:sum(r=>r.rackPallets),groundPallets:sum(r=>r.groundPallets),groundWithoutGangways,groundWithGangways,totalWithoutGangways:rack.withoutGangways+groundWithoutGangways,totalWithGangways:rack.withGangways+groundWithGangways,invalidCount:rows.filter(r=>r.errors.length).length};
+    }
     if(config.greenfield){
       if(errors.length)return {available:false,errors};
       const threshold=Number.isSafeInteger(config.improvementThreshold)&&config.improvementThreshold>=0?config.improvementThreshold:2;
