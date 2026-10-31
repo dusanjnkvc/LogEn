@@ -30,18 +30,22 @@ function Invoke-LogEnLayoutJob([byte[]]$Drawing, [string]$Mode, $Plan=$null) {
     else {
       $scale=[double]$Plan.scale
       if ([double]::IsNaN($scale) -or [double]::IsInfinity($scale) -or $scale -le 0 -or $scale -gt 1000000) {throw 'Invalid drawing units.'}
-      if (@($Plan.objects).Count -gt 10000 -or @($Plan.aisles).Count -gt 10000 -or @($Plan.clearances).Count -gt 10000) {throw 'Generated layout exceeds 10,000 objects or access strips.'}
+      if (@($Plan.objects).Count -gt 10000 -or @($Plan.aisles).Count -gt 10000 -or @($Plan.clearances).Count -gt 10000 -or @($Plan.markings).Count -gt 60000) {throw 'Generated layout exceeds 10,000 objects or access strips.'}
       $commands.Add('(lg:init)');$commands.Add('(setq lg:entitycount 0)');$expected=0
-      $shapes=@($Plan.objects)+@($Plan.aisles)+@($Plan.clearances)
+      $shapes=(@($Plan.objects)+@($Plan.aisles)+@($Plan.clearances)+@($Plan.markings))|Where-Object {$null -ne $_}
       foreach($shape in $shapes) {
         foreach($key in @('x','y','w','h')) { $n=[double]$shape.$key;if([double]::IsNaN($n)-or[double]::IsInfinity($n)-or[Math]::Abs($n)-gt 1e12){throw 'Non-finite CAD coordinates.'} }
         if($shape.w -le 0 -or $shape.h -le 0){throw 'Invalid generated object dimensions.'}
-        if($shape.kind -notin @('rack','ground','aisle','clearance')){throw 'Unknown layout object type.'}
+        if($shape.kind -notin @('rack','ground','aisle','clearance','marking')){throw 'Unknown layout object type.'}
         if([string]$shape.id -eq '' -or ([string]$shape.id).Length -gt 240){throw 'Invalid layout object identity.'}
-        $layer=switch($shape.kind){rack{'LOGEN_RACKS'}ground{'LOGEN_GROUND_STORAGE'}aisle{'LOGEN_GANGWAYS'}clearance{'LOGEN_CLEARANCES'}}
+        $layer=switch($shape.kind){rack{'LOGEN_RACKS'}ground{'LOGEN_GROUND_STORAGE'}aisle{'LOGEN_GANGWAYS'}clearance{'LOGEN_CLEARANCES'}marking{'LOGEN_GROUND_MARKINGS'}}
         $id=ConvertTo-LogEnLispString ([string]$shape.id);$x=[double]$shape.x/$scale;$y=[double]$shape.y/$scale;$w=[double]$shape.w/$scale;$h=[double]$shape.h/$scale
         $numbers=@($x,$y,$w,$h)|ForEach-Object {$_.ToString('R',[Globalization.CultureInfo]::InvariantCulture)}
-        if(@($shape.points).Count -ge 3){
+        if($shape.kind -eq 'marking'){
+          if(@($shape.points).Count -ne 2){throw 'Ground marking needs two endpoints.'}
+          $coordinates=foreach($point in $shape.points){if(@($point).Count -ne 2){throw 'Invalid marking point.'};foreach($value in $point){$v=[double]$value;if([double]::IsNaN($v)-or[double]::IsInfinity($v)-or[Math]::Abs($v)-gt 1e12){throw 'Invalid marking coordinate.'};($v/$scale).ToString('R',[Globalization.CultureInfo]::InvariantCulture)}}
+          $commands.Add('(lg:markline '+$id+' "LOGEN_GROUND_MARKINGS" '+($coordinates -join ' ')+')')
+        }elseif(@($shape.points).Count -ge 3){
           if(@($shape.points).Count -gt 20000){throw 'Polygon vertex limit exceeded.'}
           $poly=foreach($point in $shape.points){foreach($value in $point){if([double]::IsNaN([double]$value)-or[double]::IsInfinity([double]$value)-or[Math]::Abs([double]$value)-gt 1e12){throw 'Invalid polygon coordinate.'}};'('+(([double]$point[0]/$scale).ToString('R',[Globalization.CultureInfo]::InvariantCulture))+' '+(([double]$point[1]/$scale).ToString('R',[Globalization.CultureInfo]::InvariantCulture))+')'}
           $commands.Add("(lg:polygon "+$id+' "'+$layer+'" '+"'("+($poly -join ' ')+'))')

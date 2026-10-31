@@ -32,3 +32,9 @@ The comparison reports warehouse/available/storage/gangway/clearance/free areas,
 The version 4 local helper writes editable rotated polygons on LOGEN_RACKS, LOGEN_GROUND_STORAGE, LOGEN_GANGWAYS, LOGEN_CLEARANCES and LOGEN_LAYOUT_LABELS, preserving the original drawing and replacing only tagged generated entities. Output Excel includes the selected scenario and comparison metrics. Inventory, demand, stacking and rack shelf-allocation formulas are unchanged.
 
 Focused verification: `node webapp/layout-optimizer.test.cjs` covers paired racks, allocation identities, non-overlapping area partitions, rotated buildings, approved wall rows, shortages and a concave boundary. AutoCAD export is also checked with a synthetic warehouse drawing.
+
+## Ground separators and shortage alert
+
+Ground row borders and separators between occupied positions are green in the browser, DWG and PDF. Markings use the existing clearance space, merge shared collinear edges, and do not change footprints or pallet quantities. AutoCAD helper version 5 writes these editable lines on LOGEN_GROUND_MARKINGS.
+
+After generation, on opening a saved partial layout, and when selecting an incomplete orientation, a shortage window shows unique affected PNs, unplaced pallet quantity and allocated storage-only area still needed. The report lists every affected PN. Shared missing rack bays count once, with their area apportioned across assigned PNs. Dedicated ground rows retain the existing row-depth reservations, clearance and stacking. Additional gangways are excluded because an extra physical aisle layout has not been generated. Unknown quantities or areas are explicitly flagged rather than treated as zero. The same data is included in the Excel output's Storage Shortage sheet.

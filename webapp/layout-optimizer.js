@@ -96,6 +96,35 @@
   }
   function regionShapes(ps,frame,kind,prefix){return ps.map((p,i)=>({id:prefix+':'+i,kind,points:points(p).map(p=>toWorld(p,frame)),...rectBounds(points(p).map(p=>toWorld(p,frame))),hole:C.Clipper.Area(p)<0}));}
   function connected(ps){const tree=new C.PolyTree(),c=new C.Clipper();if(!ps.length)return false;c.AddPaths(ps,C.PolyType.ptSubject,true);c.Execute(C.ClipType.ctUnion,tree,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);return tree.Childs().length===1;}
+  function groundMarkings(layout){
+    const horizontal=new Map(),vertical=new Map(),frame=layout.env.frame||{angle:0,sx:1,sy:1};
+    function line(a,b){const flat=Math.abs(a[1]-b[1])<E,map=flat?horizontal:vertical,key=Math.round((flat?a[1]:a[0])*S),u=flat?0:1;if(!map.has(key))map.set(key,[]);map.get(key).push([Math.round(Math.min(a[u],b[u])*S),Math.round(Math.max(a[u],b[u])*S)]);}
+    for(const g of layout.groups.filter(g=>g.kind==='ground')){
+      const at=([x,y])=>[g.x+(g.rotated?g.h-y:x),g.y+(g.rotated?x:y)],outline=[[0,0],[g.w,0],[g.w,g.h],[0,g.h]];
+      outline.forEach((p,i)=>line(at(p),at(outline[(i+1)%4])));
+      const objects=[...g.objects].sort((a,b)=>a.dy-b.dy);
+      for(let i=1;i<objects.length;i++){const before=objects[i-1],after=objects[i],y=(before.dy+before.h+after.dy)/2;line(at([0,y]),at([g.w,y]));}
+    }
+    const result=[];
+    for(const [map,flat]of [[horizontal,true],[vertical,false]])for(const [key,ranges]of [...map.entries()].sort((a,b)=>a[0]-b[0])){
+      const merged=[];for(const r of ranges.sort((a,b)=>a[0]-b[0])){const prev=merged[merged.length-1];if(prev&&r[0]<=prev[1]+1)prev[1]=Math.max(prev[1],r[1]);else merged.push([...r]);}
+      for(const [a,b]of merged){if(b<=a)continue;const p=(flat?[[a/S,key/S],[b/S,key/S]]:[[key/S,a/S],[key/S,b/S]]).map(v=>toWorld(v,frame)),bounds=rectBounds(p);result.push({id:'ground-marking:'+result.length,kind:'marking',points:p,...bounds,w:Math.max(0.1,bounds.w),h:Math.max(0.1,bounds.h)});}
+    }
+    return result;
+  }
+  function shortage(layout,plan,settings,validGroups=null){
+    const valid=validGroups||layout.groups.filter(g=>layout.version!==2||!placementError(g,layout.groups,layout.env,settings)),placed=new Set(),quantities=new Map(),areas=new Map(),represented=new Map();
+    for(const g of valid)for(const o of g.objects){placed.add(o.id);if(o.kind==='rack')for(const a of o.allocations)quantities.set(a.pn,(quantities.get(a.pn)||0)+1);else quantities.set(o.pn,(quantities.get(o.pn)||0)+o.quantity);}
+    const contribute=(pn,qty,area)=>{areas.set(pn,(areas.get(pn)||0)+area);represented.set(pn,(represented.get(pn)||0)+qty);};
+    for(const g of L.makeObjects(plan,settings).groups){
+      if(g.kind==='rack'){for(const o of g.objects){if(placed.has(o.id)||!o.allocations.length)continue;const counts=new Map();for(const a of o.allocations)counts.set(a.pn,(counts.get(a.pn)||0)+1);for(const [pn,n]of counts)contribute(pn,n,o.w*o.h/1e6*n/o.allocations.length);}}
+      else{const missing=g.objects.filter(o=>!placed.has(o.id));if(missing.length){const byPN=new Map();for(const o of missing)byPN.set(o.pn,(byPN.get(o.pn)||0)+o.quantity);const total=missing.reduce((n,o)=>n+o.quantity,0),area=g.w*g.h/1e6*missing.length/g.objects.length;for(const [pn,n]of byPN)contribute(pn,n,area*n/total);}}
+    }
+    const rows=[];
+    for(const r of plan.rows){const n=r.required===null?null:Math.max(0,r.required-(quantities.get(r.input.partNumber)||0));if(n===0)continue;const areaKnown=n!==null&&(represented.get(r.input.partNumber)||0)>=n;rows.push({pn:r.input.partNumber,required:r.required,placed:quantities.get(r.input.partNumber)||0,missingPallets:n,areaWithoutGangways:areas.get(r.input.partNumber)||0,areaKnown,reason:r.errors.join(' ')});}
+    const unique=new Map();for(const row of rows){if(unique.has(row.pn)){const prior=unique.get(row.pn);unique.set(row.pn,{...prior,required:null,missingPallets:null,areaKnown:false,reason:'Duplicate part number: quantity requires review. '+prior.reason});}else unique.set(row.pn,row);}rows.splice(0,rows.length,...unique.values());
+    return {partNumbers:rows.length,pallets:rows.reduce((n,r)=>n+(r.missingPallets||0),0),unknownQuantityPartNumbers:rows.filter(r=>r.missingPallets===null).length,areaWithoutGangways:rows.reduce((n,r)=>n+r.areaWithoutGangways,0),unknownAreaPartNumbers:rows.filter(r=>!r.areaKnown).length,rows};
+  }
   function metrics(layout,settings){
     const e=layout.env,rack=union(layout.groups.filter(g=>g.kind==='rack').flatMap(g=>g.objects.map(o=>rect({x:g.x+o.dx,y:g.y+o.dy,w:o.w,h:o.h})))),ground=union(layout.groups.filter(g=>g.kind==='ground').map(g=>rect(groupRect(g)))),storage=union([...rack,...ground]),access=union([...e.baseAccess,...layout.groups.flatMap(g=>accessFor(g,e,settings.gangwayWidth).map(rect))]);
     const safety=diff(union([...diff(e.blocked,e.physical),...e.wallSafety,...e.doorZones,...layout.groups.filter(g=>g.paired&&g.separation>0).map(g=>rect({x:g.x,y:g.y+g.backY,w:g.w,h:g.separation}))]),union([...access,...storage]));
@@ -119,7 +148,7 @@
     const result={generatedRack,generatedGround,unplacedRack:Math.max(0,layout.rackRequired-generatedRack),unplacedGround:Math.max(0,layout.groundRequired-generatedGround),affected,validationErrors:errors,accommodatedPallets:generatedRack+groundPallets,requiredPallets:plan.rows.reduce((n,r)=>n+(r.required||0),0)};
     Object.assign(layout,result);const m=metrics(layout,settings);if(!m.connected)errors.push({pn:'Circulation',message:'Forklift circulation is disconnected. This candidate is invalid.'});
     const baseSafety=!!layout.options.constraintsConfirmed&&!!layout.options.geometryReviewed&&!layout.geometryUnverified;
-    Object.assign(result,{metrics:m,accessValid:errors.length===0,safetyVerified:baseSafety,complete:!affected.length&&!errors.length&&!layout.unplaced.length,aisles:regionShapes(m.accessPaths,layout.env.frame,'aisle','aisle'),clearances:regionShapes(m.clearancePaths,layout.env.frame,'clearance','clearance')});
+    Object.assign(result,{metrics:m,accessValid:errors.length===0,safetyVerified:baseSafety,complete:!affected.length&&!errors.length&&!layout.unplaced.length,aisles:regionShapes(m.accessPaths,layout.env.frame,'aisle','aisle'),clearances:regionShapes(m.clearancePaths,layout.env.frame,'clearance','clearance'),shortage:shortage(layout,plan,settings,valid),markings:groundMarkings(layout)});
     return result;
   }
   const rank=l=>[l.accessValid?1:0,l.accommodatedPallets,l.complete?1:0,-l.metrics.unusableArea,-l.metrics.gangwayArea,-l.groups.length];
@@ -139,5 +168,5 @@
     if(rotated!==!!group.rotated)throw new Error('Use the other orientation candidate to rotate rack blocks while preserving their accessible faces.');
     const [lx,ly]=toLocal([x,y],group.frame),trial={...group,x:lx,y:ly},error=placementError(trial,layout.groups,layout.env,settings);if(error)throw new Error(error);Object.assign(group,trial);if(!layout.groups.includes(group)){layout.groups.push(group);layout.unplaced=layout.unplaced.filter(g=>g.id!==id);}Object.assign(layout,validate(layout,plan,settings));return layout;
   }
-  scope.LogEnOptimizer=Object.freeze({optimize,recommend,validate,move,placedObjects,toWorld,toLocal,geometry:Object.freeze({path,points,area,union,diff,intersect,offset,fits}),buildingAngle});
+  scope.LogEnOptimizer=Object.freeze({optimize,recommend,validate,move,placedObjects,groundMarkings,shortage,toWorld,toLocal,geometry:Object.freeze({path,points,area,union,diff,intersect,offset,fits}),buildingAngle});
 })(globalThis);

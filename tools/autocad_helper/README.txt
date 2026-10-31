@@ -1,4 +1,4 @@
-LogEn local AutoCAD helper — drawing layouts and PDF (version 4)
+LogEn local AutoCAD helper — drawing layouts and PDF (version 5)
 
 1. Extract ALL files from this ZIP to one folder on your Windows PC.
 2. Install and activate licensed AutoCAD. Core Console and DWG To PDF.pc3 are required.
@@ -50,7 +50,7 @@ Core Console. Unblock extracted files in Properties if Windows blocks downloaded
 Drawings are processed in temporary folders, removed after processing; the original is not modified.
 DWG input limit: 100 MB. Layout export: up to 10,000 storage objects and 10,000 aisle strips.
 One CAD job runs at a time, with a three-minute timeout.
-Health status: http://127.0.0.1:8765/health (version must be 4 or later for layouts).
+Health status: http://127.0.0.1:8765/health (version must be 5 or later for layouts).
 
 Custom AutoCAD installation:
 powershell.exe -NoProfile -File .\LogEn-AutoCAD-Helper.ps1 -AutoCAD "C:\Your AutoCAD\accoreconsole.exe"
@@ -73,3 +73,11 @@ Safety constraints without sufficient drawing information remain UNVERIFIED. Use
 is recorded separately from geometry and access checks. This is not building-code certification.
 New DWGs support arbitrary-angle closed polylines and oriented ground text. Racks remain unlabeled.
 Old version 3 helpers cannot export optimized geometry. Replace all helper files and restart.
+
+GREEN GROUND MARKINGS (VERSION 5)
+Ground storage row outlines and separators are editable green LINE entities on
+LOGEN_GROUND_MARKINGS, using the existing floor clearance gaps. Collinear shared
+boundaries are merged to avoid duplicate lines. The markings add no storage area.
+Generate or preview a layout with missing inventory to see the shortage alert:
+PN count, known unplaced pallets, and storage area excluding additional gangways.
+Unavailable quantities or areas are flagged; shared rack bay areas count once.

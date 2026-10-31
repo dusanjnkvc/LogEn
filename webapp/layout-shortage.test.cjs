@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict');global.ClipperLib=require('./vendor/clipper.js');require('./domain.js');require('./layout.js');require('./layout-optimizer.js');
+const D=LogEnDomain,L=LogEnLayout,O=LogEnOptimizer,s={...D.createDefaultSettings(),shiftsPerDay:1,coverageMode:'custom',customCoverageDays:1,stackingMode:'imported'};
+const part=(pn,n)=>({partNumber:pn,qtyBox:1,qtyOnPallet:1,consumptionPerShift:n,doh:1,length:1200,width:1000,height:1000,stacking:2,inputErrors:[]});
+const racks=D.calculateImplementation([part('A',1),part('B',1)],s,{greenfield:true,improvementThreshold:2}),empty={version:2,groups:[],env:{frame:{angle:0,sx:1,sy:1}}};
+const r=O.shortage(empty,racks,s);assert.equal(r.partNumbers,2);assert.equal(r.pallets,2);assert(Math.abs(r.areaWithoutGangways-3.99)<1e-9);assert(Math.abs(r.rows.reduce((n,v)=>n+v.areaWithoutGangways,0)-3.99)<1e-9);
+const plan=D.calculateImplementation([part('GROUND',10)],s,{greenfield:true,improvementThreshold:2}),source=L.makeObjects(plan,s),groups=source.groups.map((g,i)=>({...g,x:i*g.w,y:0})),frame={angle:0,sx:1,sy:1};
+const all=O.shortage(empty,plan,s);assert.equal(all.pallets,10);assert.equal(all.partNumbers,1);assert(Math.abs(all.areaWithoutGangways-plan.groundWithoutGangways)<1e-8);
+const partial=O.shortage({...empty,groups:[groups[0]]},plan,s,[groups[0]]);assert.equal(partial.pallets,4);assert(Math.abs(partial.areaWithoutGangways-source.groups[1].w*source.groups[1].h/1e6)<1e-8);
+const markings=O.groundMarkings({groups,env:{frame}});assert.equal(markings.length,7);assert(markings.every(m=>m.kind==='marking'&&m.points.length===2));assert.equal(new Set(markings.map(m=>JSON.stringify(m.points))).size,markings.length);
+const rotated=O.groundMarkings({groups,env:{frame:{angle:Math.PI/6,sx:-1,sy:1}}});for(let i=0;i<markings.length;i++){const length=m=>Math.hypot(m.points[1][0]-m.points[0][0],m.points[1][1]-m.points[0][1]);assert(Math.abs(length(markings[i])-length(rotated[i]))<1e-6);}
+const unknown={...plan,rows:[{...plan.rows[0],input:{...plan.rows[0].input,partNumber:'INVALID'},required:3,groundPallets:3,ground:null,errors:['Dimensions unavailable']}]};const u=O.shortage(empty,unknown,s);assert.equal(u.pallets,3);assert.equal(u.unknownAreaPartNumbers,1);assert.equal(u.rows[0].areaKnown,false);
+const duplicate=O.shortage(empty,{...unknown,rows:[unknown.rows[0],unknown.rows[0]]},s);assert.equal(duplicate.partNumbers,1);assert.equal(duplicate.unknownQuantityPartNumbers,1);
+console.log('Ground-marking and shortage checks passed: merged green separators, rotation, stacking, shared rack areas and unknown dimensions.');
