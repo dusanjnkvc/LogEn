@@ -90,3 +90,5 @@ select option:checked{background:var(--yellow);color:#111}
 .implementation-scrollbar::-webkit-scrollbar-thumb:hover{background:var(--yellow)}
 
 .storage-location.has-ground{color:var(--yellow)}.storage-location.rack-only{color:var(--green)}.implementation-allocation-table td:last-child{min-width:270px}.implementation-allocation-table td:last-child .difference-caption{white-space:normal;max-width:320px}
+
+.project-card-heading{display:flex;align-items:center;gap:8px;min-height:28px}.project-card-heading>.icon{color:var(--yellow);width:28px;height:28px}.project-card-heading .badge{margin-left:0;line-height:1.2}
