@@ -136,7 +136,12 @@
     for(let i=0;i<blocks.length;i++){
       if(i%32===0)await tick();const block=blocks[i];let result=null,lastError="No remaining valid storage band.";
       if(block.wallSide&&options.racksAroundWalls){const trial=wallPose(block,env,options);lastError=placementError(trial,groups,env,settings);if(!lastError)result=trial;}else if(block.wallSide){const starts=[env.box.minX+options.wallClearance,env.box.maxX-options.wallClearance-block.w,...env.obstacles.map(o=>o.bounds.x+o.bounds.w+options.obstacleClearance)];for(const wallX of starts){const trial={...block,x:wallX,y:block.wallSide==='bottom'?env.box.minY+options.wallClearance:env.box.maxY-options.wallClearance-block.h};lastError=placementError(trial,groups,env,settings);if(!lastError){result=trial;break;}}}
-      if(!result&&!block.wallSide){let px=x,py=y,depth=band,attempt=0;
+      const groundSide=orientation==='vertical'?options.groundStartVertical:options.groundStartHorizontal;
+      if(block.kind==='ground'&&groundSide){
+        const angle=buildingAngle(env.poly.map(p=>toWorld(p,env.frame))),v=groundSide==='right'?[1,0]:groundSide==='left'?[-1,0]:groundSide==='top'?[0,1]:[0,-1],c=Math.cos(angle),sn=Math.sin(angle),direction=toLocal([v[0]*c-v[1]*sn,v[0]*sn+v[1]*c],env.frame)[1],occupied=[...env.obstacles.map(o=>o.bounds),...env.doors.map(o=>o.bounds),...groups.map(groupRect)],ys=[env.inner.minY+g,top-block.h-g,...occupied.flatMap(r=>[r.y+r.h+g,r.y-block.h-g])].filter(v=>v>=env.inner.minY+g-E&&v+block.h<=top-g+E).sort((a,b)=>direction>0?b-a:a-b),xs=[left,...occupied.map(r=>r.x+r.w+options.obstacleClearance)].filter(v=>v>=left-E&&v+block.w<=right+E).sort((a,b)=>a-b);
+        searchGround:for(const py of [...new Set(ys)])for(const px of [...new Set(xs)]){const trial={...block,wallSide:null,x:px,y:py};lastError=placementError(trial,groups,env,settings);if(!lastError){result=trial;break searchGround;}}
+      }
+      if(!result&&!block.wallSide&&!(block.kind==='ground'&&groundSide)){let px=x,py=y,depth=band,attempt=0;
         while(py+block.h+(block.paired?g:0)<=top+E&&attempt++<160){
           if(px+block.w>right+E){py+=Math.max(depth,block.h)+g;px=left;depth=0;continue;}
           const trial={...block,wallSide:null,x:px,y:py};
