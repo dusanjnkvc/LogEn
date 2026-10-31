@@ -379,8 +379,8 @@
     const rows=results.filter(r=>r.isRackValid&&r.isPlanningValid&&types.some(t=>rackForPart(0,r.input,t))).map(r=>({input:r.input,quantity:r.requiredPallets,fitCount:types.filter(t=>rackForPart(0,r.input,t)).length})).sort((a,b)=>a.fitCount-b.fitCount||b.input.length*b.input.width-a.input.length*a.input.width);
     const quantity=rows.reduce((n,r)=>n+r.quantity,0);if(quantity>10000)return {available:false,error:'Shared rack preview supports up to 10,000 units.'};
     const remaining=rows.map(r=>r.quantity),bayLayouts=[];let steps=0;
-    function candidate(t,stock=remaining){
-      const used=stock.map(()=>0),shelves=[];let occupied=0,count=0;
+    function candidate(t,stock=remaining,initial=null){
+      const used=stock.map(()=>0),shelves=(initial?.shelves||[]).map(sh=>({free:sh.free.map(r=>({...r})),placements:sh.placements.map(p=>({...p}))}));let occupied=initial?.occupied||0,count=0;
       rows.forEach((r,index)=>{
         if(r.input.height>t.rackSlotHeight)return;
         for(let unit=0;unit<stock[index];unit++){
@@ -417,11 +417,22 @@
     try{
       if(limits!==null){
         const usedBays=new Map();
-        while(remaining.some(n=>n>0)){
-          const choices=types.filter(t=>(usedBays.get(t.id)||0)<limits[t.id]).map(t=>candidate(t)).filter(c=>c.count);
-          choices.sort((a,b)=>b.count-a.count||b.utilization-a.utilization||a.footprint-b.footprint);
-          const best=choices[0];if(!best)break;
-          best.used.forEach((n,i)=>remaining[i]-=n);bayLayouts.push(best);usedBays.set(best.settings.id,(usedBays.get(best.settings.id)||0)+1);
+        const order=rows.map((r,index)=>({r,index})).sort((a,b)=>a.r.quantity-b.r.quantity||a.r.input.partNumber.localeCompare(b.r.input.partNumber,'en',{numeric:true}));
+        for(const {r,index} of order){
+          if(!r.quantity){remaining[index]=0;continue;}
+          // Work on private bay copies. Commit only when the entire PN fits.
+          const trial=bayLayouts.slice(),trialCounts=new Map(usedBays),stock=rows.map(()=>0);stock[index]=r.quantity;
+          while(stock[index]>0){
+            const choices=trial.map((bay,bayIndex)=>({bayIndex,bay:candidate(bay.settings,stock,bay)})).filter(c=>c.bay.count);
+            // Reuse remaining space before opening another existing bay.
+            choices.sort((a,b)=>b.bay.count-a.bay.count||b.bay.utilization-a.bay.utilization);
+            let choice=choices[0];
+            if(!choice){const fresh=types.filter(t=>(trialCounts.get(t.id)||0)<limits[t.id]).map(t=>candidate(t,stock)).filter(c=>c.count);fresh.sort((a,b)=>b.count-a.count||b.utilization-a.utilization||a.footprint-b.footprint);if(fresh[0])choice={bayIndex:-1,bay:fresh[0]};}
+            if(!choice)break;
+            stock[index]-=choice.bay.used[index];
+            if(choice.bayIndex<0){trial.push(choice.bay);trialCounts.set(choice.bay.settings.id,(trialCounts.get(choice.bay.settings.id)||0)+1);}else trial[choice.bayIndex]=choice.bay;
+          }
+          if(stock[index]===0){bayLayouts.splice(0,bayLayouts.length,...trial);usedBays.clear();for(const [id,n] of trialCounts)usedBays.set(id,n);remaining[index]=0;}
         }
         // Empty existing bays still occupy floor area and retain their aisle allocation.
         for(const t of types)for(let n=usedBays.get(t.id)||0;n<limits[t.id];n++)bayLayouts.push({settings:t,shelves:[]});
@@ -548,9 +559,10 @@
       const ground=groundPallets?calculatePart(r.input,settings,groundPallets):null;
       const storageType=rackPallets>0?(groundPallets>0?'Rack + ground storage':'Rack storage'):groundPallets>0?'Ground storage':'No storage required';
       const usableTypes=types.filter(t=>(limits[t.id]||0)>0);
-      const groundReason=!groundPallets?'':config.greenfield?'Empty area planned as ground storage.':!usableTypes.length?'No existing rack bays available.':!usableTypes.some(t=>rackForPart(0,r.input,t))?'Pallet dimensions do not fit the available rack types.':'Remaining pallets have no usable space in the entered rack bays.';
+      const groundReason=!groundPallets?'':config.greenfield?'Empty area planned as ground storage.':!usableTypes.length?'No existing rack bays available.':!usableTypes.some(t=>rackForPart(0,r.input,t))?'Pallet dimensions do not fit the available rack types.':'Whole PN on ground: the remaining rack space cannot hold all its required pallets.';
       return {input:r.input,required:r.requiredPallets,rackPallets,groundPallets,storageType,groundReason,ground:ground?.floor,errors:groundPallets&&!ground?.isFloorValid?(ground?.errors||['Invalid ground calculation']):[]};
     });
+    rows.sort((a,b)=>(a.required??Infinity)-(b.required??Infinity)||a.input.partNumber.localeCompare(b.input.partNumber,'en',{numeric:true}));
     const groundWithoutGangways=rows.reduce((n,r)=>n+(r.ground?.withoutGangways||0),0),groundWithGangways=rows.reduce((n,r)=>n+(r.ground?.withGangways||0),0);
     return {available:true,errors:[],rows,rack,totalPallets:base.totalRequiredPallets,rackPallets:rack.quantity,groundPallets:rows.reduce((n,r)=>n+(r.groundPallets||0),0),groundWithoutGangways,groundWithGangways,totalWithoutGangways:rack.withoutGangways+groundWithoutGangways,totalWithGangways:rack.withGangways+groundWithGangways,invalidCount:rows.filter(r=>r.errors.length).length};
   }
