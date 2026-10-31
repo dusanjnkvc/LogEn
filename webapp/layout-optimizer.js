@@ -41,33 +41,34 @@
     return {poly,box,boundary,zone,physical,blocked,doorZones,wallSafety,baseAccess:access,spine,frame,margin,obstacles,doors,errors};
   }
   function wallPose(group,env,options){
-    const b=env.box,c=options.wallClearance,side=group.wallSide,g={...group};
+    const b=env.box,c=options.wallClearance,side=group.wallSide,g={...group},position=g.wallReverse?g.wallLimit-g.wallOffset-g.w:g.wallOffset;
     g.rotated=side==='left'||side==='right';
     g.objects=g.objects.map(o=>({...o,dy:side==='top'||side==='left'?g.h-o.h:0}));
-    if(g.rotated){g.x=side==='left'?b.minX+c:b.maxX-c-g.h;g.y=g.wallStart+g.wallOffset;}
-    else{g.x=b.minX+c+g.wallOffset;g.y=side==='bottom'?b.minY+c:b.maxY-c-g.h;}
+    if(g.rotated){g.x=side==='left'?b.minX+c:b.maxX-c-g.h;g.y=g.wallStart+position;}
+    else{g.x=b.minX+c+position;g.y=side==='bottom'?b.minY+c:b.maxY-c-g.h;}
     return g;
   }
   function allWallBlocks(rack,env,settings,options,fraction){
     const b=env.box,c=options.wallClearance,gap=settings.gangwayWidth,d=Math.max(0,...rack.map(o=>o.h)),approved=options.suitableWallEdges||[],sides=[];
     for(const side of ['bottom','top','left','right']){const horizontal=side==='bottom'||side==='top',axis=horizontal?1:0,value=side==='bottom'?b.minY:side==='top'?b.maxY:side==='left'?b.minX:b.maxX;const edge=env.poly.findIndex((p,i)=>{const q=env.poly[(i+1)%env.poly.length];return (!approved.length||approved.includes(i))&&Math.abs(p[axis]-value)<E&&Math.abs(q[axis]-value)<E;});if(edge>=0)sides.push({side,edge,horizontal,cursor:0,last:null});}
+    const orders={left:['left','top','right','bottom'],right:['right','bottom','left','top'],bottom:['bottom','left','top','right'],top:['top','right','bottom','left']},baseAngle=buildingAngle(env.poly.map(p=>toWorld(p,env.frame))),normals={left:[-1,0],right:[1,0],bottom:[0,-1],top:[0,1]},order=(orders[options.wallStartSide]||orders.left).map(side=>{const [x,y]=normals[side],c=Math.cos(baseAngle),sn=Math.sin(baseAngle),v=toLocal([x*c-y*sn,x*sn+y*c],env.frame);return Math.abs(v[0])>Math.abs(v[1])?(v[0]<0?'left':'right'):(v[1]<0?'bottom':'top');});sides.sort((a,b)=>order.indexOf(a.side)-order.indexOf(b.side));for(const slot of sides){const side=(orders[options.wallStartSide]||orders.left)[order.indexOf(slot.side)],v=side==='left'?[0,1]:side==='top'?[1,0]:side==='right'?[0,-1]:[-1,0],c=Math.cos(baseAngle),sn=Math.sin(baseAngle),local=toLocal([v[0]*c-v[1]*sn,v[0]*sn+v[1]*c],env.frame);slot.reverse=(slot.horizontal?local[0]:local[1])<0;}
     const bottom=sides.some(v=>v.side==='bottom')?d:0,top=sides.some(v=>v.side==='top')?d:0,verticalStart=b.minY+c+bottom+gap,verticalEnd=b.maxY-c-top-gap,groups=[];let turn=0;
     for(const o of rack){
-      for(let attempt=0;attempt<sides.length;attempt++){
-        const slot=sides[(turn+attempt)%sides.length],limit=slot.horizontal?b.maxX-b.minX-2*c:verticalEnd-verticalStart,start=slot.horizontal?0:verticalStart,runLimit=Math.max(o.w,(o.maxRunLength||o.w)*fraction),last=slot.last;
+      for(let attempt=0;turn+attempt<sides.length;attempt++){
+        const slot=sides[turn+attempt],limit=slot.horizontal?b.maxX-b.minX-2*c:verticalEnd-verticalStart,start=slot.horizontal?0:verticalStart,runLimit=Math.max(o.w,(o.maxRunLength||o.w)*fraction),last=slot.last;
         const append=last&&last.typeId===o.typeId&&last.w+o.w<=Math.min(last.runLimit,runLimit)+E;
         const jumps=env.obstacles.concat(env.doors).map(v=>slot.horizontal?v.bounds.x+v.bounds.w+Math.max(options.obstacleClearance,gap)-b.minX-c:v.bounds.y+v.bounds.h+Math.max(options.obstacleClearance,gap)-verticalStart);
         const offsets=[...(append?[last.wallOffset]:[]),slot.cursor+(last?gap:0),...jumps.filter(v=>v>=slot.cursor)].sort((a,b)=>a-b);
         let chosen=null;
         for(const position of [...new Set(offsets)].slice(0,64)){
           const extend=append&&Math.abs(position-last.wallOffset)<E,w=extend?last.w+o.w:o.w;if(position<0||position+w>limit+E)continue;
-          const candidate={id:extend?last.id:'wall:'+slot.side+':'+o.id,kind:'rack',typeId:o.typeId,w,h:extend?Math.max(last.h,o.h):o.h,objects:extend?[...last.objects,{...o,dx:last.w,dy:0}]:[{...o,dx:0,dy:0}],wallSide:slot.side,wallEdge:slot.edge,wallOffset:position,wallStart:start,paired:false,runLimit};
+          const candidate={id:extend?last.id:'wall:'+slot.side+':'+o.id,kind:'rack',typeId:o.typeId,w,h:extend?Math.max(last.h,o.h):o.h,objects:extend?[...last.objects,{...o,dx:last.w,dy:0}]:[{...o,dx:0,dy:0}],wallSide:slot.side,wallEdge:slot.edge,wallOffset:position,wallStart:start,wallLimit:limit,wallReverse:slot.reverse,paired:false,runLimit};
           const placed=wallPose(candidate,env,options),r=groupRect(placed),front=slot.side==='bottom'?{x:r.x,y:r.y+r.h,w:r.w,h:gap}:slot.side==='top'?{x:r.x,y:r.y-gap,w:r.w,h:gap}:slot.side==='left'?{x:r.x+r.w,y:r.y,w:gap,h:r.h}:{x:r.x-gap,y:r.y,w:gap,h:r.h};
           if(!fits(r,env.zone)||!fits(front,env.boundary)||collide(front,env.blocked))continue;
           if(groups.some(v=>v.id!==candidate.id&&(core.overlaps(r,groupRect(v))||core.overlaps(front,groupRect(v)))))continue;
           chosen=placed;break;
         }
-        if(chosen){const previous=groups.findIndex(v=>v.id===chosen.id);if(previous>=0)groups[previous]=chosen;else groups.push(chosen);slot.last=chosen;slot.cursor=chosen.wallOffset+chosen.w;turn=(turn+attempt+1)%sides.length;break;}
+        if(chosen){const previous=groups.findIndex(v=>v.id===chosen.id);if(previous>=0)groups[previous]=chosen;else groups.push(chosen);slot.last=chosen;slot.cursor=chosen.wallOffset+chosen.w;turn=turn+attempt;break;}
       }
     }
     return groups;
