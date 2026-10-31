@@ -45,7 +45,7 @@
     g.rotated=side==='left'||side==='right';
     g.objects=g.objects.map(o=>({...o,dy:side==='top'||side==='left'?g.h-o.h:0}));
     if(g.rotated){g.x=side==='left'?b.minX+c:b.maxX-c-g.h;g.y=g.wallStart+position;}
-    else{g.x=b.minX+c+position;g.y=side==='bottom'?b.minY+c:b.maxY-c-g.h;}
+    else{g.x=b.minX+c+(g.wallStart||0)+position;g.y=side==='bottom'?b.minY+c:b.maxY-c-g.h;}
     return g;
   }
   function allWallBlocks(rack,env,settings,options,fraction){
@@ -55,7 +55,7 @@
     const bottom=sides.some(v=>v.side==='bottom')?d:0,top=sides.some(v=>v.side==='top')?d:0,verticalStart=b.minY+c+bottom+gap,verticalEnd=b.maxY-c-top-gap,groups=[];let turn=0;
     for(const o of rack){
       for(let attempt=0;turn+attempt<sides.length;attempt++){
-        const slot=sides[turn+attempt],limit=slot.horizontal?b.maxX-b.minX-2*c:verticalEnd-verticalStart,start=slot.horizontal?0:verticalStart,runLimit=Math.max(o.w,(o.maxRunLength||o.w)*fraction),last=slot.last;
+        const slot=sides[turn+attempt],leftDepth=sides.some(v=>v.side==='left')?d:0,rightDepth=sides.some(v=>v.side==='right')?d:0,limit=slot.horizontal?b.maxX-b.minX-2*c-leftDepth-rightDepth:verticalEnd-verticalStart,start=slot.horizontal?leftDepth:verticalStart,runLimit=Math.max(o.w,(o.maxRunLength||o.w)*fraction),last=slot.last;
         const append=last&&last.typeId===o.typeId&&last.w+o.w<=Math.min(last.runLimit,runLimit)+E;
         const jumps=env.obstacles.concat(env.doors).map(v=>slot.horizontal?v.bounds.x+v.bounds.w+Math.max(options.obstacleClearance,gap)-b.minX-c:v.bounds.y+v.bounds.h+Math.max(options.obstacleClearance,gap)-verticalStart);
         const offsets=[...(append?[last.wallOffset]:[]),slot.cursor+(last?gap:0),...jumps.filter(v=>v>=slot.cursor)].sort((a,b)=>a-b);
