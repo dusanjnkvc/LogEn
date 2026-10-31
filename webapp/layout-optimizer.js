@@ -43,16 +43,34 @@
   function makeBlocks(source,env,settings,options,rowFraction){
     const rack=source.groups.filter(g=>g.kind==='rack').flatMap(g=>g.objects),byType=new Map(),blocks=[],wallRows=[];let index=0;
     for(const o of rack){if(!byType.has(o.typeId))byType.set(o.typeId,[]);byType.get(o.typeId).push(o);}
-    for(const bays of byType.values()){
-      const sample=bays[0],original=source.groups.find(g=>g.objects.some(o=>o.id===sample.id)),maxRun=sample.maxRunLength||original.w; // source runs already enforce rack-type maximum length
-      const usable=env.box.maxX-env.margin-env.spine.x-env.spine.w,maxCount=Math.max(1,Math.floor(Math.min(maxRun,usable)/sample.w)),n=Math.max(1,Math.floor(maxCount*rowFraction)),rows=[];
-      for(let i=0;i<bays.length;i+=n){const chunk=bays.slice(i,i+n);let x=0;rows.push({w:chunk.reduce((a,o)=>a+o.w,0),h:sample.h,objects:chunk.map(o=>{const q={...o,dx:x,dy:0};x+=o.w;return q;})});}
-      const approved=options.suitableWallEdges||[];
-      for(const side of ['bottom','top'])if(options.allowWallStorage&&rows.length){const y=side==='bottom'?env.box.minY:env.box.maxY;const edge=env.poly.findIndex((p,i)=>{const q=env.poly[(i+1)%env.poly.length];return approved.includes(i)&&Math.abs(p[1]-y)<E&&Math.abs(q[1]-y)<E;});if(edge>=0){const row=rows.shift();wallRows.push({...row,id:'wall:'+side+':'+row.objects[0].id,kind:'rack',wallSide:side,paired:false});}}
+    const approved=options.suitableWallEdges||[],automatic=approved.length===0;
+    for(const originalBays of byType.values()){
+      const bays=[...originalBays],sample=bays[0],maxRun=sample.maxRunLength||source.groups.find(g=>g.objects.some(o=>o.id===sample.id)).w;
+      const row=chunk=>{let x=0;return {w:chunk.reduce((n,o)=>n+o.w,0),h:sample.h,objects:chunk.map(o=>{const q={...o,dx:x,dy:0};x+=o.w;return q;})};};
+      if(options.allowWallStorage&&wallRows.length===0){
+        for(const side of ['bottom','top']){
+          const y=side==='bottom'?env.box.minY:env.box.maxY,edge=env.poly.findIndex((p,i)=>{const q=env.poly[(i+1)%env.poly.length];return (automatic||approved.includes(i))&&Math.abs(p[1]-y)<E&&Math.abs(q[1]-y)<E;});
+          if(edge<0)continue;
+          const wallWidth=env.box.maxX-env.box.minX-2*options.wallClearance,n=Math.floor(Math.min(maxRun,wallWidth)/sample.w);
+          if(n<1)continue;
+          const first=row(bays.splice(0,Math.max(1,Math.floor(n*rowFraction))));wallRows.push({...first,id:'wall:'+side+':'+first.objects[0].id,kind:'rack',wallSide:side,wallEdge:edge,paired:false});break;
+        }
+      }
+      const usable=env.box.maxX-env.margin-env.spine.x-env.spine.w,n=Math.max(1,Math.floor(Math.max(1,Math.floor(Math.min(maxRun,usable)/sample.w))*rowFraction)),rows=[];
+      for(let i=0;i<bays.length;i+=n)rows.push(row(bays.slice(i,i+n)));
       while(rows.length){const a=rows.shift(),b=rows.shift(),gap=b?options.backToBackSeparation:0;blocks.push({id:'block:'+a.objects[0].id,kind:'rack',w:Math.max(a.w,b?.w||0),h:a.h+gap+(b?.h||0),objects:[...a.objects,...(b?b.objects.map(o=>({...o,dy:a.h+gap})):[])],paired:!!b,separation:gap,backY:a.h,rows:b?2:1});}
     }
     blocks.sort((a,b)=>b.objects.reduce((n,o)=>n+o.pallets,0)-a.objects.reduce((n,o)=>n+o.pallets,0)||b.w-a.w);
     return [...wallRows,...blocks,...source.groups.filter(g=>g.kind==='ground').map(g=>({...g,id:g.id,paired:false}))].map(g=>({...g,frame:env.frame,ordinal:++index}));
+  }
+  function wallAccess(env,blocks,options,settings){
+    if(!options.allowWallStorage)return;
+    const g=settings.gangwayWidth,bottom=Math.max(0,...blocks.filter(b=>b.wallSide==='bottom').map(b=>b.h)),top=Math.max(0,...blocks.filter(b=>b.wallSide==='top').map(b=>b.h));
+    env.spine.y=env.box.minY+options.wallClearance+bottom;env.spine.h=Math.max(0,env.box.maxY-options.wallClearance-top-env.spine.y);
+    const routes=env.spine.h>0?[rect(env.spine)]:[];
+    for(const d of env.doors){const r=d.bounds,cx=r.x+r.w/2,cy=Math.max(env.spine.y,Math.min(env.spine.y+env.spine.h-g,r.y+r.h/2-g/2));routes.push(rect({x:Math.min(env.spine.x,cx),y:cy,w:Math.max(env.spine.x+g,cx)-Math.min(env.spine.x,cx),h:g}));}
+    env.baseAccess=union(routes);env.errors=[];
+    if(env.spine.h<g||area(diff(env.baseAccess,env.boundary))>E||area(intersect(env.baseAccess,env.blocked))>E)env.errors.push({pn:'Circulation',message:'The wall row leaves insufficient connected access or a door route crosses blocked geometry.'});
   }
   function groupRect(g){return {x:g.x,y:g.y,w:g.rotated?g.h:g.w,h:g.rotated?g.w:g.h};}
   function accessFor(g,env,width){const r=groupRect(g),x=env.spine.x,w=r.x+r.w-x;
@@ -69,12 +87,14 @@
   }
   async function pack(plan,settings,geometry,options,orientation,sx,sy,fraction,startOffset){
     const source=L.makeObjects(plan,settings),env=environment(geometry,options,settings,orientation,sx,sy),groups=[],unplaced=[],blocks=makeBlocks(source,env,settings,options,fraction),g=settings.gangwayWidth;
-    let y=env.box.minY+env.margin+(options.allowWallStorage?g:0)+startOffset,x=env.spine.x+g,band=0;
+    wallAccess(env,blocks,options,settings);
+    const wallDepth=Math.max(0,...blocks.filter(b=>b.wallSide==='bottom').map(b=>b.h));
+    let y=env.box.minY+env.margin+(options.allowWallStorage?wallDepth+g:0)+(wallDepth?0:startOffset),x=env.spine.x+g,band=0;
     const left=x,right=env.box.maxX-env.margin,top=env.box.maxY-env.margin;
     for(let i=0;i<blocks.length;i++){
       if(i%32===0)await tick();const block=blocks[i];let result=null,lastError="No remaining valid storage band.";
-      if(block.wallSide){const trial={...block,x:left,y:block.wallSide==='bottom'?env.box.minY+options.wallClearance:env.box.maxY-options.wallClearance-block.h};if(!placementError(trial,groups,env,settings))result=trial;}
-      if(!result){let px=x,py=y,depth=band,attempt=0;
+      if(block.wallSide){const starts=[env.box.minX+options.wallClearance,env.box.maxX-options.wallClearance-block.w,...env.obstacles.map(o=>o.bounds.x+o.bounds.w+options.obstacleClearance)];for(const wallX of starts){const trial={...block,x:wallX,y:block.wallSide==='bottom'?env.box.minY+options.wallClearance:env.box.maxY-options.wallClearance-block.h};lastError=placementError(trial,groups,env,settings);if(!lastError){result=trial;break;}}}
+      if(!result&&!block.wallSide){let px=x,py=y,depth=band,attempt=0;
         while(py+block.h+(block.paired?g:0)<=top+(options.allowWallStorage?0:g)+E&&attempt++<160){
           if(px+block.w>right+E){py+=Math.max(depth,block.h)+g;px=left;depth=0;continue;}
           const trial={...block,wallSide:null,x:px,y:py};
@@ -85,6 +105,7 @@
       }
       if(result){groups.push(result);if(result.wallSide==='bottom'){y=Math.max(y,result.y+result.h+g);x=left;band=0;}}else if(block.paired){const a=block.objects.filter(o=>o.dy===0),b=block.objects.filter(o=>o.dy>0);for(const row of [a,b])if(row.length)blocks.push({...block,id:'single:'+row[0].id,paired:false,rows:1,separation:0,backY:0,h:row[0].h,w:row.reduce((n,o)=>n+o.w,0),objects:row.map(o=>({...o,dy:0})),wallSide:null});}else unplaced.push({...block,unplacedReason:lastError});
     }
+    if(options.allowWallStorage&&source.groups.some(g=>g.kind==='rack')&&!groups.some(g=>g.wallSide))env.errors.push({pn:'Wall storage',message:'A wall rack row could not be placed safely. Review the selected walls, obstacles and clearance.'});
     const layout={version:2,orientation,groups,unplaced,env,options:{...options},issues:[...source.issues,...env.errors],rackRequired:source.rackRequired,groundRequired:source.groundRequired,search:{sx,sy,rowFraction:fraction,startOffset},buildingAngle:buildingAngle(geometry.entities.find(e=>e.id===options.boundaryId).points),geometryUnverified:geometry.unreadableEntities||0};
     Object.assign(layout,validate(layout,plan,settings));return layout;
   }
