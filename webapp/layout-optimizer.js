@@ -119,12 +119,21 @@
     for(let i=1;i<cuts.length;i++){const y=cuts[i-1],h=cuts[i]-y,active=rects.filter(r=>r.y<y+h-E&&r.y+r.h>y+E);if(!active.length)continue;const left=Math.min(...active.map(r=>r.x)),right=Math.max(...active.map(r=>r.x+r.w));for(const r of [{x:z.minX,y,w:left-z.minX,h},{x:right,y,w:z.maxX-right,h}])if(r.w>E&&fits(r,layout.env.boundary)&&!collide(r,layout.env.blocked))out.push(rect(r));}
     return out;
   }
+  function sharedRowError(a,b,gangway){
+    const ground=a.kind==='ground'?a:b.kind==='ground'?b:null,rack=a.kind==='rack'?a:b.kind==='rack'?b:null;
+    if(!ground||!rack||!!ground.rotated!==!!rack.rotated)return false;
+    const r=groupRect(ground),vertical=!!rack.rotated;
+    for(const o of rack.objects){const v=localObjectRect(rack,o),start=vertical?r.x:r.y,end=start+(vertical?r.w:r.h),low=vertical?v.x:v.y,high=low+(vertical?v.w:v.h),gap=vertical?Math.max(v.y-r.y-r.h,r.y-v.y-v.h):Math.max(v.x-r.x-r.w,r.x-v.x-v.w);
+      if(gap>=-E&&gap<gangway-E&&start<high-E&&end>low+E&&(start<low-E||end>high+E))return true;
+    }
+    return false;
+  }
   function placementError(g,placed,env,settings){
     const r=groupRect(g),access=accessFor(g,env,settings.gangwayWidth);
     if(!fits(r,env.zone))return 'Storage crosses the storage zone, boundary or mandatory clearance.';
     if(collide(r,env.baseAccess))return 'Storage blocks a circulation route.';
     for(const a of access)if(!fits(a,env.boundary)||collide(a,env.blocked))return 'A full-width access gangway is obstructed or leaves the warehouse.';
-    for(const other of placed){if(other.id===g.id)continue;const rr=groupRect(other);if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||accessFor(other,env,settings.gangwayWidth).some(a=>core.overlaps(a,r)))return 'Storage or its required accessible face overlaps another storage block.';}
+    for(const other of placed){if(other.id===g.id)continue;const rr=groupRect(other);if(sharedRowError(g,other,settings.gangwayWidth))return 'Ground storage beside a rack must fit within its row depth. Start a separate row for deeper ground storage.';if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||accessFor(other,env,settings.gangwayWidth).some(a=>core.overlaps(a,r)))return 'Storage or its required accessible face overlaps another storage block.';}
     return null;
   }
   async function pack(plan,settings,geometry,options,orientation,sx,sy,fraction,startOffset){
@@ -138,7 +147,7 @@
       if(block.wallSide&&options.racksAroundWalls){const trial=wallPose(block,env,options);lastError=placementError(trial,groups,env,settings);if(!lastError)result=trial;}else if(block.wallSide){const starts=[env.box.minX+options.wallClearance,env.box.maxX-options.wallClearance-block.w,...env.obstacles.map(o=>o.bounds.x+o.bounds.w+options.obstacleClearance)];for(const wallX of starts){const trial={...block,x:wallX,y:block.wallSide==='bottom'?env.box.minY+options.wallClearance:env.box.maxY-options.wallClearance-block.h};lastError=placementError(trial,groups,env,settings);if(!lastError){result=trial;break;}}}
       const groundSide=orientation==='vertical'?options.groundStartVertical:options.groundStartHorizontal;
       if(block.kind==='ground'&&groundSide){
-        const angle=buildingAngle(env.poly.map(p=>toWorld(p,env.frame))),v=groundSide==='right'?[1,0]:groundSide==='left'?[-1,0]:groundSide==='top'?[0,1]:[0,-1],c=Math.cos(angle),sn=Math.sin(angle),direction=toLocal([v[0]*c-v[1]*sn,v[0]*sn+v[1]*c],env.frame)[1],occupied=[...env.obstacles.map(o=>o.bounds),...env.doors.map(o=>o.bounds),...groups.map(groupRect)],ys=[env.inner.minY+g,top-block.h-g,...occupied.flatMap(r=>[r.y+r.h+g,r.y-block.h-g])].filter(v=>v>=env.inner.minY+g-E&&v+block.h<=top-g+E).sort((a,b)=>direction>0?b-a:a-b),xs=[left,...occupied.map(r=>r.x+r.w+options.obstacleClearance)].filter(v=>v>=left-E&&v+block.w<=right+E).sort((a,b)=>a-b);
+        const angle=buildingAngle(env.poly.map(p=>toWorld(p,env.frame))),v=groundSide==='right'?[1,0]:groundSide==='left'?[-1,0]:groundSide==='top'?[0,1]:[0,-1],c=Math.cos(angle),sn=Math.sin(angle),direction=toLocal([v[0]*c-v[1]*sn,v[0]*sn+v[1]*c],env.frame)[1],occupied=[...env.obstacles.map(o=>o.bounds),...env.doors.map(o=>o.bounds),...groups.map(groupRect)],ys=[env.inner.minY+g,top-block.h-g,...occupied.flatMap(r=>[r.y,r.y+r.h-block.h,r.y+r.h+g,r.y-block.h-g])].filter(v=>v>=env.inner.minY+g-E&&v+block.h<=top-g+E).sort((a,b)=>direction>0?b-a:a-b),xs=[left,...occupied.flatMap(r=>[r.x+r.w+options.obstacleClearance,r.x+r.w+g,r.x-block.w-g])].filter(v=>v>=left-E&&v+block.w<=right+E).sort((a,b)=>a-b);
         searchGround:for(const py of [...new Set(ys)])for(const px of [...new Set(xs)]){const trial={...block,wallSide:null,x:px,y:py};lastError=placementError(trial,groups,env,settings);if(!lastError){result=trial;break searchGround;}}
       }
       if(!result&&!block.wallSide&&!(block.kind==='ground'&&groundSide)){let px=x,py=y,depth=band,attempt=0;
