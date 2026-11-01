@@ -9639,7 +9639,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   const overlaps=(a,b,g=0)=>a.x<b.x+b.w+g-EPS&&a.x+a.w+g>b.x+EPS&&a.y<b.y+b.h+g-EPS&&a.y+a.h+g>b.y+EPS;
   const expand=(r,g)=>({x:r.x-g,y:r.y-g,w:r.w+2*g,h:r.h+2*g});
   const rectFromBounds=b=>({x:b.minX,y:b.minY,w:Math.max(EPS,b.maxX-b.minX),h:Math.max(EPS,b.maxY-b.minY)});
-  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,existingMode:!config.greenfield,allowNewStorageConstruction:!config.greenfield&&!!config.allowNewStorageConstruction,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:16,wallRackMode:config.wallRackMode||(config.racksAroundWalls?"all":"bottom"),allWalls:!!config.racksAroundWalls,groundStartVertical:config.groundStartVertical||"right",groundStartHorizontal:config.groundStartHorizontal||"top",wallStartSide:config.wallStartSide||"left",orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
+  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,existingMode:!config.greenfield,allowNewStorageConstruction:!config.greenfield&&!!config.allowNewStorageConstruction,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:17,wallRackMode:config.wallRackMode||(config.racksAroundWalls?"all":"bottom"),allWalls:!!config.racksAroundWalls,groundStartVertical:config.groundStartVertical||"right",groundStartHorizontal:config.groundStartHorizontal||"top",wallStartSide:config.wallStartSide||"left",orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
   function makeObjects(plan,settings){
     const groups=[],issues=[];let rackRequired=0,groundRequired=0;
     for(const row of plan.rows){if(row.errors.length||row.required===null)issues.push({pn:row.input.partNumber,message:row.errors.join(' ')||'Required quantity is unavailable.'});rackRequired+=row.rackPallets||0;}
@@ -9994,18 +9994,24 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if(a.kind!=='ground'||b.kind!=='ground'||!!a.rotated!==!!b.rotated||a.wallSide!==b.wallSide||!!a.groundLane!==!!b.groundLane||!a.groundRows?.length||!b.groundRows?.length)continue;
         if(!a.wallSide&&!a.groundLane)continue;
         const rotated=!!a.rotated,cross=g=>rotated?g.x:g.y,along=g=>rotated?g.y:g.x;
-        if(Math.abs(cross(a)-cross(b))>E||Math.abs(a.h-b.h)>E||Math.abs((a.backY||0)-(b.backY||0))>E)continue;
+        // Different pallet depths can give sections different envelopes and center lines.
+        // They still belong to the same band when their depth envelopes overlap.
+        if(Math.min(cross(a)+a.h,cross(b)+b.h)-Math.max(cross(a),cross(b))<=E)continue;
+        const depth=a.groundLane?Math.max(a.backY,b.backY,a.h-a.backY,b.h-b.backY):0,h=a.groundLane?2*depth:Math.max(a.h,b.h);
         const ordered=[a,b].sort((u,v)=>along(u)-along(v)),cursor={front:0,back:0,wall:0},groundRows=[],objects=[];
         for(const g of ordered){const byRow=new Map();for(const o of g.objects){if(!byRow.has(o.groundRowId))byRow.set(o.groundRowId,[]);byRow.get(o.groundRowId).push(o);}
           for(const row of [...g.groundRows].sort((u,v)=>u.x-v.x)){const x=cursor[row.side],items=byRow.get(row.id)||[];if(x===undefined||!items.length)continue;
-            groundRows.push({...row,x});for(const o of items)objects.push({...o,dx:o.dx-row.x+x});cursor[row.side]+=row.w;
+            const y=a.groundLane?(row.side==='front'?depth-row.h:depth):row.y+(a.wallSide==='top'||a.wallSide==='left'?h-g.h:0);
+            groundRows.push({...row,x,y});for(const o of items)objects.push({...o,dx:o.dx-row.x+x,dy:o.dy-row.y+y});cursor[row.side]+=row.w;
           }
         }
         if(objects.length!==a.objects.length+b.objects.length)continue;
         const w=Math.max(...Object.values(cursor)),reverse=a.wallSide&&a.wallReverse,start=reverse?Math.max(along(a)+a.w,along(b)+b.w)-w:Math.min(along(a),along(b));
-        const merged={...a,w,objects,groundRows,[rotated?'y':'x']:start,...(a.groundLane?{centerLine:[[0,a.backY],[w,a.backY]],reservedBackRow:!cursor.front||!cursor.back}:{})};
+        const merged={...a,w,h,objects,groundRows,[rotated?'y':'x']:start,...(a.groundLane?{backY:depth,centerLine:[[0,depth],[w,depth]],reservedBackRow:!cursor.front||!cursor.back}:{})};
         const other=groups.filter((_,k)=>k!==i&&k!==j);
-        if(placementError(merged,other,env,settings))continue;
+        const axis=rotated?'x':'y',origins=a.groundLane?[a.y+a.backY-depth,b.y+b.backY-depth,Math.min(a.y,b.y),Math.max(a.y+a.h,b.y+b.h)-h]:[a.wallSide==='top'||a.wallSide==='right'?Math.max(cross(a)+a.h,cross(b)+b.h)-h:Math.min(cross(a),cross(b))];
+        let fitted=false;for(const origin of [...new Set(origins)]){merged[axis]=origin;if(!placementError(merged,other,env,settings)){fitted=true;break;}}
+        if(!fitted)continue;
         groups.splice(j,1);groups[i]=merged;changed=true;break search;
       }
     }
