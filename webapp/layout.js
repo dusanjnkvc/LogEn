@@ -155,5 +155,11 @@
     return list.filter(a=>a.w>EPS&&a.h>EPS);
   }
   function cadObjects(layout){return layout.groups.flatMap(placedObjects);}
-  scope.LogEnLayout=Object.freeze({core:Object.freeze({contained,overlaps,inside,validPolygon,expand}),generate,validate,move,makeObjects,environment,placedObjects,cadObjects,aisles,sourceKey,bounds,corners});
+  function cadLabelObjects(objects,settings){return objects.map(o=>{
+    if(o.kind!=='ground'&&!(o.kind==='annotation'&&o.pn))return o;
+    const maximumStacking=Number.isFinite(settings.maxFloorStackingHeight)&&Number.isFinite(o.height)&&o.height>0?Math.floor(settings.maxFloorStackingHeight/o.height):null;
+    // The CAD stacking field is a display value. Physical placement keeps its selected factor.
+    return {...o,effectiveStacking:o.stacking,maximumStacking,stacking:maximumStacking??'Unavailable',...(o.kind==='annotation'?{label:o.label+' · Maximum stacking: '+(maximumStacking??'Unavailable')}: {})};
+  });}
+  scope.LogEnLayout=Object.freeze({core:Object.freeze({contained,overlaps,inside,validPolygon,expand}),generate,validate,move,makeObjects,environment,placedObjects,cadObjects,cadLabelObjects,aisles,sourceKey,bounds,corners});
 })(globalThis);

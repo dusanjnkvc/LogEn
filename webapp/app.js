@@ -335,7 +335,7 @@
         }});
     });
   }
-  const layoutKey=layout=>JSON.stringify({drawingAppearance:2,groups:layout.groups,unplaced:layout.unplaced,options:layout.options,env:layout.env});
+  const layoutKey=layout=>JSON.stringify({drawingAppearance:3,groups:layout.groups,unplaced:layout.unplaced,options:layout.options,env:layout.env});
   async function layoutOutput(p,plan,settings,file,sourceKey,layout){
     const current=D.calculateImplementation(p.parts,p.settings,{...p.implementation,improvementThreshold:p.improvementThreshold},selectedCategory);
     if(LogEnLayout.sourceKey(current,p.settings,p.implementation,p.implementation?.dwg?.uploadedAt)!==sourceKey)throw new Error('The Parts List, settings or DWG changed. Regenerate the layout before downloading output.');
@@ -344,7 +344,7 @@
     const key=layoutKey(layout),cached=await drawingStore('readonly',s=>s.get(p.id+':layout-output'));
     if(cached?.sourceKey===sourceKey&&cached.layoutKey===key&&cached.dwg)return cached;
     if(layout.version===2||layout.version===3){let health;try{health=await(await fetch('http://127.0.0.1:8765/health',{signal:AbortSignal.timeout(5000)})).json();}catch{}if(!health||health.version<(layout.version===3?6:5)){await offerCADHelper();throw new Error('Update and restart the AutoCAD helper for this layout export.');}}
-    const result=await cadRequest('layout',JSON.stringify({dwg:await drawingBase64(file),scale:layout.options.scale,version:layout.version===3?6:layout.version===2?5:3,objects:layout.version===3?LogEnExistingLayout.cadObjects(layout):LogEnLayout.cadObjects(layout),aisles:LogEnLayout.aisles(layout,settings).filter(a=>layout.version!==3||!a.existing),clearances:layout.clearances||[],markings:LogEnOptimizer.groundMarkings(layout)}),'application/json');
+    const result=await cadRequest('layout',JSON.stringify({dwg:await drawingBase64(file),scale:layout.options.scale,version:layout.version===3?6:layout.version===2?5:3,objects:LogEnLayout.cadLabelObjects(layout.version===3?LogEnExistingLayout.cadObjects(layout):LogEnLayout.cadObjects(layout),settings),aisles:LogEnLayout.aisles(layout,settings).filter(a=>layout.version!==3||!a.existing),clearances:layout.clearances||[],markings:LogEnOptimizer.groundMarkings(layout)}),'application/json');
     const bytes=base64Bytes(result.dwg||'');if(!/^AC\d{4}$/.test(new TextDecoder().decode(bytes.slice(0,6))))throw new Error('The helper did not return a valid layout DWG.');
     const filename=safeName(p.implementation.dwg.name.replace(/\.dwg$/i,''))+(layout.complete?'_Layout':'_Partial_Layout'),dwg=new Blob([bytes],{type:'application/acad'});
     let pdf=null;if(result.pdf){const value=base64Bytes(result.pdf);if(new TextDecoder().decode(value.slice(0,5))==='%PDF-')pdf=new Blob([value],{type:'application/pdf'});}
