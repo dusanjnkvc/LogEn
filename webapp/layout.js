@@ -26,7 +26,7 @@
   const overlaps=(a,b,g=0)=>a.x<b.x+b.w+g-EPS&&a.x+a.w+g>b.x+EPS&&a.y<b.y+b.h+g-EPS&&a.y+a.h+g>b.y+EPS;
   const expand=(r,g)=>({x:r.x-g,y:r.y-g,w:r.w+2*g,h:r.h+2*g});
   const rectFromBounds=b=>({x:b.minX,y:b.minY,w:Math.max(EPS,b.maxX-b.minX),h:Math.max(EPS,b.maxY-b.minY)});
-  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:11,wallRackMode:config.wallRackMode||(config.racksAroundWalls?"all":"bottom"),allWalls:!!config.racksAroundWalls,groundStartVertical:config.groundStartVertical||"right",groundStartHorizontal:config.groundStartHorizontal||"top",wallStartSide:config.wallStartSide||"left",orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
+  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,existingMode:!config.greenfield,allowNewStorageConstruction:!config.greenfield&&!!config.allowNewStorageConstruction,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:12,wallRackMode:config.wallRackMode||(config.racksAroundWalls?"all":"bottom"),allWalls:!!config.racksAroundWalls,groundStartVertical:config.groundStartVertical||"right",groundStartHorizontal:config.groundStartHorizontal||"top",wallStartSide:config.wallStartSide||"left",orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
   function makeObjects(plan,settings){
     const groups=[],issues=[];let rackRequired=0,groundRequired=0;
     for(const row of plan.rows){if(row.errors.length||row.required===null)issues.push({pn:row.input.partNumber,message:row.errors.join(' ')||'Required quantity is unavailable.'});rackRequired+=row.rackPallets||0;}
@@ -129,6 +129,7 @@
     return {...layout,...validate(layout,plan,settings)};
   }
   function validate(layout,plan,settings){
+    if(layout.version===3)return scope.LogEnExistingLayout.summary(layout,plan,settings);
     if(layout.version===2)return scope.LogEnOptimizer.validate(layout,plan,settings);
     const errors=[...layout.issues],unplaced=layout.unplaced.slice(),valid=[];
     const expected=makeObjects(plan,settings),expectedGroups=new Map(expected.groups.map(g=>[g.id,g]));
@@ -145,9 +146,9 @@
     }
     return {generatedRack,generatedGround,unplacedRack:Math.max(0,expected.rackRequired-generatedRack),unplacedGround:Math.max(0,expected.groundRequired-generatedGround),affected,validationErrors:errors,complete:!affected.length&&!errors.length&&!unplaced.length};
   }
-  function move(layout,id,x,y,rotated,plan,settings){if(layout.version===2)return scope.LogEnOptimizer.move(layout,id,x,y,rotated,plan,settings);const group=layout.groups.find(g=>g.id===id)||layout.unplaced.find(g=>g.id===id);if(!group)throw new Error('Select a row or rack run.');if(![x,y].every(Number.isFinite))throw new Error('Enter finite coordinates in mm.');const trial={...group,x,y,rotated};const error=placementError(trial,layout.groups,layout.env,settings,layout.options);if(error)throw new Error(error);Object.assign(group,trial);if(!layout.groups.some(g=>g.id===id)){layout.groups.push(group);layout.unplaced=layout.unplaced.filter(g=>g.id!==id);}const rect=groupRect(group);layout.env.spine.h=Math.max(layout.env.spine.h,rect.y-layout.env.spine.y);Object.assign(layout,validate(layout,plan,settings));return layout;}
+  function move(layout,id,x,y,rotated,plan,settings){if(layout.version===3)return scope.LogEnExistingLayout.move(layout,id,x,y,rotated,plan,settings);if(layout.version===2)return scope.LogEnOptimizer.move(layout,id,x,y,rotated,plan,settings);const group=layout.groups.find(g=>g.id===id)||layout.unplaced.find(g=>g.id===id);if(!group)throw new Error('Select a row or rack run.');if(![x,y].every(Number.isFinite))throw new Error('Enter finite coordinates in mm.');const trial={...group,x,y,rotated};const error=placementError(trial,layout.groups,layout.env,settings,layout.options);if(error)throw new Error(error);Object.assign(group,trial);if(!layout.groups.some(g=>g.id===id)){layout.groups.push(group);layout.unplaced=layout.unplaced.filter(g=>g.id!==id);}const rect=groupRect(group);layout.env.spine.h=Math.max(layout.env.spine.h,rect.y-layout.env.spine.y);Object.assign(layout,validate(layout,plan,settings));return layout;}
   function aisles(layout,settings){
-    if(layout.version===2)return layout.aisles;
+    if(layout.version===2||layout.version===3)return layout.aisles;
     const list=[{...layout.env.spine,id:'aisle:main',kind:'aisle'},...(layout.env.routes||[]),...layout.groups.map(g=>({...aisleFor(g,layout.env,settings.gangwayWidth),id:'aisle:'+g.id,kind:'aisle'}))];
     const p=layout.env.poly,b=layout.env.box,g=settings.gangwayWidth;
     if(!layout.options.allowWallStorage&&p.length===4&&p.every(v=>(Math.abs(v[0]-b.minX)<EPS||Math.abs(v[0]-b.maxX)<EPS)&&(Math.abs(v[1]-b.minY)<EPS||Math.abs(v[1]-b.maxY)<EPS))){list.push({x:b.minX,y:b.minY,w:b.maxX-b.minX,h:g},{x:b.minX,y:b.maxY-g,w:b.maxX-b.minX,h:g},{x:b.minX,y:b.minY+g,w:g,h:b.maxY-b.minY-2*g},{x:b.maxX-g,y:b.minY+g,w:g,h:b.maxY-b.minY-2*g});list.slice(-4).forEach((a,i)=>{a.id='aisle:perimeter:'+i;a.kind='aisle';});}

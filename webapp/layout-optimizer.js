@@ -175,6 +175,7 @@
   function regionShapes(ps,frame,kind,prefix){return ps.map((p,i)=>({id:prefix+':'+i,kind,points:points(p).map(p=>toWorld(p,frame)),...rectBounds(points(p).map(p=>toWorld(p,frame))),hole:C.Clipper.Area(p)<0}));}
   function connected(ps){const tree=new C.PolyTree(),c=new C.Clipper();if(!ps.length)return false;c.AddPaths(ps,C.PolyType.ptSubject,true);c.Execute(C.ClipType.ctUnion,tree,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);return tree.Childs().length===1;}
   function groundMarkings(layout){
+    if(layout.version===3)return [];
     const horizontal=new Map(),vertical=new Map(),frame=layout.env.frame||{angle:0,sx:1,sy:1};
     function line(a,b){const flat=Math.abs(a[1]-b[1])<E,map=flat?horizontal:vertical,key=Math.round((flat?a[1]:a[0])*S),u=flat?0:1;if(!map.has(key))map.set(key,[]);map.get(key).push([Math.round(Math.min(a[u],b[u])*S),Math.round(Math.max(a[u],b[u])*S)]);}
     for(const g of layout.groups.filter(g=>g.kind==='ground')){
@@ -191,6 +192,7 @@
     return result;
   }
   function shortage(layout,plan,settings,validGroups=null){
+    if(layout.version===3)return scope.LogEnExistingLayout.summary(layout,plan,settings).shortage;
     const valid=validGroups||layout.groups.filter(g=>layout.version!==2||!placementError(g,layout.groups,layout.env,settings)),placed=new Set(),quantities=new Map(),areas=new Map(),represented=new Map();
     for(const g of valid)for(const o of g.objects){placed.add(o.id);if(o.kind==='rack')for(const a of o.allocations)quantities.set(a.pn,(quantities.get(a.pn)||0)+1);else quantities.set(o.pn,(quantities.get(o.pn)||0)+o.quantity);}
     const contribute=(pn,qty,area)=>{areas.set(pn,(areas.get(pn)||0)+area);represented.set(pn,(represented.get(pn)||0)+qty);};
@@ -233,6 +235,7 @@
   function better(a,b){if(!b)return true;const x=rank(a),y=rank(b);for(let i=0;i<x.length;i++){if(Math.abs(x[i]-y[i])>1e-5)return x[i]>y[i];}return false;}
   async function optimize(plan,settings,geometry,rawOptions,onProgress=()=>{}){
     if(!plan.available)throw new Error(plan.errors.join(' '));if(!(settings.gangwayWidth>0))throw new Error('Enter a positive gangway width.');
+    if(rawOptions.existingMode)return scope.LogEnExistingLayout.generate(plan,settings,geometry,rawOptions,onProgress);
     const options=normalizedOptions(rawOptions),source=L.makeObjects(plan,settings);if(source.groups.reduce((n,g)=>n+g.objects.length,0)>10000)throw new Error('Select a category to keep the drawing within 10,000 objects.');
     const alternatives={};let n=0;
     for(const orientation of ['horizontal','vertical']){let best=null;const side=options.allowWallStorage&&options.wallRackMode!=='all'?options.wallRackMode:null,starts=[[1,1],[-1,1],[1,-1],[-1,-1]].filter(([sx,sy])=>!side||(orientation==='horizontal'?(side==='left'?sx===1:side==='right'?sx===-1:side==='top'?sy===-1:sy===1):(side==='left'?sy===-1:side==='right'?sy===1:side==='top'?sx===-1:sx===1)));for(const [sx,sy]of starts)for(const fraction of [1,0.5])for(const shift of side?[0]:[0,settings.gangwayWidth/2]){onProgress(++n,32);await tick();const candidate=await pack(plan,settings,geometry,options,orientation,sx,sy,fraction,shift);if(better(candidate,best))best=candidate;}alternatives[orientation]=best;}

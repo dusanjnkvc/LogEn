@@ -85,8 +85,8 @@ try {
       $origin = $headers['origin']
       if ($headers['host'] -ne "127.0.0.1:$Port" -or ($origin -and $script:AllowedOrigins -notcontains $origin)) { Write-Response $stream 403 'text/plain' ([Text.Encoding]::UTF8.GetBytes('Origin not permitted.')) ''; continue }
       if ($request[0] -eq 'OPTIONS') { Write-Response $stream 204 'text/plain' ([byte[]]@()) $origin; continue }
-      if ($request[0] -eq 'GET' -and $request[1] -eq '/health') { $json = @{ service='LogEn AutoCAD helper'; version=5; autoCADAvailable=([bool]($script:ConsolePath -and (Test-Path -LiteralPath $script:ConsolePath))) } | ConvertTo-Json -Compress; Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes($json)) $origin; continue }
-      if ($request[0] -ne 'POST' -or $request[1] -notin @('/convert','/geometry','/layout')) { Write-Response $stream 404 'text/plain' ([byte[]]@()) $origin; continue }
+      if ($request[0] -eq 'GET' -and $request[1] -eq '/health') { $json = @{ service='LogEn AutoCAD helper'; version=6; autoCADAvailable=([bool]($script:ConsolePath -and (Test-Path -LiteralPath $script:ConsolePath))) } | ConvertTo-Json -Compress; Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes($json)) $origin; continue }
+      if ($request[0] -ne 'POST' -or $request[1] -notin @('/convert','/geometry','/geometry-existing','/layout')) { Write-Response $stream 404 'text/plain' ([byte[]]@()) $origin; continue }
       if (-not $origin -or $headers['x-logen-client'] -ne 'dwg-converter' -or $headers.ContainsKey('transfer-encoding')) { Write-Response $stream 403 'text/plain' ([byte[]]@()) $origin; continue }
       [long]$length = 0
       if (-not [long]::TryParse($headers['content-length'], [ref]$length) -or $length -lt 6 -or $length -gt $(if($request[1] -eq '/layout'){157286400}else{104857600})) { Write-Response $stream 413 'text/plain' ([Text.Encoding]::UTF8.GetBytes('DWG must be 6 bytes to 100 MB.')) $origin; continue }
@@ -100,7 +100,7 @@ try {
         Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes(($result|ConvertTo-Json -Depth 100 -Compress))) $origin
       }else{
         if ([Text.Encoding]::ASCII.GetString($data,0,6) -notmatch '^AC\d{4}$') { throw 'The upload is not a recognized DWG file.' }
-        if($request[1] -eq '/geometry'){$result=Invoke-LogEnLayoutJob $data 'geometry';Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes(($result|ConvertTo-Json -Depth 100 -Compress))) $origin}
+        if($request[1] -in @('/geometry','/geometry-existing')){$mode=if($request[1] -eq '/geometry-existing'){'geometry-existing'}else{'geometry'};$result=Invoke-LogEnLayoutJob $data $mode;Write-Response $stream 200 'application/json' ([Text.Encoding]::UTF8.GetBytes(($result|ConvertTo-Json -Depth 100 -Compress))) $origin}
         else{$pdf=Convert-LogEnDrawing $data;Write-Response $stream 200 'application/pdf' $pdf $origin}
       }
     } catch {

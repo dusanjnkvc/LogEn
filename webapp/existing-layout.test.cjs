@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict');
+global.ClipperLib=require('./vendor/clipper.js');require('./domain.js');require('./layout.js');require('./layout-optimizer.js');require('./existing-layout.js');
+const D=LogEnDomain,L=LogEnLayout,X=LogEnExistingLayout,G=LogEnOptimizer.geometry;
+const settings={...D.createDefaultSettings(),shiftsPerDay:1,coverageMode:'custom',customCoverageDays:1};
+const part=(pn,n)=>({partNumber:pn,qtyBox:1,qtyOnPallet:1,consumptionPerShift:n,doh:1,length:1200,width:800,height:1000,stacking:1,inputErrors:[]});
+const rectangle=(id,x,y,w,h)=>({id,type:'LWPOLYLINE',layer:id,closed:true,boundaryEligible:true,points:[[x,y],[x+w,y],[x+w,y+h],[x,y+h]],bounds:[x,y,x+w,y+h]});
+const geometry={units:4,entities:[rectangle('BOUNDARY',0,0,40000,30000),rectangle('RACK',5000,5000,5700,1400),rectangle('GROUND',15000,5000,6000,5000),rectangle('AISLE',5000,500,16000,4500)]};
+const options={scale:1,boundaryId:'BOUNDARY',obstacleClearance:0,existingMode:true,allowNewStorageConstruction:false,geometryReviewed:true,constraintsConfirmed:true,entityRoles:{RACK:'existing-rack',GROUND:'existing-ground',AISLE:'gangway'},existingStorage:{RACK:{bays:2,positionsPerLevel:2}},storageOverrides:{R:'rack',F:'ground'}};
+const plan=(r,f)=>D.calculateImplementation([part('R',r),part('F',f)],settings,{greenfield:true,storageMode:'auto',storageOverrides:{R:'rack',F:'ground'}});
+(async()=>{
+ const before=JSON.stringify(geometry),p=plan(6,10),a=(await X.generate(p,settings,geometry,options)).layout;
+ assert(a.complete,JSON.stringify(a.issues));assert.equal(a.stats.existingRackCapacity,16);assert.equal(a.stats.existingRackAllocated,6);assert.equal(a.stats.newRackPositions,0);assert.equal(a.stats.newGroundPositions,0);assert.equal(a.stats.allocated,16);assert.equal(JSON.stringify(geometry),before);
+ assert(X.cadObjects(a).every(o=>o.kind==='annotation'),'Existing infrastructure exports labels only');
+ const short=(await X.generate(plan(20,40),settings,geometry,options)).layout;assert.equal(short.stats.existingRackAllocated,16,'Existing rack positions must be filled before considering construction');assert(short.shortage.rackPallets>0);assert(short.shortage.groundPallets>0);assert.equal(short.stats.newRackPositions,0);assert.equal(short.stats.newGroundPositions,0);
+ const expanded=(await X.generate(plan(20,40),settings,geometry,{...options,allowNewStorageConstruction:true})).layout;
+ assert(expanded.stats.allocated>short.stats.allocated,'Expansion must use free floor after existing capacity');
+ for(const g of expanded.groups.filter(g=>!g.existing))for(const o of LogEnOptimizer.placedObjects(g))for(const original of geometry.entities.filter(e=>e.id!=='BOUNDARY'))assert(G.area(G.intersect([G.path(o.points)],[G.path(original.points)]))<.11,'No construction over original storage or gangways');
+ const noNeed=(await X.generate(p,settings,geometry,{...options,allowNewStorageConstruction:true})).layout;assert(noNeed.groups.every(g=>g.existing));
+ const reserved=structuredClone(options);reserved.existingStorage.RACK.occupancy=[{id:'RACK:1:1:1',status:'RESERVED'}];const b=(await X.generate(p,settings,geometry,reserved)).layout;assert.equal(b.stats.existingRackReserved,1);assert.equal(b.stats.existingRackAllocated,6);
+ const saved=structuredClone(options);saved.existingStorage.RACK.occupancy=[{id:'RACK:1:1:1',status:'ALLOCATED',pn:'R',length:1200,depth:800}];const c=(await X.generate(p,settings,geometry,saved)).layout;assert.equal(c.stats.existingRackAllocated,6,'Saved occupancy is deducted from demand, not double allocated');
+ require('node:fs').writeFileSync('.tooling/existing-layout-review.json',JSON.stringify({plan:plan(20,40),settings,geometry,options:{...options,allowNewStorageConstruction:true},layout:expanded}));
+ global.ExcelJS=require('./vendor/exceljs.min.js');const W=require('./workbook.js'),book=new ExcelJS.Workbook();await book.xlsx.load(await new W().layoutBytes({name:'Existing warehouse check',settings,implementation:{dwg:{name:'fixture.dwg'}}},plan(20,40),expanded));assert(book.getWorksheet('Existing Infrastructure'));assert(book.getWorksheet('Existing Occupancy'));assert(book.getWorksheet('Storage Shortage'));assert(book.getWorksheet('Output Summary').getColumn(1).values.includes('existingRackCapacity'));
+ console.log('Existing layout checked: empty capacity, saved/reserved positions, OFF shortages, ON expansion, no duplicates or infrastructure changes.');
+})();

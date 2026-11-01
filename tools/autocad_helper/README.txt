@@ -81,3 +81,8 @@ boundaries are merged to avoid duplicate lines. The markings add no storage area
 Generate or preview a layout with missing inventory to see the shortage alert:
 PN count, known unplaced pallets, and storage area excluding additional gangways.
 Unavailable quantities or areas are flagged; shared rack bay areas count once.
+
+EXISTING LAYOUT (helper version 6)
+Uncheck Greenfield in Warehouse Designer. Allow New Storage Construction defaults OFF and resets on every DWG upload. In Create Layout, classify original outer outlines as Existing rack, Existing ground storage and Existing gangway. Use Reference only for frame details/dimension lines. Click each rack outline to choose a Warehouse Settings rack type, bay count and positions per level. The type must fit the outline. Positions start EMPTY; saved RESERVED, UNAVAILABLE and explicitly ALLOCATED occupancy are respected.
+Original infrastructure is never moved or redrawn. Output adds tagged labels on LOGEN_EXISTING_OCCUPANCY. Optional new storage uses LOGEN_NEW_RACKS (orange) and LOGEN_NEW_GROUND_STORAGE (yellow). Repeated export replaces only LogEn-tagged output. Update and restart the helper for this workflow.
+Ground capacity is a PN-dependent reference grid in the actual zone, not a universal pallet capacity. Allocated quantities and shortages are separate. Added storage uses a bounded fit/access search, not a certified warehouse design; manually review the DWG.
