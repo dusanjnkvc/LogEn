@@ -151,3 +151,5 @@ main>.panel,main>.production-panel,main>.implementation-panel{max-width:100%}
 .viewer3d-forklift{align-items:center;gap:10px;overflow-x:auto;flex-wrap:nowrap}.viewer3d-forklift>*{flex-shrink:0}.viewer3d-forklift .viewer-speed{display:flex;align-items:center;width:auto;gap:8px;margin:0}.viewer3d-forklift .viewer-speed input{width:76px;height:38px}.viewer3d-forklift .btn{height:38px;white-space:nowrap}.viewer3d-forklift .checkbox-field{margin:0;white-space:nowrap}.viewer3d-forklift [data-forklift-status]{min-width:180px}.viewer3d-forklift [data-fleet-count]{font-size:11px;color:var(--muted);white-space:nowrap}
 
 .viewer3d-forklift .viewer-speed{flex-direction:row;align-items:center;height:38px}.viewer3d-forklift .viewer-speed>span{white-space:nowrap}.viewer3d-forklift .viewer-speed input{height:38px;box-sizing:border-box;align-self:center}.rack-height-status{font-size:12px;line-height:1.6}
+
+.project-download-actions{margin-top:12px}.project-download-actions .btn{max-width:100%;white-space:normal;text-align:left}

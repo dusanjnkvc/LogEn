@@ -99,6 +99,35 @@ async function until(predicate, description, timeout = 5000) {
     await new Promise(resolve => setTimeout(resolve, 10));
   }
 }
+function projectDrawingStore(w,values,reads){
+ w.indexedDB={open(){const request={};setTimeout(()=>{request.result={close(){},transaction(){const tx={};tx.objectStore=()=>({get(key){reads.push(key);const result={};setTimeout(()=>{result.result=values.get(key);result.onsuccess?.();tx.oncomplete?.();},0);return result;},put(value,key){values.set(key,value);const result={};setTimeout(()=>{result.onsuccess?.();tx.oncomplete?.();},0);return result;}});return tx;}};request.onsuccess();},0);return request;}};
+}
+async function projectDownloadFixture(t){
+ const data=workspace({parts:[part({category:'Bulk'})]}),other=workspace({id:'project-export',name:'Export target',settings:{shiftsPerDay:1,stackingMode:'manual',manualStacking:1},parts:[part({partNumber:'EXPORT-A',category:'Push'}),part({partNumber:'EXPORT-B',category:'Pull'})]}).projects[0];
+ other.parts=other.parts.map(p=>({...D.normalizePart(p,other.settings),shiftModelMigrated:false}));other.implementation={greenfield:true,storageMode:'ground',dwg:{name:'source.dwg',uploadedAt:'2026-11-01T08:00:00Z'}};data.projects.push(other);const ui=boot(t,data),w=ui.w;
+ w.Blob=Blob;w.TextEncoder=TextEncoder;w.TextDecoder=TextDecoder;
+ for(const name of ['vendor/exceljs.min.js','vendor/clipper.js','layout.js','layout-optimizer.js','output-zip.js'])w.eval(fs.readFileSync(path.join(__dirname,name),'utf8'));
+ const p=other,plan=w.LogEnDomain.calculateImplementation([p.parts[0]],p.settings,{...p.implementation,improvementThreshold:p.improvementThreshold},null),geometry={units:4,entities:[{id:'B',type:'LWPOLYLINE',layer:'B',closed:true,boundaryEligible:true,points:[[0,0],[40000,0],[40000,60000],[0,60000]],bounds:[0,0,40000,60000]}]},result=await w.LogEnOptimizer.optimize(plan,p.settings,geometry,{scale:1,boundaryId:'B',wallClearance:0,obstacleClearance:0,storageMode:'ground',allowWallStorage:false,geometryReviewed:true,constraintsConfirmed:true}),layout=result.layout;
+ const sourceKey=w.LogEnLayout.sourceKey(plan,p.settings,p.implementation,p.implementation.dwg.uploadedAt),layoutKey=JSON.stringify({drawingAppearance:3,groups:layout.groups,unplaced:layout.unplaced,options:layout.options,env:layout.env}),output={sourceKey,layoutKey,dwg:new Blob(['AC1032-QA']),pdf:new Blob(['%PDF-QA']),filename:'source_Layout'},values=new Map([[p.id+':physical-layout',{sourceKey,layout}],[p.id+':layout-output',output]]),reads=[];projectDrawingStore(w,values,reads);
+ ui.change('#category-filter',JSON.stringify('Bulk'));ui.click('[data-view="projects"]');return {ui,p,values,reads,output};
+}
+function storedZipEntries(bytes){const entries=new Map();let offset=0;while(bytes.readUInt32LE(offset)===0x04034b50){const size=bytes.readUInt32LE(offset+18),nameLength=bytes.readUInt16LE(offset+26),extra=bytes.readUInt16LE(offset+28),name=bytes.subarray(offset+30,offset+30+nameLength).toString(),start=offset+30+nameLength+extra;entries.set(name,bytes.subarray(start,start+size));offset=start+size;}return entries;}
+test('Download Project Files bundles selected project DWG PDF layout list and all-category results',async t=>{
+ const {ui,p,reads}=await projectDownloadFixture(t),before=ui.state();assert.equal(ui.w.document.querySelectorAll('[data-download-project-files]').length,2);ui.click('[data-download-project-files="project-export"]');await until(()=>ui.downloads.length===1||ui.$('#toast').classList.contains('toast-error'),'project ZIP',15000);
+ assert.equal(ui.downloads.length,1,ui.$('#toast').textContent);assert.equal(ui.downloads[0].filename,'Export_target_Project_Files.zip');const entries=storedZipEntries(Buffer.from(await ui.blobFor(ui.downloads[0].url).arrayBuffer()));assert.deepEqual([...entries.keys()],['Export_target_Layout.dwg','Export_target_Layout.pdf','Export_target_Layout_List.xlsx','Export_target_LogEn_Results.xlsx']);assert.equal(entries.get('Export_target_Layout.dwg').toString(),'AC1032-QA');assert.equal(entries.get('Export_target_Layout.pdf').toString(),'%PDF-QA');
+ const results=new ExcelJS.Workbook();await results.xlsx.load(entries.get('Export_target_LogEn_Results.xlsx'));assert.equal(results.getWorksheet('Original Input Data').rowCount,3);assert.equal(results.getWorksheet('Original Input Data').getCell('A2').value,'EXPORT-A');assert.equal(results.getWorksheet('Original Input Data').getCell('A3').value,'EXPORT-B');assert.equal(results.getWorksheet('Warehouse Comparison').getCell('B2').value,D.calculateProject(p.parts,p.settings,null).floorWithoutGangways);
+ const list=new ExcelJS.Workbook();await list.xlsx.load(entries.get('Export_target_Layout_List.xlsx'));assert.equal(list.getWorksheet('Layout Parts List').rowCount,2);assert.equal(list.getWorksheet('Layout Parts List').getCell('A2').value,'EXPORT-A');assert(reads.every(key=>key.startsWith('project-export')));assert.deepEqual(ui.state(),before);assert.deepEqual(ui.errors,[]);
+});
+test('Download Project Files reports missing saved layout and downloads no incomplete ZIP',async t=>{
+ const {ui,values}=await projectDownloadFixture(t);values.delete('project-export:physical-layout');ui.click('[data-download-project-files="project-export"]');await until(()=>ui.$('#toast').classList.contains('toast-error'),'missing layout error');assert.match(ui.$('#toast').textContent,/Create and save a layout.*Export target/);assert.equal(ui.downloads.length,0);
+});
+test('Download Project Files does not silently omit a failed PDF',async t=>{
+ const {ui,p,values,output}=await projectDownloadFixture(t);output.pdf=null;values.set(p.id,new ui.w.File(['AC1032-source'],'source.dwg'));ui.w.AbortSignal=AbortSignal;ui.w.fetch=async url=>({ok:true,json:async()=>url.endsWith('/health')?{version:6}:{dwg:Buffer.from('AC1032-result').toString('base64'),pdfError:'PDF could not be plotted in this test'}});
+ ui.click('[data-download-project-files="project-export"]');await until(()=>ui.$('#toast').classList.contains('toast-error'),'PDF error',10000);assert.match(ui.$('#toast').textContent,/PDF could not be plotted/);assert.equal(ui.downloads.length,0);
+});
+test('Download Project Files rejects an outdated layout before downloading files',async t=>{
+ const {ui,values}=await projectDownloadFixture(t),stored=values.get('project-export:physical-layout'),key=JSON.parse(stored.sourceKey);key.settings.maxFloorRowDepth+=1;stored.sourceKey=JSON.stringify(key);ui.click('[data-download-project-files="project-export"]');await until(()=>ui.$('#toast').classList.contains('toast-error'),'outdated layout error');assert.match(ui.$('#toast').textContent,/Regenerate the layout/);assert.equal(ui.downloads.length,0);
+});
 function previewMetric(ui, label) {
   const item = [...ui.w.document.querySelectorAll('dialog .preview-metric')].find(element => element.querySelector('span').textContent === label);
   assert.ok(item, `Missing editor preview ${label}`);
