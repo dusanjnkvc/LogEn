@@ -58,6 +58,9 @@ test('Building height settings migrate separately and preview six rack levels',a
 test('Ground rotation checkbox saves per project and restores in settings',async t=>{
  const ui=boot(t);ui.click('#settings-nav');const selector='dialog input[name="groundAllowRotation"]';assert.equal(ui.$(selector).checked,false);ui.click(selector);ui.submit();await until(()=>ui.state().projects[0].settings.groundAllowRotation===true,'ground rotation save');ui.click('#settings-nav');assert.equal(ui.$(selector).checked,true);assert.deepEqual(ui.errors,[]);
 });
+test('Warehouse Designer removes threshold footer while Overview keeps Improve Warehouse',t=>{
+ const data=workspace();data.projects[0].implementation={greenfield:true};const ui=boot(t,data);ui.click('[data-view="implementation"]');assert(!ui.$('main').textContent.includes('Create Layout uses this permission'));assert(!ui.$('main').textContent.includes('Change Improve Warehouse threshold'));assert.equal(ui.w.document.querySelectorAll('main [data-action="improve-warehouse"]').length,0);ui.click('[data-view="dashboard"]');assert.equal(ui.w.document.querySelectorAll('main [data-action="improve-warehouse"]').length,1);assert.deepEqual(ui.errors,[]);
+});
 function boot(t, initial = workspace()) {
   const errors = [];
   const console = new VirtualConsole();

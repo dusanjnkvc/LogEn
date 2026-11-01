@@ -151,6 +151,8 @@ main>.panel,main>.production-panel,main>.implementation-panel{max-width:100%}
 .viewer3d-forklift{align-items:center;gap:10px;overflow-x:auto;flex-wrap:nowrap}.viewer3d-forklift>*{flex-shrink:0}.viewer3d-forklift .viewer-speed{display:flex;align-items:center;width:auto;gap:8px;margin:0}.viewer3d-forklift .viewer-speed input{width:76px;height:38px}.viewer3d-forklift .btn{height:38px;white-space:nowrap}.viewer3d-forklift .checkbox-field{margin:0;white-space:nowrap}.viewer3d-forklift [data-forklift-status]{min-width:180px}.viewer3d-forklift [data-fleet-count]{font-size:11px;color:var(--muted);white-space:nowrap}
 
 .viewer3d-forklift .viewer-speed{flex-direction:row;align-items:center;height:38px}.viewer3d-forklift .viewer-speed>span{white-space:nowrap}.viewer3d-forklift .viewer-speed input{height:38px;box-sizing:border-box;align-self:center}.rack-height-status{font-size:12px;line-height:1.6}
+
+.project-download-actions{margin-top:12px}.project-download-actions .btn{max-width:100%;white-space:normal;text-align:left}
 </style></head><body style="padding:20px"><h1>LogEn 3D · synthetic validation layout</h1><p>This fixture contains made-up QA parts, not saved user projects.</p><div class="actions"><button class="btn btn-primary" id="green">Greenfield fixture</button><button class="btn btn-secondary" id="existing">Existing Layout fixture</button><button class="btn btn-secondary" id="height">Height warning fixture</button></div><div id="host" style="margin-top:18px"></div><script>/*******************************************************************************
  *                                                                              *
  * Author    :  Angus Johnson                                                   *
@@ -8413,7 +8415,7 @@ main>.panel,main>.production-panel,main>.implementation-panel{max-width:100%}
   const overlaps=(a,b,g=0)=>a.x<b.x+b.w+g-EPS&&a.x+a.w+g>b.x+EPS&&a.y<b.y+b.h+g-EPS&&a.y+a.h+g>b.y+EPS;
   const expand=(r,g)=>({x:r.x-g,y:r.y-g,w:r.w+2*g,h:r.h+2*g});
   const rectFromBounds=b=>({x:b.minX,y:b.minY,w:Math.max(EPS,b.maxX-b.minX),h:Math.max(EPS,b.maxY-b.minY)});
-  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,existingMode:!config.greenfield,allowNewStorageConstruction:!config.greenfield&&!!config.allowNewStorageConstruction,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:19,wallRackMode:config.wallRackMode||(config.racksAroundWalls?"all":"bottom"),allWalls:!!config.racksAroundWalls,groundStartVertical:config.groundStartVertical||"right",groundStartHorizontal:config.groundStartHorizontal||"top",wallStartSide:config.wallStartSide||"left",orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
+  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,existingMode:!config.greenfield,allowNewStorageConstruction:!config.greenfield&&!!config.allowNewStorageConstruction,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:20,wallRackMode:config.wallRackMode||(config.racksAroundWalls?"all":"bottom"),allWalls:!!config.racksAroundWalls,groundStartVertical:config.groundStartVertical||"right",groundStartHorizontal:config.groundStartHorizontal||"top",wallStartSide:config.wallStartSide||"left",orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
   function makeObjects(plan,settings){
     const groups=[],issues=[];let rackRequired=0,groundRequired=0;
     for(const row of plan.rows){if(row.errors.length||row.required===null)issues.push({pn:row.input.partNumber,message:row.errors.join(' ')||'Required quantity is unavailable.'});rackRequired+=row.rackPallets||0;}
@@ -8542,7 +8544,13 @@ main>.panel,main>.production-panel,main>.implementation-panel{max-width:100%}
     return list.filter(a=>a.w>EPS&&a.h>EPS);
   }
   function cadObjects(layout){return layout.groups.flatMap(placedObjects);}
-  scope.LogEnLayout=Object.freeze({core:Object.freeze({contained,overlaps,inside,validPolygon,expand}),generate,validate,move,makeObjects,environment,placedObjects,cadObjects,aisles,sourceKey,bounds,corners});
+  function cadLabelObjects(objects,settings){return objects.map(o=>{
+    if(o.kind!=='ground'&&!(o.kind==='annotation'&&o.pn))return o;
+    const maximumStacking=Number.isFinite(settings.maxFloorStackingHeight)&&Number.isFinite(o.height)&&o.height>0?Math.floor(settings.maxFloorStackingHeight/o.height):null;
+    // The CAD stacking field is a display value. Physical placement keeps its selected factor.
+    return {...o,effectiveStacking:o.stacking,maximumStacking,stacking:maximumStacking??'Unavailable',...(o.kind==='annotation'?{label:o.label+' · Maximum stacking: '+(maximumStacking??'Unavailable')}: {})};
+  });}
+  scope.LogEnLayout=Object.freeze({core:Object.freeze({contained,overlaps,inside,validPolygon,expand}),generate,validate,move,makeObjects,environment,placedObjects,cadObjects,cadLabelObjects,aisles,sourceKey,bounds,corners});
 })(globalThis);
 
 ;
@@ -8607,13 +8615,15 @@ main>.panel,main>.production-panel,main>.implementation-panel{max-width:100%}
     const orders={left:['left','top','right','bottom'],right:['right','bottom','left','top'],bottom:['bottom','left','top','right'],top:['top','right','bottom','left']},baseAngle=buildingAngle(env.poly.map(p=>toWorld(p,env.frame))),normals={left:[-1,0],right:[1,0],bottom:[0,-1],top:[0,1]},order=(orders[options.wallStartSide]||orders.left).map(side=>{const [x,y]=normals[side],c=Math.cos(baseAngle),sn=Math.sin(baseAngle),v=toLocal([x*c-y*sn,x*sn+y*c],env.frame);return Math.abs(v[0])>Math.abs(v[1])?(v[0]<0?'left':'right'):(v[1]<0?'bottom':'top');});sides.sort((a,b)=>order.indexOf(a.side)-order.indexOf(b.side));for(const slot of sides){const side=(orders[options.wallStartSide]||orders.left)[order.indexOf(slot.side)],v=side==='left'?[0,1]:side==='top'?[1,0]:side==='right'?[0,-1]:[-1,0],c=Math.cos(baseAngle),sn=Math.sin(baseAngle),local=toLocal([v[0]*c-v[1]*sn,v[0]*sn+v[1]*c],env.frame);slot.reverse=(slot.horizontal?local[0]:local[1])<0;}
     if(options.wallRackMode&&options.wallRackMode!=='all'){const chosen=order[0];for(let i=sides.length-1;i>=0;i--)if(sides[i].side!==chosen)sides.splice(i,1);}
     const groups=[];let turn=0;
-    for(const [i,slot]of sides.entries()){const earlier=new Set(sides.slice(0,i).map(v=>v.side)),low=slot.horizontal?'left':'bottom',high=slot.horizontal?'right':'top';slot.start=env.groundCornerClearance??(earlier.has(low)?d:0);slot.end=env.groundCornerClearance??(earlier.has(high)?d:0);}
+    for(const [i,slot]of sides.entries()){const earlier=new Set(sides.slice(0,i).map(v=>v.side)),low=slot.horizontal?'left':'bottom',high=slot.horizontal?'right':'top';slot.start=env.wallCornerClearance??env.groundCornerClearance??(earlier.has(low)?d:0);slot.end=env.wallCornerClearance??env.groundCornerClearance??(earlier.has(high)?d:0);}
     for(const o of rack){
       for(let attempt=0;turn+attempt<sides.length;attempt++){
         const slot=sides[turn+attempt],limit=(slot.horizontal?b.maxX-b.minX:b.maxY-b.minY)-2*c-slot.start-slot.end,start=slot.horizontal?slot.start:b.minY+c+slot.start,runLimit=Math.max(o.w,(o.maxRunLength||o.w)*fraction),last=slot.last;
         const append=last&&last.typeId===o.typeId&&last.w+o.w<=Math.min(last.runLimit,runLimit)+E;
         const jumps=env.obstacles.concat(env.doors).map(v=>slot.horizontal?v.bounds.x+v.bounds.w+Math.max(options.obstacleClearance,gap)-b.minX-c:v.bounds.y+v.bounds.h+Math.max(options.obstacleClearance,gap)-start);
-        const offsets=[...(append?[last.wallOffset]:[]),slot.cursor+(last?gap:0),...jumps.filter(v=>v>=slot.cursor)].sort((a,b)=>a-b);
+        // A new logical run/type shares the same loading aisle along the wall.
+        // Maximum run length must not create an empty gangway between wall bays.
+        const offsets=[...(append?[last.wallOffset]:[]),slot.cursor,...jumps.filter(v=>v>=slot.cursor)].sort((a,b)=>a-b);
         let chosen=null;
         for(const position of [...new Set(offsets)].slice(0,64)){
           const extend=append&&Math.abs(position-last.wallOffset)<E,w=extend?last.w+o.w:o.w;if(position<0||position+w>limit+E)continue;
@@ -8691,14 +8701,16 @@ main>.panel,main>.production-panel,main>.implementation-panel{max-width:100%}
     for(const row of remaining){const reservation=fillGroundLane([row],row.w,row.h,env,'unplaced:'+serial++).group;unplaced.push({...reservation,unplacedReason:'No remaining continuous ground lane fits this row and both full-width gangways.'});}
   }
   function makeBlocks(source,env,settings,options,rowFraction){
-    if((options.storageMode==='ground'||!source.groups.some(g=>g.kind==='rack'))&&options.allowWallStorage&&options.racksAroundWalls){
-      const rows=source.groups.filter(g=>g.kind==='ground'),units=rows.map(g=>({id:g.id,typeId:'ground-wall',w:g.w,h:g.h,maxRunLength:100000000,sourceRow:g}));
-      if((!options.wallRackMode||options.wallRackMode==='all')&&units.length){
-        const d=settings.maxFloorRowDepth>0?settings.maxFloorRowDepth:Math.max(...units.map(o=>o.h)),b=env.box,c=options.wallClearance;
-        env.groundCornerClearance=d;
+    if(options.allowWallStorage&&options.racksAroundWalls&&(!options.wallRackMode||options.wallRackMode==='all')){
+      const wallRacks=source.groups.filter(g=>g.kind==='rack').flatMap(g=>g.objects),depths=wallRacks.length?wallRacks.map(o=>o.h):source.groups.filter(g=>g.kind==='ground').map(g=>g.h);
+      if(depths.length){const actual=Math.max(...depths),d=settings.maxFloorRowDepth>0?Math.max(settings.maxFloorRowDepth,wallRacks.length?actual:0):actual,b=env.box,c=options.wallClearance;
+        env.wallCornerClearance=d;if(!wallRacks.length)env.groundCornerClearance=d;
         const corners=intersect([rect({x:b.minX+c,y:b.minY+c,w:d,h:d}),rect({x:b.maxX-c-d,y:b.minY+c,w:d,h:d}),rect({x:b.minX+c,y:b.maxY-c-d,w:d,h:d}),rect({x:b.maxX-c-d,y:b.maxY-c-d,w:d,h:d})],env.boundary);
         env.zone=diff(env.zone,corners);env.wallSafety=union([...env.wallSafety,...corners]);
       }
+    }
+    if((options.storageMode==='ground'||!source.groups.some(g=>g.kind==='rack'))&&options.allowWallStorage&&options.racksAroundWalls){
+      const rows=source.groups.filter(g=>g.kind==='ground'),units=rows.map(g=>({id:g.id,typeId:'ground-wall',w:g.w,h:g.h,maxRunLength:100000000,sourceRow:g}));
       const wall=allWallBlocks(units,env,settings,options,1),used=new Set(wall.flatMap(g=>g.objects.map(o=>o.id)));
       const placed=wall.map(g=>({...g,kind:'ground',groundRows:g.objects.map(unit=>({id:unit.id,x:unit.dx,y:0,w:unit.sourceRow.w,h:g.h,side:'wall',objectIds:unit.sourceRow.objects.map(o=>o.id)})),objects:g.objects.flatMap(unit=>unit.sourceRow.objects.map(o=>({...o,dx:unit.dx+o.dx,dy:unit.dy+o.dy,groundRowId:unit.id,groundFace:'wall'}))),frame:env.frame}));
       return [...placed,...rows.filter(g=>!used.has(g.id)).map(row=>({...row,groundPending:true,frame:env.frame}))];

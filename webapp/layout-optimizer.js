@@ -59,13 +59,15 @@
     const orders={left:['left','top','right','bottom'],right:['right','bottom','left','top'],bottom:['bottom','left','top','right'],top:['top','right','bottom','left']},baseAngle=buildingAngle(env.poly.map(p=>toWorld(p,env.frame))),normals={left:[-1,0],right:[1,0],bottom:[0,-1],top:[0,1]},order=(orders[options.wallStartSide]||orders.left).map(side=>{const [x,y]=normals[side],c=Math.cos(baseAngle),sn=Math.sin(baseAngle),v=toLocal([x*c-y*sn,x*sn+y*c],env.frame);return Math.abs(v[0])>Math.abs(v[1])?(v[0]<0?'left':'right'):(v[1]<0?'bottom':'top');});sides.sort((a,b)=>order.indexOf(a.side)-order.indexOf(b.side));for(const slot of sides){const side=(orders[options.wallStartSide]||orders.left)[order.indexOf(slot.side)],v=side==='left'?[0,1]:side==='top'?[1,0]:side==='right'?[0,-1]:[-1,0],c=Math.cos(baseAngle),sn=Math.sin(baseAngle),local=toLocal([v[0]*c-v[1]*sn,v[0]*sn+v[1]*c],env.frame);slot.reverse=(slot.horizontal?local[0]:local[1])<0;}
     if(options.wallRackMode&&options.wallRackMode!=='all'){const chosen=order[0];for(let i=sides.length-1;i>=0;i--)if(sides[i].side!==chosen)sides.splice(i,1);}
     const groups=[];let turn=0;
-    for(const [i,slot]of sides.entries()){const earlier=new Set(sides.slice(0,i).map(v=>v.side)),low=slot.horizontal?'left':'bottom',high=slot.horizontal?'right':'top';slot.start=env.groundCornerClearance??(earlier.has(low)?d:0);slot.end=env.groundCornerClearance??(earlier.has(high)?d:0);}
+    for(const [i,slot]of sides.entries()){const earlier=new Set(sides.slice(0,i).map(v=>v.side)),low=slot.horizontal?'left':'bottom',high=slot.horizontal?'right':'top';slot.start=env.wallCornerClearance??env.groundCornerClearance??(earlier.has(low)?d:0);slot.end=env.wallCornerClearance??env.groundCornerClearance??(earlier.has(high)?d:0);}
     for(const o of rack){
       for(let attempt=0;turn+attempt<sides.length;attempt++){
         const slot=sides[turn+attempt],limit=(slot.horizontal?b.maxX-b.minX:b.maxY-b.minY)-2*c-slot.start-slot.end,start=slot.horizontal?slot.start:b.minY+c+slot.start,runLimit=Math.max(o.w,(o.maxRunLength||o.w)*fraction),last=slot.last;
         const append=last&&last.typeId===o.typeId&&last.w+o.w<=Math.min(last.runLimit,runLimit)+E;
         const jumps=env.obstacles.concat(env.doors).map(v=>slot.horizontal?v.bounds.x+v.bounds.w+Math.max(options.obstacleClearance,gap)-b.minX-c:v.bounds.y+v.bounds.h+Math.max(options.obstacleClearance,gap)-start);
-        const offsets=[...(append?[last.wallOffset]:[]),slot.cursor+(last?gap:0),...jumps.filter(v=>v>=slot.cursor)].sort((a,b)=>a-b);
+        // A new logical run/type shares the same loading aisle along the wall.
+        // Maximum run length must not create an empty gangway between wall bays.
+        const offsets=[...(append?[last.wallOffset]:[]),slot.cursor,...jumps.filter(v=>v>=slot.cursor)].sort((a,b)=>a-b);
         let chosen=null;
         for(const position of [...new Set(offsets)].slice(0,64)){
           const extend=append&&Math.abs(position-last.wallOffset)<E,w=extend?last.w+o.w:o.w;if(position<0||position+w>limit+E)continue;
@@ -143,14 +145,16 @@
     for(const row of remaining){const reservation=fillGroundLane([row],row.w,row.h,env,'unplaced:'+serial++).group;unplaced.push({...reservation,unplacedReason:'No remaining continuous ground lane fits this row and both full-width gangways.'});}
   }
   function makeBlocks(source,env,settings,options,rowFraction){
-    if((options.storageMode==='ground'||!source.groups.some(g=>g.kind==='rack'))&&options.allowWallStorage&&options.racksAroundWalls){
-      const rows=source.groups.filter(g=>g.kind==='ground'),units=rows.map(g=>({id:g.id,typeId:'ground-wall',w:g.w,h:g.h,maxRunLength:100000000,sourceRow:g}));
-      if((!options.wallRackMode||options.wallRackMode==='all')&&units.length){
-        const d=settings.maxFloorRowDepth>0?settings.maxFloorRowDepth:Math.max(...units.map(o=>o.h)),b=env.box,c=options.wallClearance;
-        env.groundCornerClearance=d;
+    if(options.allowWallStorage&&options.racksAroundWalls&&(!options.wallRackMode||options.wallRackMode==='all')){
+      const wallRacks=source.groups.filter(g=>g.kind==='rack').flatMap(g=>g.objects),depths=wallRacks.length?wallRacks.map(o=>o.h):source.groups.filter(g=>g.kind==='ground').map(g=>g.h);
+      if(depths.length){const actual=Math.max(...depths),d=settings.maxFloorRowDepth>0?Math.max(settings.maxFloorRowDepth,wallRacks.length?actual:0):actual,b=env.box,c=options.wallClearance;
+        env.wallCornerClearance=d;if(!wallRacks.length)env.groundCornerClearance=d;
         const corners=intersect([rect({x:b.minX+c,y:b.minY+c,w:d,h:d}),rect({x:b.maxX-c-d,y:b.minY+c,w:d,h:d}),rect({x:b.minX+c,y:b.maxY-c-d,w:d,h:d}),rect({x:b.maxX-c-d,y:b.maxY-c-d,w:d,h:d})],env.boundary);
         env.zone=diff(env.zone,corners);env.wallSafety=union([...env.wallSafety,...corners]);
       }
+    }
+    if((options.storageMode==='ground'||!source.groups.some(g=>g.kind==='rack'))&&options.allowWallStorage&&options.racksAroundWalls){
+      const rows=source.groups.filter(g=>g.kind==='ground'),units=rows.map(g=>({id:g.id,typeId:'ground-wall',w:g.w,h:g.h,maxRunLength:100000000,sourceRow:g}));
       const wall=allWallBlocks(units,env,settings,options,1),used=new Set(wall.flatMap(g=>g.objects.map(o=>o.id)));
       const placed=wall.map(g=>({...g,kind:'ground',groundRows:g.objects.map(unit=>({id:unit.id,x:unit.dx,y:0,w:unit.sourceRow.w,h:g.h,side:'wall',objectIds:unit.sourceRow.objects.map(o=>o.id)})),objects:g.objects.flatMap(unit=>unit.sourceRow.objects.map(o=>({...o,dx:unit.dx+o.dx,dy:unit.dy+o.dy,groundRowId:unit.id,groundFace:'wall'}))),frame:env.frame}));
       return [...placed,...rows.filter(g=>!used.has(g.id)).map(row=>({...row,groundPending:true,frame:env.frame}))];
