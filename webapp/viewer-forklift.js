@@ -22,8 +22,15 @@
     const visited=new Set(),components=[];
     function bfs(start,allowed=null){const queue=[start],parents=new Map([[start,-1]]);for(let i=0;i<queue.length;i++)for(const next of nodes[queue[i]].links)if(!parents.has(next)&&(!allowed||allowed.has(next))){parents.set(next,queue[i]);queue.push(next);}return {queue,parents,last:queue[queue.length-1]};}
     for(const node of nodes)if(!visited.has(node.id)){const component=bfs(node.id).queue;component.forEach(id=>visited.add(id));components.push(component);}components.sort((a,b)=>b.length-a.length);
-    const allowed=new Set(components[0]),a=bfs(components[0][0],allowed).last,b=bfs(a,allowed),path=[];for(let cursor=b.last;cursor!==-1;cursor=b.parents.get(cursor))path.push(nodes[cursor]);path.reverse();
-    const points=[];for(const node of path){const p=[node.x/1000,node.y/1000];if(points.length>1){const prev=points[points.length-1],before=points[points.length-2];if(Math.abs((prev[0]-before[0])*(p[1]-prev[1])-(prev[1]-before[1])*(p[0]-prev[0]))<1e-8)points.pop();}points.push(p);}
+    // Traverse every reachable aisle branch rather than only a single diameter.
+    const allowed=new Set(components[0]),seen=new Set(),path=[],stack=[{id:components[0][0],index:0}];
+    seen.add(stack[0].id);path.push(nodes[stack[0].id]);
+    while(stack.length){const frame=stack[stack.length-1],links=nodes[frame.id].links;let next;
+      while(frame.index<links.length){const candidate=links[frame.index++];if(allowed.has(candidate)&&!seen.has(candidate)){next=candidate;break;}}
+      if(next!==undefined){seen.add(next);path.push(nodes[next]);stack.push({id:next,index:0});}
+      else{stack.pop();if(stack.length)path.push(nodes[stack[stack.length-1].id]);}
+    }
+    const points=[];for(const node of path){const p=[node.x/1000,node.y/1000];if(points.length>1){const prev=points[points.length-1],before=points[points.length-2];if(Math.abs((prev[0]-before[0])*(p[1]-prev[1])-(prev[1]-before[1])*(p[0]-prev[0]))<1e-8&&(prev[0]-before[0])*(p[0]-prev[0])+(prev[1]-before[1])*(p[1]-prev[1])>0)points.pop();}points.push(p);}
     let length=0;const distances=[0];for(let i=1;i<points.length;i++){length+=Math.hypot(points[i][0]-points[i-1][0],points[i][1]-points[i-1][1]);distances.push(length);}
     if(length<2)return failure('The connected gangway section is too short for a driving preview.');
     return {points,distances,length,vehicle,radius,safePaths:safe,componentCount:components.length,reason:null};
