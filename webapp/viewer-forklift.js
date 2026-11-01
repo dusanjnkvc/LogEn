@@ -33,8 +33,12 @@
     const points=[];for(const node of path){const p=[node.x/1000,node.y/1000];if(points.length>1){const prev=points[points.length-1],before=points[points.length-2];if(Math.abs((prev[0]-before[0])*(p[1]-prev[1])-(prev[1]-before[1])*(p[0]-prev[0]))<1e-8&&(prev[0]-before[0])*(p[0]-prev[0])+(prev[1]-before[1])*(p[1]-prev[1])>0)points.pop();}points.push(p);}
     let length=0;const distances=[0];for(let i=1;i<points.length;i++){length+=Math.hypot(points[i][0]-points[i-1][0],points[i][1]-points[i-1][1]);distances.push(length);}
     if(length<2)return failure('The connected gangway section is too short for a driving preview.');
-    return {points,distances,length,vehicle,radius,safePaths:safe,componentCount:components.length,reason:null};
+    return {points,distances,length,vehicle,radius,walkablePaths:walkable,safePaths:safe,componentCount:components.length,reason:null};
   }
   function sample(route,distance,direction=1){const d=Math.max(0,Math.min(route.length,distance));let lo=1,hi=route.distances.length-1;while(lo<hi){const mid=(lo+hi)>>1;if(route.distances[mid]<d)lo=mid+1;else hi=mid;}const b=route.points[lo],a=route.points[lo-1],length=route.distances[lo]-route.distances[lo-1],t=length?(d-route.distances[lo-1])/length:0;return {x:a[0]+(b[0]-a[0])*t,z:a[1]+(b[1]-a[1])*t,yaw:Math.atan2((b[0]-a[0])*direction,(b[1]-a[1])*direction)};}
-  scope.LogEnForklift=Object.freeze({plan,sample});
+  function footprint(route,p){const w=route.vehicle.width/2+.10,d=route.vehicle.length/2+.10,c=Math.cos(p.yaw),s=Math.sin(p.yaw);return [[-w,-d],[w,-d],[w,d],[-w,d]].map(([x,z])=>[p.x+x*c+z*s,p.z-x*s+z*c]);}
+  function fits(route,p){let path=G.path(footprint(route,p).map(v=>v.map(n=>n*1000)));if(!C.Clipper.Orientation(path))path.reverse();return G.area(G.diff([path],route.walkablePaths||route.safePaths))<.1;}
+  function overlaps(route,a,b){const pa=footprint(route,a),pb=footprint(route,b);return [a.yaw,b.yaw].flatMap(t=>[[Math.cos(t),-Math.sin(t)],[Math.sin(t),Math.cos(t)]]).every(axis=>{const aa=pa.map(p=>p[0]*axis[0]+p[1]*axis[1]),bb=pb.map(p=>p[0]*axis[0]+p[1]*axis[1]);return Math.max(...aa)>Math.min(...bb)&&Math.max(...bb)>Math.min(...aa);});}
+  function lane(route,d,direction){const p=sample(route,d,direction),offset=.8;const shifted={...p,x:p.x+Math.cos(p.yaw)*offset,z:p.z-Math.sin(p.yaw)*offset};return fits(route,shifted)?shifted:p;}
+  scope.LogEnForklift=Object.freeze({plan,sample,footprint,fits,overlaps,lane});
 })(globalThis);
