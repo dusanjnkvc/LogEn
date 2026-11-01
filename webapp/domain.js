@@ -5,7 +5,7 @@
 
   function createDefaultSettings() {
     return {
-      rackTypeName: 'Rack type 1', rackTypes: [], stackingMode: 'legacy', manualStacking: 1, maxFloorStackingHeight: 5000, maxFloorRowDepth: 5000,
+      rackTypeName: 'Rack type 1', rackTypes: [], stackingMode: 'legacy', manualStacking: 1, maxFloorStackingHeight: 5000, buildingHeight: 5000, maxFloorRowDepth: 5000,
       gangwayWidth: 4500, floorPalletClearance: 100,
       rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
       rackSlotHeight: 1100, betweenBoxesAllowance: 0, rackStructuralLength: 150,
@@ -19,7 +19,7 @@
   }
 
   const positiveSettings = {
-    maxFloorStackingHeight: 'Maximum floor stacking height',
+    maxFloorStackingHeight: 'Maximum floor stacking height', buildingHeight: 'Building height',
     rackSlotLength: 'Rack usable slot length',
     rackSlotDepth: 'Rack usable slot depth',
     rackSlotHeight: 'Rack usable slot height',
@@ -51,6 +51,9 @@
       return cfg;
     })];
   }
+  const rackHeight=t=>t.rackLevels*(t.rackSlotHeight+t.rackStructuralHeight);
+  const rackFitsBuilding=t=>Number.isFinite(rackHeight(t))&&rackHeight(t)<= (t.buildingHeight??5000)+.0001;
+  function rackHeightMessage(t){const n=v=>Number(v).toLocaleString('en-GB',{maximumFractionDigits:1});return `${t.name||t.rackTypeName||'Rack'}: ${n(t.rackLevels)} levels require ${n(rackHeight(t))} mm including structural height allowances; Building height is ${n(t.buildingHeight??5000)} mm. Go to Warehouse settings → Floor storage & gangways → Building height and enter the actual height, or reduce the rack levels / shelf height.`;}
   function floorStackingMode(s) {
     return !s.stackingMode || s.stackingMode==='legacy' ? (s.stackabilityEnabled?'imported':'manual') : s.stackingMode;
   }
@@ -233,6 +236,7 @@
       utilizationPercent, unusedPercent: utilizationPercent === null ? null : 100-utilizationPercent};
   }
   function rackForPart(quantity,input,t) {
+    if(!rackFitsBuilding(t))return null;
     const sizing=calculateBoxRack(quantity,input.length,input.width,input.height,t.rackSlotLength,t.rackSlotDepth,t.rackSlotHeight,t.rackLevels,t.betweenBoxesAllowance,t.rackStructuralLength,t.rackStructuralDepth,t);
     if(!sizing.fits)return null;
     const effectiveBayLength=t.rackSlotLength+t.rackStructuralLength,effectiveBayDepth=t.rackSlotDepth+t.rackStructuralDepth,effectiveBayHeight=t.rackSlotHeight+t.rackStructuralHeight;
@@ -330,7 +334,7 @@
       const alternatives=configuredRackTypes(s).map(t=>rackForPart(requiredPallets,input,t)).filter(Boolean);
       alternatives.sort((a,b)=>(b.utilizationPercent||0)-(a.utilizationPercent||0)||a.withoutGangways-b.withoutGangways||a.unusedShelfArea-b.unusedShelfArea);
       rack=alternatives[0]||null;
-      if(!rack)errors.push('Rack: unit does not fit the usable shelf length, depth and height of any configured rack type.');
+      if(!rack){const tall=configuredRackTypes(s).filter(t=>!rackFitsBuilding(t));errors.push('Rack: unit does not fit a configured shelf within Building height. '+(tall.length?tall.map(rackHeightMessage).join(' '):'Check usable shelf length, depth and height.'));}
     } catch (error) { errors.push(error.message); }
     return resultFor(input, errors, requiredParts, requiredPallets, floorResult, rack, planning);
   }
@@ -383,6 +387,7 @@
     const quantity=rows.reduce((n,r)=>n+r.quantity,0);if(quantity>10000)return {available:false,error:'Shared rack preview supports up to 10,000 units.'};
     const remaining=rows.map(r=>r.quantity),bayLayouts=[];let steps=0;
     function candidate(t,stock=remaining,initial=null){
+      if(!rackFitsBuilding(t))return {settings:t,shelves:[],used:stock.map(()=>0),count:0,occupied:0,footprint:0,utilization:0,unused:0,efficiency:Infinity};
       const used=stock.map(()=>0),shelves=(initial?.shelves||[]).map(sh=>({free:sh.free.map(r=>({...r})),placements:sh.placements.map(p=>({...p}))}));let occupied=initial?.occupied||0,count=0;
       rows.forEach((r,index)=>{
         if(r.input.height>t.rackSlotHeight)return;
@@ -543,14 +548,13 @@
       groundInvalid:groundRows.filter(r=>!r.isFloorValid),rackInvalid:rack.results.filter(r=>!r.isRackValid)};
   }
   function calculateImplementation(parts,settings,config={},category=null){
-    if(config.greenfield&&config.storageMode==='ground')settings={...settings,stackingMode:'imported'};
     const base=calculateProject(parts,settings,category),errors=[...base.settingsErrors],types=configuredRackTypes({...createDefaultSettings(),...settings}),limits={};
     if((config.storageMode&&config.storageMode!=='auto')||Object.keys(config.storageOverrides||{}).length){
       const original=calculateImplementation(parts,settings,{...config,storageMode:'auto',storageOverrides:{}},category);if(!original.available)return original;
       const desired=r=>config.storageOverrides?.[r.input.partNumber]||(config.storageMode==='ground'?'ground':config.storageMode==='rack'?'rack':original.rows.find(v=>v.input.partNumber===r.input.partNumber)?.rackPallets>0?'rack':'ground');
       let capacity=null;if(!config.greenfield){capacity={};if(config.useExistingRacks)for(const v of config.existingRacks||[])capacity[v.typeId]=(capacity[v.typeId]||0)+v.bays;}
       const selected=base.results.filter(r=>r.isPlanningValid&&desired(r)==='rack'),rack=sharedRackPlan(selected,{...createDefaultSettings(),...settings},capacity);if(!rack.available)return {available:false,errors:[rack.error]};
-      const rows=base.results.map(r=>{if(!r.isPlanningValid)return {input:r.input,required:null,rackPallets:0,groundPallets:null,storageType:'Unassigned',errors:r.errors};const wantRack=desired(r)==='rack',fit=types.some(t=>rackForPart(0,r.input,t)),placed=wantRack?(capacity===null?(fit?r.requiredPallets:0):(rack.placedByPN?.[r.input.partNumber]||0)):0,missing=wantRack?r.requiredPallets-placed:0,ground=wantRack?null:r.floor;return {input:r.input,required:r.requiredPallets,rackPallets:placed,groundPallets:wantRack?0:r.requiredPallets,ground,missingRackPallets:missing,storageType:wantRack?'Rack storage':'Ground storage',groundReason:'Manual storage selection',errors:missing?[fit?'Insufficient rack capacity for the whole part number.':'Pallet is bigger than the usable shelf or does not fit the rack clearances.']:!wantRack&&!r.isFloorValid?r.errors:[]};});
+      const rows=base.results.map(r=>{if(!r.isPlanningValid)return {input:r.input,required:null,rackPallets:0,groundPallets:null,storageType:'Unassigned',errors:r.errors};const wantRack=desired(r)==='rack',fit=types.some(t=>rackForPart(0,r.input,t)),placed=wantRack?(capacity===null?(fit?r.requiredPallets:0):(rack.placedByPN?.[r.input.partNumber]||0)):0,missing=wantRack?r.requiredPallets-placed:0,ground=wantRack?null:r.floor;return {input:r.input,required:r.requiredPallets,rackPallets:placed,groundPallets:wantRack?0:r.requiredPallets,ground,missingRackPallets:missing,storageType:wantRack?'Rack storage':'Ground storage',groundReason:'Manual storage selection',errors:missing?[fit?'Insufficient rack capacity for the whole part number.':'Pallet or rack does not fit the usable shelf dimensions or Building height. '+types.filter(t=>!rackFitsBuilding(t)).map(rackHeightMessage).join(' ')]:!wantRack&&!r.isFloorValid?r.errors:[]};});
       const sum=fn=>rows.reduce((n,r)=>n+(fn(r)||0),0),groundWithoutGangways=sum(r=>r.ground?.withoutGangways),groundWithGangways=sum(r=>r.ground?.withGangways);
       return {available:true,errors:[],greenfield:!!config.greenfield,rows,rack,totalPallets:base.totalRequiredPallets,rackPallets:sum(r=>r.rackPallets),groundPallets:sum(r=>r.groundPallets),groundWithoutGangways,groundWithGangways,totalWithoutGangways:rack.withoutGangways+groundWithoutGangways,totalWithGangways:rack.withGangways+groundWithGangways,invalidCount:rows.filter(r=>r.errors.length).length};
     }
@@ -592,5 +596,5 @@
     const groundWithoutGangways=rows.reduce((n,r)=>n+(r.ground?.withoutGangways||0),0),groundWithGangways=rows.reduce((n,r)=>n+(r.ground?.withGangways||0),0);
     return {available:true,errors:[],rows,rack,totalPallets:base.totalRequiredPallets,rackPallets:rack.quantity,groundPallets:rows.reduce((n,r)=>n+(r.groundPallets||0),0),groundWithoutGangways,groundWithGangways,totalWithoutGangways:rack.withoutGangways+groundWithoutGangways,totalWithGangways:rack.withGangways+groundWithGangways,invalidCount:rows.filter(r=>r.errors.length).length};
   }
-  scope.LogEnDomain = Object.freeze({ createDefaultSettings, configuredRackTypes, rackTypeFields, rackOptionFields, floorStackingMode, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject, calculateStorageSplit, calculateImplementation });
+  scope.LogEnDomain = Object.freeze({ createDefaultSettings, configuredRackTypes, rackTypeFields, rackOptionFields, floorStackingMode, rackHeight, rackFitsBuilding, rackHeightMessage, calculateBoxRack, rackFit, surfaceAreas, allocatedGangwayWidth, normalizePart, validateSettings, calculatePart, calculateProject, calculateStorageSplit, calculateImplementation });
 })(globalThis);

@@ -12,7 +12,7 @@ Search finds all matching PN/location objects, highlights matches, dims unrelate
 
 Rendering uses meters; source coordinates and calculations stay in mm. Original local frames, reflections, row rotation and allocation x/y/z are transformed to world coordinates. Ground stacks contain exactly the assigned pallet quantity. Existing racks remain visible even when empty. Red flags show detected pallet bounds/height/shelf-fit/overlap issues; they do not modify inventory.
 
-2D CAD normally lacks verified wall, door and obstacle elevations. Their displayed height uses Maximum floor stacking height unless a source height exists; wall profile/door frame appearance is schematic. Rack elevations use configured usable shelf height and structural height allowance. Source rack envelopes and pallet dimensions remain exact; the structural profile is a visualization within the configured envelope. The model notes disclose these assumptions.
+2D CAD normally lacks verified wall, door and obstacle elevations. Their displayed height uses Building height unless a source height exists; wall profile/door frame appearance is schematic. Rack elevations use configured usable shelf height and structural height allowance. Source rack envelopes and pallet dimensions remain exact; the structural profile is a visualization within the configured envelope. The model notes disclose these assumptions.
 
 ## Offline build
 
@@ -31,7 +31,7 @@ The committed renderer bundle supports ordinary app builds without npm. Rebuild 
 
 Click an orange shelf beam or shelf surface for usable length/depth, slot height, elevation, bay, level and allocated count. Click an upright for that rack type's usable/overall dimensions, levels, structural allowances, gaps and storage options. Empty regions also show their parent shelf dimensions.
 
-Placement warnings have a hover/focus explanation plus an expandable panel for touch screens. Each message gives the measured value and an adjustment path (e.g. Warehouse settings → Floor storage & gangways → Maximum floor stacking height for the current building-height limit).
+Placement warnings have a hover/focus explanation plus an expandable panel for touch screens. Each message gives the measured value and an adjustment path (e.g. Warehouse settings → Floor storage & gangways → Building height for rack clearance; Maximum floor stacking height for ground stacking).
 
 Mouse-wheel zoom, orbit/pan and Walk/Fly look sensitivity default to 2× and can be adjusted. Full screen is available in the toolbar and directly over the canvas.
 
@@ -40,3 +40,5 @@ The schematic forklift is 1.2 × 2.8 × 2.15 m. It follows a continuous route in
 Ground position outlines retain their dedicated row dimensions even when rows move together in a back-to-back pair. Ground locations are unique across the combined block. The inspector distinguishes back-to-back pairs from single wall rows.
 
 Continuous ground lanes display the same center line as the CAD export. Selecting a ground position shows its full continuous row dimensions and pallet/PN totals, with the per-pallet half clearance and maximum depth from the back line; the selected position retains its own quantity and PN.
+
+Building height is independent of ground stacking. Whole rack height is levels × (usable slot height + structural height allowance); racks exceeding Building height are flagged and excluded from new rack allocation. Ground stacking uses Maximum floor stacking height with the mode selected in Overview.

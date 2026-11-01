@@ -24,6 +24,37 @@ function legacyWorkspace() {
   return workspace({ version: 1, parts: [{ partNumber: 'LEGACY-QA', qtyBox: 20, qtyPallet: 7, qtyOnPallet: 40,
     consumption: 1000, doh: 5, length: 1200, width: 800, height: 1000, stacking: 3, inputErrors: [] }] });
 }
+
+test('Overview stacking selection drives saved factors and sits below shifts',t=>{
+  const ui=boot(t,workspace({parts:[part({stacking:3})],settings:{stackingMode:'manual',manualStacking:2,maxFloorStackingHeight:5500,buildingHeight:8000}}));
+  assert(ui.$('.floor-stacking-options').previousElementSibling.classList.contains('production-panel'));
+  assert.equal(ui.w.document.querySelectorAll('[data-floor-stacking-mode]').length,1);
+  ui.input('[data-manual-floor-stacking]',4);
+  assert.equal(ui.state().projects[0].settings.manualStacking,4);
+  assert.equal(D.calculatePart(part({stacking:3}),ui.state().projects[0].settings).floor.effectiveStacking,4);
+  ui.change('[data-floor-stacking-mode]','height');
+  assert.equal(D.calculatePart(part({stacking:3}),ui.state().projects[0].settings).floor.effectiveStacking,5);
+  ui.change('[data-floor-stacking-mode]','imported');
+  assert.equal(D.calculatePart(part({stacking:3}),ui.state().projects[0].settings).floor.effectiveStacking,3);
+  ui.click('[data-view="parts"]');assert.equal(ui.w.document.querySelectorAll('[data-floor-stacking-mode]').length,0);
+  assert.deepEqual(ui.errors,[]);
+});
+
+test('Building height settings migrate separately and preview six rack levels',async t=>{
+  const data=workspace({settings:{maxFloorStackingHeight:6500}});delete data.projects[0].settings.buildingHeight;
+  const ui=boot(t,data);ui.click('#settings-nav');
+  assert.equal(ui.$('dialog input[name="buildingHeight"]').value,'6500');
+  ui.input('dialog input[name="maxFloorStackingHeight"]',3000);
+  ui.input('dialog input[name="rackLevels"]',6);
+  ui.input('dialog input[name="buildingHeight"]',8000);
+  assert.match(ui.$('.rack-height-status').textContent,/7,500.*8,000.*Fits/);
+  ui.input('dialog input[name="buildingHeight"]',7000);
+  assert.match(ui.$('.rack-height-status').textContent,/Does not fit/);
+  ui.input('dialog input[name="buildingHeight"]',8000);ui.submit();
+  await until(()=>ui.state().projects[0].settings.buildingHeight===8000,'independent building height save');
+  assert.equal(ui.state().projects[0].settings.maxFloorStackingHeight,3000);
+  assert.equal(ui.state().projects[0].settings.rackLevels,6);assert.deepEqual(ui.errors,[]);
+});
 function boot(t, initial = workspace()) {
   const errors = [];
   const console = new VirtualConsole();

@@ -312,12 +312,14 @@
           [['input', 'DOH from each imported part'], ['custom', 'Project DOH override']]);
         field(productionGrid, 'customCoverageDays', 'Project DOH override', false, false, 'days');
         stock.append($('p', 'muted formula-hint', 'Required pallets = consumption per shift / QTY in Box / QTY boxes per Pallet × shifts per day × DOH, then round up only the final result.'));
-        stock.append($('p','muted','Choose the floor stacking mode in Part details. Existing per-part factors and height limits are preserved.'));
+        stock.append($('p','muted','Choose the floor stacking mode in Overview, below Shifts & days on hand. Existing per-part factors and height limits are preserved.'));
         const preview = $('div', 'planning-preview');
         stock.append(preview);
         const floor = section(body, 'Floor storage & gangways', 'Excel-style allocations reserve half a shared gangway; the physical width below remains unchanged.');
         const floorGrid = $('div', 'form-grid'); floor.append(floorGrid);
         field(floorGrid, 'maxFloorStackingHeight', 'Maximum floor stacking height', true);
+        field(floorGrid, 'buildingHeight', 'Building height', true);
+        floor.append($('p','muted','Maximum floor stacking height limits ground stacking. Building height checks the complete rack height, including structural height per level.'));
         field(floorGrid, 'maxFloorRowDepth', 'Maximum floor row depth · 0 = unrestricted');
         field(floorGrid, 'gangwayWidth', 'Gangway width');
         field(floorGrid, 'floorPalletClearance', 'Floor pallet clearance');
@@ -327,10 +329,11 @@
         const rack = section(body, 'Primary rack type', 'Enter the usable footprint and height of one shelf. These dimensions already exclude structure and required clearance.');
         let primaryEnabled=current.primaryRackEnabled!==false;
         const primaryDelete=$('button','btn btn-ghost danger-text');primaryDelete.type='button';
-        function primaryState(){primaryDelete.textContent=primaryEnabled?'Delete primary rack type':'Restore primary rack type';rackGrid.hidden=!primaryEnabled;structure.hidden=!primaryEnabled;rackName.input.disabled=!primaryEnabled;}
+        function primaryState(){primaryDelete.textContent=primaryEnabled?'Delete primary rack type':'Restore primary rack type';rackGrid.hidden=!primaryEnabled;structure.hidden=!primaryEnabled;rackName.input.disabled=!primaryEnabled;primaryHeight.hidden=!primaryEnabled;}
         primaryDelete.addEventListener('click',()=>{primaryEnabled=!primaryEnabled;primaryState();update();});rack.append(primaryDelete);
         function rackOptions(target,value){const controls={};for(const [key,label] of [['rackAllowRotation','Allow rotation · prefer shorter side in front'],['rackAllowStacking','Allow vertical stacking · identical part numbers only'],['rackAllowDepthRows','Allow two pallets front-to-back · maximum two']]){const wrap=$('label','checkbox-field'),input=$('input');input.type='checkbox';input.name=key;input.checked=value[key]===true;controls[key]=input;wrap.append(input,$('span','',label));target.append(wrap);}return controls;}
         const primaryOptions=rackOptions(rack,current);
+        const primaryHeight=$('p','rack-height-status');primaryHeight.setAttribute('role','status');rack.append(primaryHeight);
         const optionValues=controls=>Object.fromEntries(Object.entries(controls).map(([k,v])=>[k,v.checked]));
         const rackName=textField(rack,'Rack type name',current.rackTypeName,{maxLength:80});
         const rackGrid = $('div', 'form-grid'); rack.append(rackGrid);
@@ -361,7 +364,8 @@
           const grid=$('div','form-grid');card.append(grid);const inputs={};
           for(const [key,label,positive,integer] of typeFields)inputs[key]=numberField(grid,key,label,cfg[key],{positive:!!positive,integer:!!integer,unit:key==='rackLevels'?'levels':'mm'});
           const options=rackOptions(card,value);
-          const item={options,id:value.id||'rack-'+Date.now()+'-'+Math.random().toString(36).slice(2),name,inputs,element:card};cards.push(item);
+          const heightStatus=$('p','rack-height-status');heightStatus.setAttribute('role','status');card.append(heightStatus);for(const input of Object.values(inputs))input.input.addEventListener('input',()=>update());
+          const item={heightStatus,options,id:value.id||'rack-'+Date.now()+'-'+Math.random().toString(36).slice(2),name,inputs,element:card};cards.push(item);
           const remove=$('button','btn btn-ghost small','Remove rack type');remove.type='button';remove.addEventListener('click',()=>{cards.splice(cards.indexOf(item),1);card.remove();update();});card.append(remove);cardList.append(card);
         }
         (Array.isArray(current.rackTypes)?current.rackTypes:[]).filter(t=>t&&typeof t==='object').forEach(addRackType);
@@ -372,6 +376,8 @@
         const draft = () => ({ ...current, ...draftNumbers(fields), primaryRackEnabled:primaryEnabled,...optionValues(primaryOptions),rackTypeName:rackName.input.value.trim(), rackTypes:cards.map(c=>({id:c.id,name:c.name.input.value.trim(),...draftNumbers(c.inputs),...optionValues(c.options)})), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, stackabilityEnabled: current.stackabilityEnabled });
         const update = () => {
           const settings = draft();
+          const heightInfo=(target,t)=>{const required=globalThis.LogEnDomain.rackHeight(t),valid=Number.isFinite(required)&&Number.isFinite(settings.buildingHeight)&&t.rackSlotHeight+t.rackStructuralHeight>0;target.textContent=valid?`${t.name||'Rack'} · ${display(required)} mm total height · Building height ${display(settings.buildingHeight)} mm · ${globalThis.LogEnDomain.rackFitsBuilding({...t,buildingHeight:settings.buildingHeight})?'Fits':'Does not fit'} · maximum ${Math.floor(settings.buildingHeight/(t.rackSlotHeight+t.rackStructuralHeight))} levels.`:'Enter valid rack heights, levels and Building height.';target.className='rack-height-status '+(valid&&globalThis.LogEnDomain.rackFitsBuilding({...t,buildingHeight:settings.buildingHeight})?'muted':'notice error');};
+          heightInfo(primaryHeight,{...settings,name:settings.rackTypeName});cards.forEach((card,i)=>heightInfo(card.heightStatus,{...settings,...settings.rackTypes[i]}));
           planningPreview(preview, sample, settings, true);
           gangwayHint.textContent = `Allocated gangway width = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm physical width. Both allocations use half a shared gangway.`;
         };

@@ -21,6 +21,7 @@
           if(p.h>p.w){item.frame={angle:p.frame.angle+Math.PI/2,sx:1,sy:1};item.local=p.points.map(v=>O.toLocal(v,item.frame));Object.assign(item,bounded(item.local));}
           const bw=t.rackSlotLength+t.rackStructuralLength,bd=t.rackSlotDepth+t.rackStructuralDepth;
           if(Math.abs(G.area([G.path(item.local)])-item.w*item.h)>Math.max(1,item.w*item.h*.00001))throw new Error('Rack '+e.id+' needs a rectangular outer outline.');
+          if(!D.rackFitsBuilding(t))issues.push({pn:e.id,message:D.rackHeightMessage(t)});
           item.type=t;item.bays=cfg.bays??Math.floor((item.w+E)/bw);item.positionsPerLevel=cfg.positionsPerLevel??2;
           if(!Number.isSafeInteger(item.bays)||item.bays<1||item.bays>1000||item.bays*bw>item.w+E||bd>item.h+E)throw new Error('Rack '+e.id+': selected bays/type exceed the original outline. Check its type, bays and drawing units.');
           if(item.bays*t.rackLevels*item.positionsPerLevel>10000)throw new Error('Rack '+e.id+': more than 10,000 fixed positions. Split the drawing into smaller scopes.');
@@ -39,7 +40,7 @@
     return {items,issues};
   }
   function slotFit(input,item,slot){
-    const t=item.type;
+    const t=item.type;if(!D.rackFitsBuilding(t))return null;
     const f=D.calculateBoxRack(1,input.length,input.width,input.height,slot.cellLength,slot.cellDepth,slot.cellHeight,1,0,0,0,{...t,rackAllowStacking:false,rackAllowDepthRows:false});
     return f.fits?{length:f.rotated?input.width:input.length,depth:f.rotated?input.length:input.width,rotated:f.rotated}:null;
   }

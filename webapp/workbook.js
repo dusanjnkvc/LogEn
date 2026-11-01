@@ -341,7 +341,7 @@
         ['Legacy import working days per month', s.workingDaysPerMonth ?? 22, 'only needed to migrate older monthly data; canonical per-shift consumption stays fixed'],
         ['Packaging warnings', calculation.results.filter(result => result.input.packagingInferred).map(result => result.input.partNumber).join(', ') || 'None', 'Inferred packaging should be checked against actual boxes per pallet'],
         ['Optional stock warnings', calculation.results.filter(result => result.planning?.stockQty == null).length, 'part numbers with no provided current stock quantity; actual coverage is unavailable'],
-        ['Maximum floor stacking height', s.maxFloorStackingHeight, 'mm'], ['Maximum floor row depth LIMIT', s.maxFloorRowDepth, 'mm; 0 = unlimited. Storage-only footprint uses actual occupied depth.'],
+        ['Maximum floor stacking height', s.maxFloorStackingHeight, 'mm; ground stacking limit'], ['Building height',s.buildingHeight??5000,'mm; complete rack height limit including structural allowances'], ['Maximum floor row depth LIMIT', s.maxFloorRowDepth, 'mm; 0 = unlimited. Storage-only footprint uses actual occupied depth.'],
         ['Gangway width', s.gangwayWidth, 'mm; full configured width'],
         ['Gangway allocation factor', 1, '100% for both floor and rack footprints'],
         ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
