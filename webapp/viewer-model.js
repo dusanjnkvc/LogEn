@@ -6,7 +6,7 @@
   const number=v=>Number(v).toLocaleString('en-GB',{maximumFractionDigits:1});
   function warn(p,message){p.invalid=true;p.placementWarnings=p.placementWarnings||[];if(!p.placementWarnings.includes(message))p.placementWarnings.push(message);}
   function build({layout,geometry,parts,settings,generatedAt}){
-    const partMap=new Map(parts.map(p=>[p.partNumber,p])),types=D.configuredRackTypes(settings),pallets=[],groundSlots=[],bays=[],shelves=[],empty=[],structures=[],walls=[],obstacles=[],doors=[],surfaces=[],warnings=[];
+    const partMap=new Map(parts.map(p=>[p.partNumber,p])),types=D.configuredRackTypes(settings),pallets=[],groundSlots=[],groundLines=[],bays=[],shelves=[],empty=[],structures=[],walls=[],obstacles=[],doors=[],surfaces=[],warnings=[];
     const drawingBoundary=geometry?.entities.find(e=>e.id===layout.options.boundaryId),boundary=drawingBoundary?drawingBoundary.points.map(p=>p.map(n=>n*layout.options.scale)):layout.env.frame?layout.env.poly.map(p=>O.toWorld(p,layout.env.frame)):layout.env.poly,box=L.bounds(boundary),origin=[(box.minX+box.maxX)/2,(box.minY+box.maxY)/2],buildingHeight=settings.maxFloorStackHeight||settings.maxFloorStackingHeight||5000;
     const world=p=>[(p[0]-origin[0])/1000,p[2]/1000,-(p[1]-origin[1])/1000];
     const role=e=>layout.options.entityRoles?.[e.id]||layout.options.layerRoles?.[e.layer]||'obstacle';
@@ -15,6 +15,7 @@
     function pallet(g,u,v,w,d,h,elevation,data){if(![w,d,h].every(positive)){warnings.push('Missing pallet dimensions: '+data.pn);return;}const p={...primitive(g,u,v,w,d,h,elevation),...data,id:'pallet:'+data.id,status:'Occupied',placementWarnings:[],quantityParts:null,capacityParts:positive(data.input?.qtyBox)&&positive(data.input?.qtyOnPallet)?data.input.qtyBox*data.input.qtyOnPallet:null};pallets.push(p);return p;}
     const groups=layout.groups||[];
     groups.forEach((g,runIndex)=>{
+      if(g.centerLine)groundLines.push({id:'ground-center:'+g.id,points:g.centerLine.map(p=>{const v=at(g,p[0],p[1]);return world([v[0],v[1],30]);})});
       const rackNumber='R'+String(runIndex+1).padStart(3,'0');
       for(const [objectIndex,o]of g.objects.entries()){
         if(o.kind==='rack'){
@@ -54,8 +55,8 @@
           }
         }else if(o.kind==='ground'){
           const input=partMap.get(o.pn),qty=o.quantity||0,height=o.height||input?.height,position=objectIndex+1,location='G'+String(runIndex+1).padStart(3,'0')+'-P'+String(position).padStart(3,'0');
-          const groundRow=g.groundRows?.find(r=>r.id===o.groundRowId),rowW=groundRow?.w||g.w,rowH=groundRow?.h||g.h,rowObjects=groundRow?g.objects.filter(v=>v.groundRowId===groundRow.id):g.objects;
-          groundSlots.push({...primitive(g,o.dx,o.dy,o.w,o.h,12,2),id:'ground-slot:'+o.id,kind:'ground-slot',location,pn:o.pn,quantity:qty,row:groundRow?.id||g.id,arrangement:g.paired?'Back-to-back pair':g.wallSide?'Single wall row':'Ground storage',rowWidth:(g.rotated?rowH:rowW),rowDepth:(g.rotated?rowW:rowH),rowArea:rowW*rowH/1e6,rowQuantity:rowObjects.filter(v=>v.kind==='ground').reduce((n,v)=>n+(v.quantity||0),0),footprintLength:(input?.length||o.w)+(settings.floorPalletClearance||0),footprintWidth:(input?.width||o.h)+(settings.floorPalletClearance||0),position,height:height*qty,existing:!!g.existing});
+          const groundRow=g.groundRows?.find(r=>r.id===o.groundRowId),rowW=g.groundLane||g.wallSide?g.w:groundRow?.w||g.w,rowH=g.groundLane?(o.groundFace==='front'?g.backY:g.h-g.backY):g.wallSide?g.h:groundRow?.h||g.h,rowObjects=g.groundLane?g.objects.filter(v=>v.groundFace===o.groundFace):g.wallSide?g.objects:groundRow?g.objects.filter(v=>v.groundRowId===groundRow.id):g.objects,rowContents=[...rowObjects.reduce((map,v)=>map.set(v.pn,(map.get(v.pn)||0)+(v.quantity||0)),new Map())].map(([pn,quantity])=>({pn,quantity}));
+          groundSlots.push({...primitive(g,o.dx,o.dy,o.w,o.h,12,2),id:'ground-slot:'+o.id,kind:'ground-slot',location,pn:o.pn,quantity:qty,row:g.groundLane?g.id+':'+o.groundFace:g.wallSide?g.id:groundRow?.id||g.id,rowContents,centerClearance:(settings.floorPalletClearance||0)/2,depthLimit:settings.maxFloorRowDepth,arrangement:g.groundLane?'Back-to-back lane':g.paired?'Back-to-back pair':g.wallSide?'Single wall row':'Ground storage',rowWidth:(g.rotated?rowH:rowW),rowDepth:(g.rotated?rowW:rowH),rowArea:rowW*rowH/1e6,rowQuantity:rowObjects.filter(v=>v.kind==='ground').reduce((n,v)=>n+(v.quantity||0),0),footprintLength:(input?.length||o.w)+(settings.floorPalletClearance||0),footprintWidth:(input?.width||o.h)+(settings.floorPalletClearance||0),position,height:height*qty,existing:!!g.existing});
           for(let layer=0;layer<qty;layer++)pallet(g,o.dx,o.dy,o.w,o.h,height,layer*height,{id:o.id+':'+layer,pn:o.pn,input,storageType:'Ground storage',location:location+'-S'+(layer+1),locationBase:location,row:g.id,position,stackLayer:layer+1,existing:!!g.existing});
         }
       }
@@ -85,7 +86,7 @@
       if(p.elevation+p.h*1000>buildingHeight+.1)warn(p,`Pallet top reaches ${number(p.elevation+p.h*1000)} mm, above the building-height limit of ${number(buildingHeight)} mm. The 3D viewer uses Maximum floor stacking height as the building height. Go to Warehouse settings → Floor storage & gangways → Maximum floor stacking height. Set the actual building height, then regenerate the layout.`);const b=L.bounds(p.points),seen=new Set();for(let x=Math.floor(b.minX/5000);x<=Math.floor(b.maxX/5000);x++)for(let y=Math.floor(b.minY/5000);y<=Math.floor(b.maxY/5000);y++){const key=x+':'+y,list=buckets.get(key)||[];for(const other of list)if(!seen.has(other.id)){seen.add(other.id);if(sat(p,other)){warn(p,`Overlaps Part Number ${other.pn} at ${other.location}. Go to Warehouse Designer → Create Layout and adjust the affected row/run or regenerate the layout after checking dimensions and clearances in Warehouse settings.`);warn(other,`Overlaps Part Number ${p.pn} at ${p.location}. Go to Warehouse Designer → Create Layout and adjust the affected row/run or regenerate the layout after checking dimensions and clearances in Warehouse settings.`);}}list.push(p);buckets.set(key,list);}}
     const invalid=pallets.filter(p=>p.invalid).length;if(invalid)warnings.push(invalid+' pallets have a boundary, height, shelf-fit or overlap warning. These are shown red; 3D does not adjust allocations.');
     warnings.push('2D CAD does not provide verified wall/obstacle heights. Display height uses Maximum floor stacking height; wall thickness and door frame appearance are schematic.');
-    return {version:1,boundary:boundary.map(p=>world([p[0],p[1],0])),origin,buildingHeight:buildingHeight/1000,pallets,groundSlots,bays,shelves,empty,structures,walls,obstacles,doors,surfaces,warnings,generatedAt,mode:layout.version===3?'Existing Layout':'Greenfield',partial:!layout.complete,invalidCount:invalid};
+    return {version:1,boundary:boundary.map(p=>world([p[0],p[1],0])),origin,buildingHeight:buildingHeight/1000,pallets,groundSlots,groundLines,bays,shelves,empty,structures,walls,obstacles,doors,surfaces,warnings,generatedAt,mode:layout.version===3?'Existing Layout':'Greenfield',partial:!layout.complete,invalidCount:invalid};
   }
   scope.LogEnViewerModel=Object.freeze({build});
 })(globalThis);
