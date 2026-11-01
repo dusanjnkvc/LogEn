@@ -91,7 +91,7 @@
   function makeBlocks(source,env,settings,options,rowFraction){
     if((options.storageMode==='ground'||!source.groups.some(g=>g.kind==='rack'))&&options.allowWallStorage&&options.racksAroundWalls){
       const rows=source.groups.filter(g=>g.kind==='ground'),units=rows.map(g=>({id:g.id,typeId:'ground-wall',w:g.w,h:g.h,maxRunLength:100000000,sourceRow:g})),wall=allWallBlocks(units,env,settings,options,1),used=new Set(wall.flatMap(g=>g.objects.map(o=>o.id)));
-      const placed=wall.map(g=>({...g,kind:'ground',groundRows:g.objects.map(unit=>({id:unit.id,x:unit.dx,y:unit.dy,w:unit.sourceRow.w,h:unit.sourceRow.h,side:'wall',objectIds:unit.sourceRow.objects.map(o=>o.id)})),objects:g.objects.flatMap(unit=>unit.sourceRow.objects.map(o=>({...o,dx:unit.dx+o.dx,dy:unit.dy+o.dy,groundRowId:unit.id,groundFace:'wall'}))),frame:env.frame}));
+      const placed=wall.map(g=>({...g,kind:'ground',groundRows:g.objects.map(unit=>({id:unit.id,x:unit.dx,y:0,w:unit.sourceRow.w,h:g.h,side:'wall',objectIds:unit.sourceRow.objects.map(o=>o.id)})),objects:g.objects.flatMap(unit=>unit.sourceRow.objects.map(o=>({...o,dx:unit.dx+o.dx,dy:unit.dy+o.dy,groundRowId:unit.id,groundFace:'wall'}))),frame:env.frame}));
       return [...placed,...groundPairs(rows.filter(g=>!used.has(g.id)),env)];
     }
     const allRack=source.groups.filter(g=>g.kind==='rack').flatMap(g=>g.objects),wallRows=options.allowWallStorage&&options.racksAroundWalls?allWallBlocks(allRack,env,settings,options,rowFraction):[],used=new Set(wallRows.flatMap(g=>g.objects.map(o=>o.id))),rack=allRack.filter(o=>!used.has(o.id)),byType=new Map(),blocks=[];let index=0;
@@ -130,7 +130,7 @@
   function groupRect(g){return {x:g.x,y:g.y,w:g.rotated?g.h:g.w,h:g.rotated?g.w:g.h};}
   function localObjectRect(g,o){return {x:g.x+(g.rotated?g.h-o.dy-o.h:o.dx),y:g.y+(g.rotated?o.dx:o.dy),w:g.rotated?o.h:o.w,h:g.rotated?o.w:o.h};}
   function accessFor(g,env,width){const r=groupRect(g),z=env.inner||env.box,x=z.minX,w=z.maxX-z.minX;
-    if(g.wallSide){const horizontal=g.wallSide==='bottom'||g.wallSide==='top',lo=horizontal?z.minX:z.minY,hi=horizontal?z.maxX:z.maxY;return g.objects.map(o=>{const v=localObjectRect(g,o),a=Math.max(horizontal?v.x:v.y,lo),b=Math.min(horizontal?v.x+v.w:v.y+v.h,hi);if(g.wallSide==='bottom')return {x:a,y:v.y+v.h,w:b-a,h:z.minY+width-v.y-v.h};if(g.wallSide==='top')return {x:a,y:z.maxY-width,w:b-a,h:v.y-z.maxY+width};if(g.wallSide==='left')return {x:v.x+v.w,y:a,w:z.minX+width-v.x-v.w,h:b-a};return {x:z.maxX-width,y:a,w:v.x-z.maxX+width,h:b-a};}).filter(v=>v.w>E&&v.h>E);}
+    if(g.wallSide){const horizontal=g.wallSide==='bottom'||g.wallSide==='top',lo=horizontal?z.minX:z.minY,hi=horizontal?z.maxX:z.maxY;return (g.kind==='ground'&&g.groundRows?g.groundRows.map(o=>({...o,dx:o.x,dy:o.y})):g.objects).map(o=>{const v=localObjectRect(g,o),a=Math.max(horizontal?v.x:v.y,lo),b=Math.min(horizontal?v.x+v.w:v.y+v.h,hi);if(g.wallSide==='bottom')return {x:a,y:v.y+v.h,w:b-a,h:z.minY+width-v.y-v.h};if(g.wallSide==='top')return {x:a,y:z.maxY-width,w:b-a,h:v.y-z.maxY+width};if(g.wallSide==='left')return {x:v.x+v.w,y:a,w:z.minX+width-v.x-v.w,h:b-a};return {x:z.maxX-width,y:a,w:v.x-z.maxX+width,h:b-a};}).filter(v=>v.w>E&&v.h>E);}
     const bottom={x,y:r.y-width,w,h:width},top={x,y:r.y+r.h,w,h:width};return g.paired?[bottom,top]:[bottom];
   }
   function endGangways(layout){

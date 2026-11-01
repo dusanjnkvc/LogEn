@@ -18,6 +18,7 @@ const D=LogEnDomain,L=LogEnLayout,O=LogEnOptimizer,settings={...D.createDefaultS
     assert.equal(layout.requiredPallets,count*6);assert.equal(layout.generatedRack,0);assert(layout.accommodatedPallets>=0&&layout.accommodatedPallets<=count*6);
     const objects=layout.groups.flatMap(g=>g.objects);assert.equal(new Set(objects.map(o=>o.id)).size,objects.length,'No duplicate physical positions');
     assert(objects.every(o=>o.quantity===3&&o.stacking===3),'Imported stacking stays intact');
+    const m=layout.metrics;assert(Math.abs(m.totalWarehouseArea-m.groundFootprint-m.rackFootprint-m.gangwayArea-m.mandatoryClearanceArea-m.obstacleArea-m.unusedUsableArea-m.unusableArea)<.02,'Storage and gangway areas do not overlap');
     const missing=layout.shortage;assert.equal(layout.accommodatedPallets+missing.pallets,count*6,'Every pallet must be placed or reported missing');
     summaries[orientation]={complete:layout.complete,accessValid:layout.accessValid,accommodatedPallets:layout.accommodatedPallets,generatedGround:layout.generatedGround,groups:layout.groups.length,unplaced:layout.unplaced.length,missingPallets:missing.pallets,groundFootprint:layout.metrics.groundFootprint,gangwayArea:layout.metrics.gangwayArea,validationErrors:layout.validationErrors};
   }

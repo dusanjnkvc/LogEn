@@ -8,7 +8,7 @@ const options={scale:1,boundaryId:'B',storageMode:'ground',allowWallStorage:fals
 global.ExcelJS=require('./vendor/exceljs.min.js');require('./workbook.js');
 const rectangle=r=>G.path(L.corners(r));
 function check(layout,plan,geo,s=settings){
- assert(layout.accessValid,JSON.stringify(layout.validationErrors));
+ assert(layout.accessValid,JSON.stringify(layout.validationErrors));const m=layout.metrics;assert(Math.abs(m.totalWarehouseArea-m.groundFootprint-m.rackFootprint-m.gangwayArea-m.mandatoryClearanceArea-m.obstacleArea-m.unusedUsableArea-m.unusableArea)<.02,'Storage, gangways and free areas must partition the building');
  assert.equal(layout.accommodatedPallets+layout.shortage.pallets,plan.rows.reduce((n,r)=>n+r.required,0));
  const all=layout.groups.flatMap(g=>g.objects);assert.equal(new Set(all.map(o=>o.id)).size,all.length);
  for(const group of layout.groups.filter(g=>g.kind==='ground')){
