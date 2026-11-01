@@ -23,6 +23,7 @@
   let state = { version: 3, projects: [], deletedProjects: [], activeId: null };
   let view = 'dashboard', query = '', invalidOnly = false, page = 0, busy = false, loadError = null, saveError = false;
   let toastTimer;
+  let viewerController=null,viewerRenderToken=0;
   let productionDrafts = {};
   let mismatchesOnly = false;
   const PAGE_SIZE = 30;
@@ -322,6 +323,7 @@
       LogEnLayoutUI.open({plan,settings,geometry,name:p.name,options:{...(p.implementation.greenfield?(p.implementation.greenfieldLayoutOptions||p.implementation.layoutOptions):(p.implementation.existingLayoutOptions||{})),existingMode:!p.implementation.greenfield,allowNewStorageConstruction:!p.implementation.greenfield&&!!p.implementation.allowNewStorageConstruction,existingRacks:p.implementation.existingRacks||[],storageMode:p.implementation.storageMode||"auto",storageOverrides:p.implementation.storageOverrides||{},allowWallStorage:!!p.implementation.allowWallStorage,racksAroundWalls:!!p.implementation.allowWallStorage,wallRackMode:p.implementation.wallRackMode||(p.implementation.racksAroundWalls?"all":"bottom"),wallStartSide:p.implementation.wallRackMode&&p.implementation.wallRackMode!=="all"?p.implementation.wallRackMode:p.implementation.wallStartSide||"left",groundStartVertical:p.implementation.groundStartVertical||"right",groundStartHorizontal:p.implementation.groundStartHorizontal||"top",warehouseOrientation:p.implementation.warehouseOrientation||'auto',backToBackSeparation:p.implementation.backToBackSeparation??0,wallClearance:p.implementation.wallClearance??0},saved,savedAlternatives:stored?.sourceKey===sourceKey?stored.alternatives:null,
         onSave:async({options,layout,alternatives})=>{
           if(p.implementation?.dwg?.uploadedAt!==stamp)throw new Error('The DWG changed. Reopen Create Layout.');
+          if(layout){layout.viewerRackBays=structuredClone(plan.rack.bayLayouts||[]);await drawingStore('readwrite',s=>s.put({sourceKey,layout:structuredClone(layout),optionsKey:JSON.stringify(options),viewerSource:{parts:structuredClone(p.parts),settings:structuredClone(settings),geometry:structuredClone(geometry)},generatedAt:new Date().toISOString()},viewerStorageKey(p)));}
           await drawingStore('readwrite',s=>s.put({sourceKey,layout,alternatives},physicalLayoutStorageKey(p)));
           p.implementation={...p.implementation,...(p.implementation.greenfield?{layoutOptions:options,greenfieldLayoutOptions:options}:{existingLayoutOptions:options})};p.updatedAt=new Date().toISOString();save();
         },
@@ -387,7 +389,20 @@
       (deleted.length?`<section class="deleted-projects"><div class="deleted-head"><div><h2>Deleted projects</h2><p>Restore a project with its inventory and warehouse settings.</p></div><span class="badge">${deleted.length} recoverable</span></div><div class="project-grid">${deleted.map(p=>`<article class="panel project-card deleted-project">${icon('trash')}<h2>${escape(p.name)}</h2><p>${count(p.parts.length)} part numbers · Deleted ${escape(new Date(p.deletedAt||p.updatedAt).toLocaleDateString('en-GB'))}</p><div class="actions"><button class="btn btn-secondary small" data-restore-project="${escape(p.id)}" aria-label="Restore ${escape(p.name)}">Restore project ${icon('arrow')}</button></div></article>`).join('')}</div></section>`:'')+
       `<section class="panel backup-panel"><div><h2>Take your workspace with you</h2><p>Back up every active and deleted project, including its settings, to a JSON file.</p></div><div class="actions"><button class="btn btn-secondary" data-action="backup">${icon('download')}Download backup</button><button class="btn btn-secondary" data-action="restore">${icon('upload')}Restore backup</button></div></section><div class="allocation-note">${icon('info')}<span>Projects are stored in this Chrome profile for this HTML file. Keep the file in the same location, and download a backup before clearing browser data, moving the file, or switching computers. Excel exports also include inputs and settings.</span></div>`;
   }
+  const viewerStorageKey=p=>p.id+(!p.implementation?.greenfield?':viewer:existing':':viewer:greenfield');
+  async function render3D(){
+    const token=viewerRenderToken,p=project();$('main').innerHTML=heading('WAREHOUSE EXPLORER','3D viewer','Explore the latest saved layout. Pallets and locations use the Warehouse Designer allocations.')+'<div id="viewer-host"><p class="muted">Loading saved warehouse layout…</p></div>';
+    try{
+      const plan=implementationPlan(),stamp=p.implementation?.dwg?.uploadedAt,sourceKey=LogEnLayout.sourceKey(plan,p.settings,p.implementation||{},stamp),snapshot=await drawingStore('readonly',s=>s.get(viewerStorageKey(p))),stored=snapshot||await drawingStore('readonly',s=>s.get(physicalLayoutStorageKey(p)));
+      if(token!==viewerRenderToken||view!=='viewer3d')return;
+      const host=$('viewer-host');if(!stored?.layout){host.innerHTML='<section class="panel implementation-panel"><h2>No generated layout yet</h2><p>Generate and save a layout in Warehouse Designer, then open 3D viewer.</p><button class="btn btn-primary" data-action="implementation">Open Warehouse Designer</button></section>';return;}
+      const options=p.implementation.greenfield?(p.implementation.greenfieldLayoutOptions||p.implementation.layoutOptions):(p.implementation.existingLayoutOptions||{}),stale=stored.sourceKey!==sourceKey||(snapshot&&JSON.stringify(options)!==snapshot.optionsKey),geometryMode=p.implementation.greenfield?'geometry':'geometry-existing';
+      if(stale||!snapshot?.viewerSource){const geometry=await drawingStore('readonly',s=>s.get(p.id+':geometry'));if(token!==viewerRenderToken||view!=='viewer3d')return;if(stale){host.innerHTML='<div class="notice error"><h2>3D model is outdated</h2><p>Parts, warehouse settings, drawing setup or the DWG changed. Generate and save an updated layout in Warehouse Designer before viewing it in 3D.</p><button class="btn btn-primary" data-action="implementation">Open Warehouse Designer</button></div>';return;}if(geometry?.stamp!==stamp||(geometry.mode||'geometry')!==geometryMode)throw new Error('Reopen Create Layout and save the current generated layout to retain its source drawing for 3D.');stored.viewerSource={parts:p.parts,settings:p.settings,geometry:geometry.value};stored.layout.viewerRackBays=plan.rack.bayLayouts||[];}
+      const model=LogEnViewerModel.build({layout:stored.layout,...stored.viewerSource,generatedAt:stored.generatedAt});if(token!==viewerRenderToken||view!=='viewer3d')return;host.innerHTML=(model.partial?'<div class="notice error">Partial layout: the viewer shows only allocated storage. Unplaced demand remains listed in Warehouse Designer.</div>':'')+'<div id="viewer-canvas-host"></div>';viewerController=LogEn3DViewer.open($('viewer-canvas-host'),model);
+    }catch(error){if(token===viewerRenderToken&&view==='viewer3d')$('viewer-host').innerHTML='<div class="notice error">'+escape(error.message)+'</div>';}
+  }
   function render() {
+    viewerRenderToken++;viewerController?.dispose();viewerController=null;
     if (loadError) return renderRecovery();
     const p=project();
     $('project-select').innerHTML=state.projects.map(p=>`<option value="${escape(p.id)}" ${p.id===state.activeId?'selected':''}>${escape(p.name)}</option>`).join('');
@@ -395,7 +410,7 @@
     $('nav-count').textContent=p.parts.length;
     document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===view));
     const c=calc();
-    if (view==='parts') renderParts(c); else if(view==='consumption') renderConsumption(c); else if(view==='projects') renderProjects(); else if(view==='implementation') renderImplementation(); else renderDashboard(c);
+    if(view==='viewer3d')render3D();else if (view==='parts') renderParts(c); else if(view==='consumption') renderConsumption(c); else if(view==='projects') renderProjects(); else if(view==='implementation') renderImplementation(); else renderDashboard(c);
   }
   function go(target) { if(busy)return;view=target;page=0;render();window.scrollTo({top:0,behavior:'instant'}); }
   async function newProject() {
@@ -531,6 +546,7 @@
         case 'import':$('excel-input').click();break;
         case 'template':await template();break;
         case 'export':await exportResults();break;
+        case 'implementation':go('implementation');break;
         case 'settings':await settings();break;
         case 'parts':go('parts');break;
         case 'consumption':go('consumption');break;

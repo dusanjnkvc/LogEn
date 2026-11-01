@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 source = ROOT / 'webapp'
 logo = 'data:image/png;base64,' + base64.b64encode((ROOT / 'assets/logen_logo.png').read_bytes()).decode('ascii')
 scripts = []
-for path in [source / 'vendor/exceljs.min.js', source / 'vendor/clipper.js', source / 'domain.js', source / 'workbook.js', source / 'editors.js', source / 'layout.js', source / 'layout-optimizer.js', source / 'existing-layout.js', source / 'layout-ui.js', source / 'output-zip.js', source / 'app.js']:
+for path in [source / 'vendor/exceljs.min.js', source / 'vendor/clipper.js', source / 'domain.js', source / 'workbook.js', source / 'editors.js', source / 'layout.js', source / 'layout-optimizer.js', source / 'existing-layout.js', source / 'layout-ui.js', source / 'viewer-model.js', source / 'vendor/viewer-3d.min.js', source / 'output-zip.js', source / 'app.js']:
     script = path.read_text(encoding='utf-8')
     script = re.sub(r'(?m)^//# sourceMappingURL=.*$', '', script)
     scripts.append(script.replace('</script', '<\\/script'))
@@ -33,3 +33,6 @@ with destination.open('a',encoding='utf-8') as output:
     output.write('\n<!-- Clipper license\n'+(source/'vendor/CLIPPER-LICENSE.txt').read_text(encoding='utf-8')+'\n'+(source/'vendor/JSBN-LICENSE.txt').read_text(encoding='utf-8')+'\n-->')
 
 print(f'Built {destination} ({destination.stat().st_size:,} bytes)')
+
+with destination.open('a',encoding='utf-8') as output:
+    output.write('\n<!-- Three.js — MIT License\n'+(source/'vendor/THREE-LICENSE.txt').read_text(encoding='utf-8')+'\n-->')

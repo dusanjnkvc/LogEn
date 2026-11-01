@@ -39,7 +39,7 @@
       const n=(ordinals.get(bay.typeId)||0)+1;ordinals.set(bay.typeId,n);
       if(!run||run.typeId!==bay.typeId||run.w+w>t.maxRackRunLength+EPS){run={id:`run:${bay.typeId}:${n}`,kind:'rack',typeId:bay.typeId,w:0,h,objects:[]};groups.push(run);}
       const allocations=bay.shelves.flatMap(sh=>sh.placements.map((p,i)=>({pn:p.partNumber,level:sh.level,position:i+1,length:p.length,depth:p.depth,x:p.x,y:p.y,z:p.z,height:p.height,depthRow:p.depthRow||1,stackLayer:p.stackLayer||1})));
-      run.objects.push({id:`rack:${bay.typeId}:${n}`,kind:'rack',dx:run.w,dy:0,w,h,rotation:0,bayNumber:bay.number,typeName:bay.typeName,typeId:bay.typeId,maxRunLength:t.maxRackRunLength,levels:t.rackLevels,structuralLength:t.rackStructuralLength,structuralDepth:t.rackStructuralDepth,allocations,pallets:allocations.length});run.w+=w;
+      run.objects.push({id:`rack:${bay.typeId}:${n}`,kind:'rack',dx:run.w,dy:0,w,h,rotation:0,bayNumber:bay.number,typeName:bay.typeName,typeId:bay.typeId,maxRunLength:t.maxRackRunLength,levels:t.rackLevels,shelves:bay.shelves,structuralLength:t.rackStructuralLength,structuralDepth:t.rackStructuralDepth,allocations,pallets:allocations.length});run.w+=w;
     }
     for(const row of plan.rows){
       if(!row.groundPallets)continue;
