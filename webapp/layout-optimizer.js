@@ -210,6 +210,36 @@
     for(const other of placed){if(other.id===g.id)continue;const fixed=cachedPlacement(other,env,settings.gangwayWidth),rr=fixed.r;if(sharedRowError(g,other,settings.gangwayWidth))return 'Ground storage beside a rack must fit within its row depth. Start a separate row for deeper ground storage.';if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||fixed.access.some(a=>core.overlaps(a,r)))return 'Storage or its required accessible face overlaps another storage block.';}
     return null;
   }
+  // Adjacent ground sections share one line, rather than reserving an aisle between them.
+  // A door, obstacle or main circulation route still prevents a join.
+  function compactGroundGroups(groups,env,settings){
+    let changed=true;
+    while(changed){changed=false;
+      search:for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
+        const a=groups[i],b=groups[j];
+        if(a.kind!=='ground'||b.kind!=='ground'||!!a.rotated!==!!b.rotated||a.wallSide!==b.wallSide||!!a.groundLane!==!!b.groundLane||!a.groundRows?.length||!b.groundRows?.length)continue;
+        if(!a.wallSide&&!a.groundLane)continue;
+        const rotated=!!a.rotated,cross=g=>rotated?g.x:g.y,along=g=>rotated?g.y:g.x;
+        if(Math.abs(cross(a)-cross(b))>E||Math.abs(a.h-b.h)>E||Math.abs((a.backY||0)-(b.backY||0))>E)continue;
+        const ordered=[a,b].sort((u,v)=>along(u)-along(v)),cursor={front:0,back:0,wall:0},groundRows=[],objects=[];
+        for(const g of ordered){const byRow=new Map();for(const o of g.objects){if(!byRow.has(o.groundRowId))byRow.set(o.groundRowId,[]);byRow.get(o.groundRowId).push(o);}
+          for(const row of [...g.groundRows].sort((u,v)=>u.x-v.x)){const x=cursor[row.side],items=byRow.get(row.id)||[];if(x===undefined||!items.length)continue;
+            groundRows.push({...row,x});for(const o of items)objects.push({...o,dx:o.dx-row.x+x});cursor[row.side]+=row.w;
+          }
+        }
+        if(objects.length!==a.objects.length+b.objects.length)continue;
+        const w=Math.max(...Object.values(cursor)),reverse=a.wallSide&&a.wallReverse,start=reverse?Math.max(along(a)+a.w,along(b)+b.w)-w:Math.min(along(a),along(b));
+        const merged={...a,w,objects,groundRows,[rotated?'y':'x']:start,...(a.groundLane?{centerLine:[[0,a.backY],[w,a.backY]],reservedBackRow:!cursor.front||!cursor.back}:{})};
+        const other=groups.filter((_,k)=>k!==i&&k!==j);
+        if(placementError(merged,other,env,settings))continue;
+        groups.splice(j,1);groups[i]=merged;changed=true;break search;
+      }
+    }
+  }
+  function compactGround(layout,plan,settings){
+    if(layout.version!==2)throw new Error('Ground line compaction requires a generated greenfield layout.');
+    compactGroundGroups(layout.groups,layout.env,settings);Object.assign(layout,validate(layout,plan,settings));return layout;
+  }
   async function pack(plan,settings,geometry,options,orientation,sx,sy,fraction,startOffset,source=L.makeObjects(plan,settings)){
     const env=environment(geometry,options,settings,orientation,sx,sy),groups=[],unplaced=[],blocks=makeBlocks(source,env,settings,options,fraction),g=settings.gangwayWidth;
     wallAccess(env,blocks,options,settings);
@@ -238,6 +268,7 @@
       if(result){groups.push(result);if(result.wallSide==='bottom'&&!options.racksAroundWalls){y=Math.max(y,result.y+result.h+g);x=left;band=0;}}else if(block.paired&&block.kind==='rack'){const a=block.objects.filter(o=>o.dy===0),b=block.objects.filter(o=>o.dy>0);for(const row of [a,b])if(row.length)blocks.push({...block,id:'single:'+row[0].id,paired:false,rows:1,separation:0,backY:0,h:row[0].h,w:row.reduce((n,o)=>n+o.w,0),objects:row.map(o=>({...o,dy:0})),wallSide:null});}else unplaced.push({...block,unplacedReason:lastError});
     }
     await placeGroundLanes(pendingGround,env,settings,options,orientation,groups,unplaced);
+    compactGroundGroups(groups,env,settings);
     if(options.allowWallStorage&&source.groups.some(g=>g.kind==='rack')&&!groups.some(g=>g.wallSide))env.errors.push({pn:'Wall storage',message:'A wall rack row could not be placed safely. Review the selected walls, obstacles and clearance.'});
     const layout={version:2,orientation,groups,unplaced,env,options:{...options},issues:[...source.issues,...env.errors],rackRequired:source.rackRequired,groundRequired:source.groundRequired,search:{sx,sy,rowFraction:fraction,startOffset},buildingAngle:buildingAngle(geometry.entities.find(e=>e.id===options.boundaryId).points),geometryUnverified:geometry.unreadableEntities||0};
     Object.assign(layout,validate(layout,plan,settings,source));return layout;
@@ -331,5 +362,5 @@
     if(rotated!==!!group.rotated)throw new Error('Use the other orientation candidate to rotate rack blocks while preserving their accessible faces.');
     const [lx,ly]=toLocal([x,y],group.frame),trial={...group,x:lx,y:ly},error=placementError(trial,layout.groups,layout.env,settings);if(error)throw new Error(error);Object.assign(group,trial);if(!layout.groups.includes(group)){layout.groups.push(group);layout.unplaced=layout.unplaced.filter(g=>g.id!==id);}Object.assign(layout,validate(layout,plan,settings));return layout;
   }
-  scope.LogEnOptimizer=Object.freeze({optimize,recommend,validate,move,placedObjects,groundMarkings,shortage,toWorld,toLocal,geometry:Object.freeze({path,points,area,union,diff,intersect,offset,fits}),buildingAngle});
+  scope.LogEnOptimizer=Object.freeze({optimize,recommend,validate,move,compactGround,placedObjects,groundMarkings,shortage,toWorld,toLocal,geometry:Object.freeze({path,points,area,union,diff,intersect,offset,fits}),buildingAngle});
 })(globalThis);
