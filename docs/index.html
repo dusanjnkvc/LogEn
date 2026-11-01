@@ -7895,7 +7895,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function createDefaultSettings() {
     return {
       rackTypeName: 'Rack type 1', rackTypes: [], stackingMode: 'legacy', manualStacking: 1, maxFloorStackingHeight: 5000, buildingHeight: 5000, maxFloorRowDepth: 5000,
-      gangwayWidth: 4500, floorPalletClearance: 100,
+      gangwayWidth: 4500, floorPalletClearance: 100, groundAllowRotation: false,
       rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
       rackSlotHeight: 1100, betweenBoxesAllowance: 0, rackStructuralLength: 150,
       rackStructuralDepth: 200, rackStructuralHeight: 150,
@@ -8185,7 +8185,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const allowedStacking = stackingSource==='height' ? maximumStacking : stackingSource==='imported' ? input.stacking : s.stackingMode==='manual' ? s.manualStacking : 1;
       const effectiveStacking = Math.min(allowedStacking, maximumStacking);
       const positions = effectiveStacking >= 1 ? ceilDivide(requiredPallets, effectiveStacking) : 0;
-      const floorRotated = s.maxFloorRowDepth > 0 && floor(s.maxFloorRowDepth / (input.length + s.floorPalletClearance)) < 1 && floor(s.maxFloorRowDepth / (input.width + s.floorPalletClearance)) >= 1;
+      const orientationArea=(depth,width)=>{const length=depth+s.floorPalletClearance,front=width+s.floorPalletClearance,capacity=s.maxFloorRowDepth===0?Math.max(positions,1):floor(s.maxFloorRowDepth/length);if(capacity<1)return Infinity;return ceilDivide(positions,capacity)*front*(Math.min(positions,capacity)*length+s.gangwayWidth/2);};
+      const floorRotated = (s.maxFloorRowDepth > 0 && floor(s.maxFloorRowDepth / (input.length + s.floorPalletClearance)) < 1 && floor(s.maxFloorRowDepth / (input.width + s.floorPalletClearance)) >= 1)||s.groundAllowRotation===true&&orientationArea(input.width,input.length)<orientationArea(input.length,input.width)-.001;
       const depthSide = floorRotated ? input.width : input.length;
       const frontageSide = floorRotated ? input.length : input.width;
       const floorLength = depthSide + s.floorPalletClearance;
@@ -8836,6 +8837,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         ['Gangway width', s.gangwayWidth, 'mm; full configured width'],
         ['Gangway allocation factor', 1, '100% for both floor and rack footprints'],
         ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
+        ['Ground storage rotation', s.groundAllowRotation===true?'Enabled':'Disabled', 'Optional 90-degree rotation for better ground fit; stacking and clearance unchanged'],
         ['Floor pallet clearance', s.floorPalletClearance, 'mm; full clearance added to both pallet L and W for ground storage only'],
         ['Floor storage total rounding', 'Sum of row areas rounded to two decimals', 'm²; independently valid floor rows, including rows with rack fit errors'],
         ['Legacy rack surface allowance (unused)', s.rackSurfaceAllowance ?? 4.125, 'm²; shelf footprint now uses usable length × depth'], ['Legacy rack pitch (unused)', s.rackPitch ?? 3300, 'mm; frontage now uses usable length + structural length'], ['Rack levels', s.rackLevels, 'levels'], ['Usable shelf length', s.rackSlotLength, 'mm'],
@@ -9322,6 +9324,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         field(floorGrid, 'maxFloorRowDepth', 'Maximum floor row depth · 0 = unrestricted');
         field(floorGrid, 'gangwayWidth', 'Gangway width');
         field(floorGrid, 'floorPalletClearance', 'Floor pallet clearance');
+        const groundRotation=$('input');groundRotation.type='checkbox';groundRotation.name='groundAllowRotation';groundRotation.checked=current.groundAllowRotation===true;
+        const groundRotationLabel=$('label','checkbox-field');groundRotationLabel.append(groundRotation,$('span','','Allow 90° rotation for better ground storage fit'));floor.append(groundRotationLabel);
+        floor.append($('p','muted','Compare both orientations in floor calculations and the layout. Stacking and clearance stay unchanged. When off, rotation is only used when necessary to fit the maximum floor row depth.'));
         floor.append($('p', 'muted formula-hint', 'Ground storage adds the full clearance to both pallet length and pallet width. Example: 100 mm changes 1200 × 800 to 1300 × 900 mm. If the length cannot fit the row depth, the pallet rotates 90° when its width plus clearance fits. A depth of 0 is unrestricted. Rack fit uses original dimensions.'));
         const gangwayHint = $('p', 'muted formula-hint');
         floor.append(gangwayHint);
@@ -9372,7 +9377,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         addType.addEventListener('click',()=>{if(cards.length>=19){errors.textContent='A project supports up to 20 rack types.';errors.hidden=false;return;}let n=2;const names=[rackName.input.value,...cards.map(c=>c.name.input.value)];while(names.includes('Rack type '+n))n++;addRackType({name:'Rack type '+n});update();});additional.append(addType);
         body.append(notice('Gangway-inclusive footprints are allocated planning estimates. Shared gangways must be counted once in a physical layout.'));
         primaryState();
-        const draft = () => ({ ...current, ...draftNumbers(fields), primaryRackEnabled:primaryEnabled,...optionValues(primaryOptions),rackTypeName:rackName.input.value.trim(), rackTypes:cards.map(c=>({id:c.id,name:c.name.input.value.trim(),...draftNumbers(c.inputs),...optionValues(c.options)})), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, stackabilityEnabled: current.stackabilityEnabled });
+        const draft = () => ({ ...current, ...draftNumbers(fields), groundAllowRotation:groundRotation.checked, primaryRackEnabled:primaryEnabled,...optionValues(primaryOptions),rackTypeName:rackName.input.value.trim(), rackTypes:cards.map(c=>({id:c.id,name:c.name.input.value.trim(),...draftNumbers(c.inputs),...optionValues(c.options)})), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, stackabilityEnabled: current.stackabilityEnabled });
         const update = () => {
           const settings = draft();
           const heightInfo=(target,t)=>{const required=globalThis.LogEnDomain.rackHeight(t),valid=Number.isFinite(required)&&Number.isFinite(settings.buildingHeight)&&t.rackSlotHeight+t.rackStructuralHeight>0;target.textContent=valid?`${t.name||'Rack'} · ${display(required)} mm total height · Building height ${display(settings.buildingHeight)} mm · ${globalThis.LogEnDomain.rackFitsBuilding({...t,buildingHeight:settings.buildingHeight})?'Fits':'Does not fit'} · maximum ${Math.floor(settings.buildingHeight/(t.rackSlotHeight+t.rackStructuralHeight))} levels.`:'Enter valid rack heights, levels and Building height.';target.className='rack-height-status '+(valid&&globalThis.LogEnDomain.rackFitsBuilding({...t,buildingHeight:settings.buildingHeight})?'muted':'notice error');};
@@ -9381,6 +9386,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           gangwayHint.textContent = `Allocated gangway width = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm physical width. Both allocations use half a shared gangway.`;
         };
         for (const input of Object.values(fields)) input.input.addEventListener('input', update);
+        groundRotation.addEventListener('change',update);
         shifts.addEventListener('change', update); coverage.addEventListener('change', update);
         update();
         return {
@@ -9639,7 +9645,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   const overlaps=(a,b,g=0)=>a.x<b.x+b.w+g-EPS&&a.x+a.w+g>b.x+EPS&&a.y<b.y+b.h+g-EPS&&a.y+a.h+g>b.y+EPS;
   const expand=(r,g)=>({x:r.x-g,y:r.y-g,w:r.w+2*g,h:r.h+2*g});
   const rectFromBounds=b=>({x:b.minX,y:b.minY,w:Math.max(EPS,b.maxX-b.minX),h:Math.max(EPS,b.maxY-b.minY)});
-  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,existingMode:!config.greenfield,allowNewStorageConstruction:!config.greenfield&&!!config.allowNewStorageConstruction,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:17,wallRackMode:config.wallRackMode||(config.racksAroundWalls?"all":"bottom"),allWalls:!!config.racksAroundWalls,groundStartVertical:config.groundStartVertical||"right",groundStartHorizontal:config.groundStartHorizontal||"top",wallStartSide:config.wallStartSide||"left",orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
+  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,existingMode:!config.greenfield,allowNewStorageConstruction:!config.greenfield&&!!config.allowNewStorageConstruction,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:18,wallRackMode:config.wallRackMode||(config.racksAroundWalls?"all":"bottom"),allWalls:!!config.racksAroundWalls,groundStartVertical:config.groundStartVertical||"right",groundStartHorizontal:config.groundStartHorizontal||"top",wallStartSide:config.wallStartSide||"left",orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
   function makeObjects(plan,settings){
     const groups=[],issues=[];let rackRequired=0,groundRequired=0;
     for(const row of plan.rows){if(row.errors.length||row.required===null)issues.push({pn:row.input.partNumber,message:row.errors.join(' ')||'Required quantity is unavailable.'});rackRequired+=row.rackPallets||0;}
@@ -9855,9 +9861,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return groups;
   }
   // Dedicated PN rows share a straight back line; each side fills its frontage before a new lane.
-  function splitGroundRows(rows,depth,clearance){
+  function rotateGroundRow(row,clearance){const objects=row.objects.map((o,k)=>({...o,w:o.h,h:o.w,rotation:(o.rotation+90)%360,dx:clearance/2,dy:k*(o.w+clearance)+clearance/2}));return {...row,w:objects[0].w+clearance,h:objects.length*(objects[0].h+clearance),objects};}
+  function splitGroundRows(rows,depth,clearance,allowRotation=false){
     const usable=[],oversize=[];
-    for(const row of rows){const first=row.objects[0];if(!first)continue;const step=first.h+clearance,capacity=Math.floor((depth+E)/step);
+    for(const original of rows){let row=original;const firstInput=row.objects[0];if(!firstInput)continue;
+      if(allowRotation){const turned=rotateGroundRow(row,clearance),cost=r=>{const cap=Math.floor((depth+E)/(r.objects[0].h+clearance));return cap>0?Math.ceil(r.objects.length/cap)*(r.objects[0].w+clearance):Infinity;};if(cost(turned)<cost(row)-E)row=turned;}
+      const first=row.objects[0],step=first.h+clearance,capacity=Math.floor((depth+E)/step);
       if(capacity<1){oversize.push(row);continue;}
       for(let start=0;start<row.objects.length;start+=capacity){const items=row.objects.slice(start,start+capacity),id='ground-row:'+items[0].pn+':'+items[0].position;
         usable.push({...row,id,w:first.w+clearance,h:items.length*step,groundPending:false,objects:items.map((o,k)=>({...o,dx:clearance/2,dy:k*step+clearance/2}))});
@@ -9865,9 +9874,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     return {usable,oversize};
   }
-  function fillGroundLane(rows,width,depth,env,serial){
+  function fillGroundLane(rows,width,depth,env,serial,allowRotation=false,clearance=0){
     const used=new Set(),objects=[],groundRows=[],cursor=[0,0];
-    for(const row of rows){let side=cursor[0]<=cursor[1]?0:1;if(cursor[side]+row.w>width+E)side=1-side;if(cursor[side]+row.w>width+E)continue;
+    for(const original of rows){let row=original,side=cursor[0]<=cursor[1]?0:1;if(cursor[side]+row.w>width+E)side=1-side;if(cursor[side]+row.w>width+E){if(!allowRotation)continue;const turned=rotateGroundRow(row,clearance);if(turned.h>depth+E)continue;if(cursor[side]+turned.w>width+E)side=1-side;if(cursor[side]+turned.w>width+E)continue;row=turned;}
       const x=cursor[side],face=side?'back':'front';
       groundRows.push({id:row.id,x,y:side?depth:depth-row.h,w:row.w,h:row.h,side:face,objectIds:row.objects.map(o=>o.id)});
       for(const o of row.objects)objects.push({...o,dx:x+o.dx,dy:side?depth+o.dy:depth-o.dy-o.h,groundRowId:row.id,groundFace:face});
@@ -9898,11 +9907,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       await tick();let chosen=null;
       const actualDepths=remaining.map(r=>(remaining.length===1?Math.ceil(r.objects.length/2):r.objects.length)*(r.objects[0].h+clearance)),singleDepths=remaining.map(r=>r.objects[0].h+clearance),maximum=Math.min(limit,physicalDepth,Math.max(...actualDepths)),depths=[...new Set([maximum,Math.min(maximum,Math.max(...singleDepths)),Math.min(maximum,Math.min(...singleDepths))])].filter(d=>d>0);
       searchLane:for(const depth of depths){
-        const {usable,oversize}=splitGroundRows(remaining,depth,clearance);if(!usable.length)continue;
+        const {usable,oversize}=splitGroundRows(remaining,depth,clearance,settings.groundAllowRotation===true);if(!usable.length)continue;
         const occupied=[...env.obstacles.map(o=>o.bounds),...env.doors.map(o=>o.bounds),...groups.map(groupRect)],ys=[bottom,top-2*depth,...occupied.flatMap(r=>[r.y+r.h+gap,r.y-2*depth-gap]),...env.poly.flatMap(p=>[p[1]+gap,p[1]-2*depth-gap])].filter(y=>y>=bottom-E&&y+2*depth<=top+E).sort((a,b)=>direction>0?b-a:a-b);
         for(const y of [...new Set(ys)]){
           await tick();for(const [x,end]of groundLaneIntervals(y,depth,left,right,groups,env,settings)){
-            const filled=fillGroundLane(usable,end-x,depth,env,serial);if(!filled)continue;
+            const filled=fillGroundLane(usable,end-x,depth,env,serial,settings.groundAllowRotation===true,clearance);if(!filled)continue;
             const group={...filled.group,x,y};if(placementError(group,groups,env,settings))continue;
             chosen={group,remaining:[...usable.filter(row=>!filled.used.has(row.id)),...oversize]};break searchLane;
           }

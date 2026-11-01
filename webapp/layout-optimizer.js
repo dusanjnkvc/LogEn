@@ -81,9 +81,12 @@
     return groups;
   }
   // Dedicated PN rows share a straight back line; each side fills its frontage before a new lane.
-  function splitGroundRows(rows,depth,clearance){
+  function rotateGroundRow(row,clearance){const objects=row.objects.map((o,k)=>({...o,w:o.h,h:o.w,rotation:(o.rotation+90)%360,dx:clearance/2,dy:k*(o.w+clearance)+clearance/2}));return {...row,w:objects[0].w+clearance,h:objects.length*(objects[0].h+clearance),objects};}
+  function splitGroundRows(rows,depth,clearance,allowRotation=false){
     const usable=[],oversize=[];
-    for(const row of rows){const first=row.objects[0];if(!first)continue;const step=first.h+clearance,capacity=Math.floor((depth+E)/step);
+    for(const original of rows){let row=original;const firstInput=row.objects[0];if(!firstInput)continue;
+      if(allowRotation){const turned=rotateGroundRow(row,clearance),cost=r=>{const cap=Math.floor((depth+E)/(r.objects[0].h+clearance));return cap>0?Math.ceil(r.objects.length/cap)*(r.objects[0].w+clearance):Infinity;};if(cost(turned)<cost(row)-E)row=turned;}
+      const first=row.objects[0],step=first.h+clearance,capacity=Math.floor((depth+E)/step);
       if(capacity<1){oversize.push(row);continue;}
       for(let start=0;start<row.objects.length;start+=capacity){const items=row.objects.slice(start,start+capacity),id='ground-row:'+items[0].pn+':'+items[0].position;
         usable.push({...row,id,w:first.w+clearance,h:items.length*step,groundPending:false,objects:items.map((o,k)=>({...o,dx:clearance/2,dy:k*step+clearance/2}))});
@@ -91,9 +94,9 @@
     }
     return {usable,oversize};
   }
-  function fillGroundLane(rows,width,depth,env,serial){
+  function fillGroundLane(rows,width,depth,env,serial,allowRotation=false,clearance=0){
     const used=new Set(),objects=[],groundRows=[],cursor=[0,0];
-    for(const row of rows){let side=cursor[0]<=cursor[1]?0:1;if(cursor[side]+row.w>width+E)side=1-side;if(cursor[side]+row.w>width+E)continue;
+    for(const original of rows){let row=original,side=cursor[0]<=cursor[1]?0:1;if(cursor[side]+row.w>width+E)side=1-side;if(cursor[side]+row.w>width+E){if(!allowRotation)continue;const turned=rotateGroundRow(row,clearance);if(turned.h>depth+E)continue;if(cursor[side]+turned.w>width+E)side=1-side;if(cursor[side]+turned.w>width+E)continue;row=turned;}
       const x=cursor[side],face=side?'back':'front';
       groundRows.push({id:row.id,x,y:side?depth:depth-row.h,w:row.w,h:row.h,side:face,objectIds:row.objects.map(o=>o.id)});
       for(const o of row.objects)objects.push({...o,dx:x+o.dx,dy:side?depth+o.dy:depth-o.dy-o.h,groundRowId:row.id,groundFace:face});
@@ -124,11 +127,11 @@
       await tick();let chosen=null;
       const actualDepths=remaining.map(r=>(remaining.length===1?Math.ceil(r.objects.length/2):r.objects.length)*(r.objects[0].h+clearance)),singleDepths=remaining.map(r=>r.objects[0].h+clearance),maximum=Math.min(limit,physicalDepth,Math.max(...actualDepths)),depths=[...new Set([maximum,Math.min(maximum,Math.max(...singleDepths)),Math.min(maximum,Math.min(...singleDepths))])].filter(d=>d>0);
       searchLane:for(const depth of depths){
-        const {usable,oversize}=splitGroundRows(remaining,depth,clearance);if(!usable.length)continue;
+        const {usable,oversize}=splitGroundRows(remaining,depth,clearance,settings.groundAllowRotation===true);if(!usable.length)continue;
         const occupied=[...env.obstacles.map(o=>o.bounds),...env.doors.map(o=>o.bounds),...groups.map(groupRect)],ys=[bottom,top-2*depth,...occupied.flatMap(r=>[r.y+r.h+gap,r.y-2*depth-gap]),...env.poly.flatMap(p=>[p[1]+gap,p[1]-2*depth-gap])].filter(y=>y>=bottom-E&&y+2*depth<=top+E).sort((a,b)=>direction>0?b-a:a-b);
         for(const y of [...new Set(ys)]){
           await tick();for(const [x,end]of groundLaneIntervals(y,depth,left,right,groups,env,settings)){
-            const filled=fillGroundLane(usable,end-x,depth,env,serial);if(!filled)continue;
+            const filled=fillGroundLane(usable,end-x,depth,env,serial,settings.groundAllowRotation===true,clearance);if(!filled)continue;
             const group={...filled.group,x,y};if(placementError(group,groups,env,settings))continue;
             chosen={group,remaining:[...usable.filter(row=>!filled.used.has(row.id)),...oversize]};break searchLane;
           }

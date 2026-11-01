@@ -6,7 +6,7 @@
   function createDefaultSettings() {
     return {
       rackTypeName: 'Rack type 1', rackTypes: [], stackingMode: 'legacy', manualStacking: 1, maxFloorStackingHeight: 5000, buildingHeight: 5000, maxFloorRowDepth: 5000,
-      gangwayWidth: 4500, floorPalletClearance: 100,
+      gangwayWidth: 4500, floorPalletClearance: 100, groundAllowRotation: false,
       rackSurfaceAllowance: 4.125, rackPitch: 3300, rackLevels: 4, rackSlotLength: 2700, rackSlotDepth: 1200,
       rackSlotHeight: 1100, betweenBoxesAllowance: 0, rackStructuralLength: 150,
       rackStructuralDepth: 200, rackStructuralHeight: 150,
@@ -296,7 +296,8 @@
       const allowedStacking = stackingSource==='height' ? maximumStacking : stackingSource==='imported' ? input.stacking : s.stackingMode==='manual' ? s.manualStacking : 1;
       const effectiveStacking = Math.min(allowedStacking, maximumStacking);
       const positions = effectiveStacking >= 1 ? ceilDivide(requiredPallets, effectiveStacking) : 0;
-      const floorRotated = s.maxFloorRowDepth > 0 && floor(s.maxFloorRowDepth / (input.length + s.floorPalletClearance)) < 1 && floor(s.maxFloorRowDepth / (input.width + s.floorPalletClearance)) >= 1;
+      const orientationArea=(depth,width)=>{const length=depth+s.floorPalletClearance,front=width+s.floorPalletClearance,capacity=s.maxFloorRowDepth===0?Math.max(positions,1):floor(s.maxFloorRowDepth/length);if(capacity<1)return Infinity;return ceilDivide(positions,capacity)*front*(Math.min(positions,capacity)*length+s.gangwayWidth/2);};
+      const floorRotated = (s.maxFloorRowDepth > 0 && floor(s.maxFloorRowDepth / (input.length + s.floorPalletClearance)) < 1 && floor(s.maxFloorRowDepth / (input.width + s.floorPalletClearance)) >= 1)||s.groundAllowRotation===true&&orientationArea(input.width,input.length)<orientationArea(input.length,input.width)-.001;
       const depthSide = floorRotated ? input.width : input.length;
       const frontageSide = floorRotated ? input.length : input.width;
       const floorLength = depthSide + s.floorPalletClearance;

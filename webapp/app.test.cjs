@@ -55,6 +55,9 @@ test('Building height settings migrate separately and preview six rack levels',a
   assert.equal(ui.state().projects[0].settings.maxFloorStackingHeight,3000);
   assert.equal(ui.state().projects[0].settings.rackLevels,6);assert.deepEqual(ui.errors,[]);
 });
+test('Ground rotation checkbox saves per project and restores in settings',async t=>{
+ const ui=boot(t);ui.click('#settings-nav');const selector='dialog input[name="groundAllowRotation"]';assert.equal(ui.$(selector).checked,false);ui.click(selector);ui.submit();await until(()=>ui.state().projects[0].settings.groundAllowRotation===true,'ground rotation save');ui.click('#settings-nav');assert.equal(ui.$(selector).checked,true);assert.deepEqual(ui.errors,[]);
+});
 function boot(t, initial = workspace()) {
   const errors = [];
   const console = new VirtualConsole();

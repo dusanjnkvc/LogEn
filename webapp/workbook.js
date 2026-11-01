@@ -345,6 +345,7 @@
         ['Gangway width', s.gangwayWidth, 'mm; full configured width'],
         ['Gangway allocation factor', 1, '100% for both floor and rack footprints'],
         ['Allocated gangway width (100%)', global.LogEnDomain.allocatedGangwayWidth(s), 'mm; configured gangway width'],
+        ['Ground storage rotation', s.groundAllowRotation===true?'Enabled':'Disabled', 'Optional 90-degree rotation for better ground fit; stacking and clearance unchanged'],
         ['Floor pallet clearance', s.floorPalletClearance, 'mm; full clearance added to both pallet L and W for ground storage only'],
         ['Floor storage total rounding', 'Sum of row areas rounded to two decimals', 'm²; independently valid floor rows, including rows with rack fit errors'],
         ['Legacy rack surface allowance (unused)', s.rackSurfaceAllowance ?? 4.125, 'm²; shelf footprint now uses usable length × depth'], ['Legacy rack pitch (unused)', s.rackPitch ?? 3300, 'mm; frontage now uses usable length + structural length'], ['Rack levels', s.rackLevels, 'levels'], ['Usable shelf length', s.rackSlotLength, 'mm'],

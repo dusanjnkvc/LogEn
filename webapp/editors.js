@@ -323,6 +323,9 @@
         field(floorGrid, 'maxFloorRowDepth', 'Maximum floor row depth · 0 = unrestricted');
         field(floorGrid, 'gangwayWidth', 'Gangway width');
         field(floorGrid, 'floorPalletClearance', 'Floor pallet clearance');
+        const groundRotation=$('input');groundRotation.type='checkbox';groundRotation.name='groundAllowRotation';groundRotation.checked=current.groundAllowRotation===true;
+        const groundRotationLabel=$('label','checkbox-field');groundRotationLabel.append(groundRotation,$('span','','Allow 90° rotation for better ground storage fit'));floor.append(groundRotationLabel);
+        floor.append($('p','muted','Compare both orientations in floor calculations and the layout. Stacking and clearance stay unchanged. When off, rotation is only used when necessary to fit the maximum floor row depth.'));
         floor.append($('p', 'muted formula-hint', 'Ground storage adds the full clearance to both pallet length and pallet width. Example: 100 mm changes 1200 × 800 to 1300 × 900 mm. If the length cannot fit the row depth, the pallet rotates 90° when its width plus clearance fits. A depth of 0 is unrestricted. Rack fit uses original dimensions.'));
         const gangwayHint = $('p', 'muted formula-hint');
         floor.append(gangwayHint);
@@ -373,7 +376,7 @@
         addType.addEventListener('click',()=>{if(cards.length>=19){errors.textContent='A project supports up to 20 rack types.';errors.hidden=false;return;}let n=2;const names=[rackName.input.value,...cards.map(c=>c.name.input.value)];while(names.includes('Rack type '+n))n++;addRackType({name:'Rack type '+n});update();});additional.append(addType);
         body.append(notice('Gangway-inclusive footprints are allocated planning estimates. Shared gangways must be counted once in a physical layout.'));
         primaryState();
-        const draft = () => ({ ...current, ...draftNumbers(fields), primaryRackEnabled:primaryEnabled,...optionValues(primaryOptions),rackTypeName:rackName.input.value.trim(), rackTypes:cards.map(c=>({id:c.id,name:c.name.input.value.trim(),...draftNumbers(c.inputs),...optionValues(c.options)})), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, stackabilityEnabled: current.stackabilityEnabled });
+        const draft = () => ({ ...current, ...draftNumbers(fields), groundAllowRotation:groundRotation.checked, primaryRackEnabled:primaryEnabled,...optionValues(primaryOptions),rackTypeName:rackName.input.value.trim(), rackTypes:cards.map(c=>({id:c.id,name:c.name.input.value.trim(),...draftNumbers(c.inputs),...optionValues(c.options)})), shiftsPerDay: Number(shifts.value), coverageMode: coverage.value, stackabilityEnabled: current.stackabilityEnabled });
         const update = () => {
           const settings = draft();
           const heightInfo=(target,t)=>{const required=globalThis.LogEnDomain.rackHeight(t),valid=Number.isFinite(required)&&Number.isFinite(settings.buildingHeight)&&t.rackSlotHeight+t.rackStructuralHeight>0;target.textContent=valid?`${t.name||'Rack'} · ${display(required)} mm total height · Building height ${display(settings.buildingHeight)} mm · ${globalThis.LogEnDomain.rackFitsBuilding({...t,buildingHeight:settings.buildingHeight})?'Fits':'Does not fit'} · maximum ${Math.floor(settings.buildingHeight/(t.rackSlotHeight+t.rackStructuralHeight))} levels.`:'Enter valid rack heights, levels and Building height.';target.className='rack-height-status '+(valid&&globalThis.LogEnDomain.rackFitsBuilding({...t,buildingHeight:settings.buildingHeight})?'muted':'notice error');};
@@ -382,6 +385,7 @@
           gangwayHint.textContent = `Allocated gangway width = ${display(globalThis.LogEnDomain.allocatedGangwayWidth(settings))} mm physical width. Both allocations use half a shared gangway.`;
         };
         for (const input of Object.values(fields)) input.input.addEventListener('input', update);
+        groundRotation.addEventListener('change',update);
         shifts.addEventListener('change', update); coverage.addEventListener('change', update);
         update();
         return {
