@@ -543,6 +543,7 @@
       groundInvalid:groundRows.filter(r=>!r.isFloorValid),rackInvalid:rack.results.filter(r=>!r.isRackValid)};
   }
   function calculateImplementation(parts,settings,config={},category=null){
+    if(config.greenfield&&config.storageMode==='ground')settings={...settings,stackingMode:'imported'};
     const base=calculateProject(parts,settings,category),errors=[...base.settingsErrors],types=configuredRackTypes({...createDefaultSettings(),...settings}),limits={};
     if((config.storageMode&&config.storageMode!=='auto')||Object.keys(config.storageOverrides||{}).length){
       const original=calculateImplementation(parts,settings,{...config,storageMode:'auto',storageOverrides:{}},category);if(!original.available)return original;
