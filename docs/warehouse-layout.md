@@ -42,3 +42,6 @@ After generation, on opening a saved partial layout, and when selecting an incom
 ## Wall-first placement correction
 
 With Allowed storing on the wall enabled, the first rack row is anchored to a clear boundary wall with only the configured wall clearance. If no wall is selected, the optimizer tries a boundary wall automatically; selecting a specific wall restricts that choice. Doors and blocked areas still prevent placement. The cross aisle begins after the wall-row depth, so it no longer leaves a hidden end-aisle strip beside that row. The next interior rack block starts after exactly one configured gangway. With wall storage disabled, perimeter gangway behavior is unchanged. Regenerate older layouts to apply this correction.
+
+
+Ground-layout search performance: fixed placed-group rectangles/access strips are reused; rejected non-wall ground poses are reused within a candidate while occupied storage grows. Rectangular region checks use the same 0.1 mm coordinate grid and area tolerance as the polygon engine; concave shapes, holes and negative-size rectangles retain polygon clipping. Source rows are reused in validation/shortage accounting. Wall ground rows keep their successful wall pose and their individual pallet coordinates. Search still compares both orientations, retains imported stacking, validates access and reports all unplaced inventory.

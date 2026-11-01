@@ -11,8 +11,13 @@
   const rect=r=>path(L.corners(r));
   function oriented(p){const q=path(p);if(!C.Clipper.Orientation(q))q.reverse();return q;}
   const polygonArea=ps=>area(ps)/1e6;
-  const collide=(r,ps)=>area(intersect([rect(r)],ps))>E;
-  const fits=(r,ps)=>area(diff([rect(r)],ps))<E;
+  // Exact shortcut for the common rectangular boundary; retain clipping for holes/concave regions.
+  const regionCache=new WeakMap();
+  function regionInfo(ps){let info=regionCache.get(ps);if(info)return info;const b={minX:Infinity,maxX:-Infinity,minY:Infinity,maxY:-Infinity};for(const ring of ps)for(const p of ring){b.minX=Math.min(b.minX,p.X);b.maxX=Math.max(b.maxX,p.X);b.minY=Math.min(b.minY,p.Y);b.maxY=Math.max(b.maxY,p.Y);}const p=ps[0];const simple=ps.length===1&&p.length===4&&C.Clipper.Area(p)>0&&p.every((v,i)=>v.X===p[(i+1)%4].X||v.Y===p[(i+1)%4].Y);info={b,simple};regionCache.set(ps,info);return info;}
+  function rectangleArea(r,b){const x=Math.round(r.x*S),y=Math.round(r.y*S),right=Math.round((r.x+r.w)*S),top=Math.round((r.y+r.h)*S);return {total:(right-x)*(top-y)/(S*S),overlap:Math.max(0,Math.min(right,b.maxX)-Math.max(x,b.minX))*Math.max(0,Math.min(top,b.maxY)-Math.max(y,b.minY))/(S*S)};}
+  function collide(r,ps){if(r.w<0||r.h<0)return area(intersect([rect(r)],ps))>E;if(!ps.length)return false;const {b,simple}=regionInfo(ps),a=rectangleArea(r,b);if(a.overlap<=E)return false;return simple?a.overlap>E:area(intersect([rect(r)],ps))>E;}
+  function fits(r,ps){if(r.w<0||r.h<0)return area(diff([rect(r)],ps))<E;if(!ps.length)return false;const {b,simple}=regionInfo(ps);if(simple){const a=rectangleArea(r,b);return a.total-a.overlap<E;}return area(diff([rect(r)],ps))<E;}
+
   const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
   const toWorld=(p,f)=>{const c=Math.cos(f.angle),s=Math.sin(f.angle),x=p[0]*f.sx,y=p[1]*f.sy;return [x*c-y*s,x*s+y*c];};
   const toLocal=(p,f)=>{const c=Math.cos(f.angle),s=Math.sin(f.angle);return [Math.round((p[0]*c+p[1]*s)*f.sx*S)/S,Math.round((-p[0]*s+p[1]*c)*f.sy*S)/S];};
@@ -43,7 +48,7 @@
   function wallPose(group,env,options){
     const b=env.box,c=options.wallClearance,side=group.wallSide,g={...group},position=g.wallReverse?g.wallLimit-g.wallOffset-g.w:g.wallOffset;
     g.rotated=side==='left'||side==='right';
-    g.objects=g.objects.map(o=>({...o,dy:side==='top'||side==='left'?g.h-o.h:0}));
+    if(g.kind!=='ground')g.objects=g.objects.map(o=>({...o,dy:side==='top'||side==='left'?g.h-o.h:0}));
     if(g.rotated){g.x=side==='left'?b.minX+c:b.maxX-c-g.h;g.y=g.wallStart+position;}
     else{g.x=b.minX+c+(g.wallStart||0)+position;g.y=side==='bottom'?b.minY+c:b.maxY-c-g.h;}
     return g;
@@ -134,12 +139,14 @@
     }
     return false;
   }
+  const placedGeometry=new WeakMap();
+  function cachedPlacement(g,env,width){let byGroup=placedGeometry.get(env);if(!byGroup){byGroup=new WeakMap();placedGeometry.set(env,byGroup);}const signature=[g.x,g.y,g.w,g.h,g.rotated,g.wallSide,g.kind,g.paired,g.backY,width,env.inner?.minX,env.inner?.maxX,env.inner?.minY,env.inner?.maxY].join(':');let value=byGroup.get(g);if(!value||value.signature!==signature||value.objects!==g.objects){value={signature,objects:g.objects,r:groupRect(g),access:accessFor(g,env,width)};byGroup.set(g,value);}return value;}
   function placementError(g,placed,env,settings){
     const r=groupRect(g),access=accessFor(g,env,settings.gangwayWidth);
     if(!fits(r,env.zone))return 'Storage crosses the storage zone, boundary or mandatory clearance.';
     if(collide(r,env.baseAccess))return 'Storage blocks a circulation route.';
     for(const a of access)if(!fits(a,env.boundary)||collide(a,env.blocked))return 'A full-width access gangway is obstructed or leaves the warehouse.';
-    for(const other of placed){if(other.id===g.id)continue;const rr=groupRect(other);if(sharedRowError(g,other,settings.gangwayWidth))return 'Ground storage beside a rack must fit within its row depth. Start a separate row for deeper ground storage.';if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||accessFor(other,env,settings.gangwayWidth).some(a=>core.overlaps(a,r)))return 'Storage or its required accessible face overlaps another storage block.';}
+    for(const other of placed){if(other.id===g.id)continue;const fixed=cachedPlacement(other,env,settings.gangwayWidth),rr=fixed.r;if(sharedRowError(g,other,settings.gangwayWidth))return 'Ground storage beside a rack must fit within its row depth. Start a separate row for deeper ground storage.';if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||fixed.access.some(a=>core.overlaps(a,r)))return 'Storage or its required accessible face overlaps another storage block.';}
     return null;
   }
   async function pack(plan,settings,geometry,options,orientation,sx,sy,fraction,startOffset,source=L.makeObjects(plan,settings)){
@@ -147,14 +154,15 @@
     wallAccess(env,blocks,options,settings);
     const wallDepth=Math.max(0,...blocks.filter(b=>b.wallSide==='bottom').map(b=>b.h));
     let y=env.inner.minY+g+(wallDepth||options.racksAroundWalls?0:startOffset),x=env.inner.minX+g,band=0;
-    const left=x,right=env.inner.maxX-g,top=env.inner.maxY;
+    const left=x,right=env.inner.maxX-g,top=env.inner.maxY,rejected=new Map();let lastYield=Date.now();
     for(let i=0;i<blocks.length;i++){
       if(i%32===0)await tick();const block=blocks[i];let result=null,lastError="No remaining valid storage band.";
       if(block.wallSide&&options.racksAroundWalls){const trial=wallPose(block,env,options);lastError=placementError(trial,groups,env,settings);if(!lastError)result=trial;}else if(block.wallSide){const starts=[env.box.minX+options.wallClearance,env.box.maxX-options.wallClearance-block.w,...env.obstacles.map(o=>o.bounds.x+o.bounds.w+options.obstacleClearance)];for(const wallX of starts){const trial={...block,x:wallX,y:block.wallSide==='bottom'?env.box.minY+options.wallClearance:env.box.maxY-options.wallClearance-block.h};lastError=placementError(trial,groups,env,settings);if(!lastError){result=trial;break;}}}
       const groundSide=orientation==='vertical'?options.groundStartVertical:options.groundStartHorizontal;
-      if(block.kind==='ground'&&groundSide){
+      if(!result&&!block.wallSide&&block.kind==='ground'&&groundSide){
         const angle=buildingAngle(env.poly.map(p=>toWorld(p,env.frame))),v=groundSide==='right'?[1,0]:groundSide==='left'?[-1,0]:groundSide==='top'?[0,1]:[0,-1],c=Math.cos(angle),sn=Math.sin(angle),direction=toLocal([v[0]*c-v[1]*sn,v[0]*sn+v[1]*c],env.frame)[1],occupied=[...env.obstacles.map(o=>o.bounds),...env.doors.map(o=>o.bounds),...groups.map(groupRect)],ys=[env.inner.minY+g,top-block.h-g,...occupied.flatMap(r=>[r.y,r.y+r.h-block.h,r.y+r.h+g,r.y-block.h-g])].filter(v=>v>=env.inner.minY+g-E&&v+block.h<=top-g+E).sort((a,b)=>direction>0?b-a:a-b),xs=[left,...occupied.flatMap(r=>[r.x+r.w+options.obstacleClearance,r.x+r.w+g,r.x-block.w-g])].filter(v=>v>=left-E&&v+block.w<=right+E).sort((a,b)=>a-b);
-        searchGround:for(const py of [...new Set(ys)])for(const px of [...new Set(xs)]){const trial={...block,wallSide:null,x:px,y:py};lastError=placementError(trial,groups,env,settings);if(!lastError){result=trial;break searchGround;}}
+        const uniqueXs=[...new Set(xs)],uniqueYs=[...new Set(ys)];
+        searchGround:for(const py of uniqueYs)for(const px of uniqueXs){if(Date.now()-lastYield>20){await tick();lastYield=Date.now();}const trial={...block,wallSide:null,x:px,y:py},key=[block.w,block.h,!!block.rotated,px,py].join(':');lastError=rejected.get(key)||placementError(trial,groups,env,settings);if(!lastError){result=trial;break searchGround;}if(rejected.size<100000)rejected.set(key,lastError);} // Failed non-wall ground poses stay invalid as occupied storage only grows.
       }
       if(!result&&!block.wallSide&&!(block.kind==='ground'&&groundSide)){let px=x,py=y,depth=band,attempt=0;
         while(py+block.h+(block.paired?g:0)<=top+E&&attempt++<160){
@@ -169,7 +177,7 @@
     }
     if(options.allowWallStorage&&source.groups.some(g=>g.kind==='rack')&&!groups.some(g=>g.wallSide))env.errors.push({pn:'Wall storage',message:'A wall rack row could not be placed safely. Review the selected walls, obstacles and clearance.'});
     const layout={version:2,orientation,groups,unplaced,env,options:{...options},issues:[...source.issues,...env.errors],rackRequired:source.rackRequired,groundRequired:source.groundRequired,search:{sx,sy,rowFraction:fraction,startOffset},buildingAngle:buildingAngle(geometry.entities.find(e=>e.id===options.boundaryId).points),geometryUnverified:geometry.unreadableEntities||0};
-    Object.assign(layout,validate(layout,plan,settings));return layout;
+    Object.assign(layout,validate(layout,plan,settings,source));return layout;
   }
   function placedObjects(g){
     return g.objects.map(o=>{const x=g.x+(g.rotated?g.h-o.dy-o.h:o.dx),y=g.y+(g.rotated?o.dx:o.dy),w=g.rotated?o.h:o.w,h=g.rotated?o.w:o.h,p=L.corners({x,y,w,h}).map(p=>toWorld(p,g.frame)),center=toWorld([x+w/2,y+h/2],g.frame),origin=p[0];
@@ -196,12 +204,12 @@
     }
     return result;
   }
-  function shortage(layout,plan,settings,validGroups=null){
+  function shortage(layout,plan,settings,validGroups=null,source=null){
     if(layout.version===3)return scope.LogEnExistingLayout.summary(layout,plan,settings).shortage;
     const valid=validGroups||layout.groups.filter(g=>layout.version!==2||!placementError(g,layout.groups,layout.env,settings)),placed=new Set(),quantities=new Map(),areas=new Map(),represented=new Map();
     for(const g of valid)for(const o of g.objects){placed.add(o.id);if(o.kind==='rack')for(const a of o.allocations)quantities.set(a.pn,(quantities.get(a.pn)||0)+1);else quantities.set(o.pn,(quantities.get(o.pn)||0)+o.quantity);}
     const contribute=(pn,qty,area)=>{areas.set(pn,(areas.get(pn)||0)+area);represented.set(pn,(represented.get(pn)||0)+qty);};
-    for(const g of L.makeObjects(plan,settings).groups){
+    for(const g of (source||L.makeObjects(plan,settings)).groups){
       if(g.kind==='rack'){for(const o of g.objects){if(placed.has(o.id)||!o.allocations.length)continue;const counts=new Map();for(const a of o.allocations)counts.set(a.pn,(counts.get(a.pn)||0)+1);for(const [pn,n]of counts)contribute(pn,n,o.w*o.h/1e6*n/o.allocations.length);}}
       else{const missing=g.objects.filter(o=>!placed.has(o.id));if(missing.length){const byPN=new Map();for(const o of missing)byPN.set(o.pn,(byPN.get(o.pn)||0)+o.quantity);const total=missing.reduce((n,o)=>n+o.quantity,0),area=g.w*g.h/1e6*missing.length/g.objects.length;for(const [pn,n]of byPN)contribute(pn,n,area*n/total);}}
     }
@@ -215,7 +223,8 @@
     const safety=diff(union([...diff(e.blocked,e.physical),...e.wallSafety,...e.doorZones,...layout.groups.filter(g=>g.paired&&g.separation>0).map(g=>rect({x:g.x,y:g.y+g.backY,w:g.w,h:g.separation}))]),union([...access,...storage]));
     const free=diff(e.boundary,union([...storage,...access,...safety,...e.physical]));
     // Component areas use polygon clipping, including holes. Fit probes classify remaining components conservatively.
-    const outer=free.filter(p=>C.Clipper.Area(p)>0),holes=free.filter(p=>C.Clipper.Area(p)<0),templates=layout.groups.concat(layout.unplaced).flatMap(g=>g.objects.map(o=>({w:o.w,h:o.h}))).filter((v,i,a)=>a.findIndex(t=>t.w===v.w&&t.h===v.h)===i).sort((a,b)=>a.w*a.h-b.w*b.h).slice(0,6);
+    const templateSizes=new Set();
+    const outer=free.filter(p=>C.Clipper.Area(p)>0),holes=free.filter(p=>C.Clipper.Area(p)<0),templates=layout.groups.concat(layout.unplaced).flatMap(g=>g.objects.map(o=>({w:o.w,h:o.h}))).filter(v=>{const key=v.w+':'+v.h;if(templateSizes.has(key))return false;templateSizes.add(key);return true;}).sort((a,b)=>a.w*a.h-b.w*b.h).slice(0,6);
     let unusable=0;
     for(const p of (templates.length?outer:[])){const region=[p,...holes.filter(h=>C.Clipper.PointInPolygon(h[0],p)!==0)],b=regionBounds([p]),probes=points(p);let usable=false;
       for(const t of templates){if(t.w>b.maxX-b.minX+E||t.h>b.maxY-b.minY+E)continue;const xs=[b.minX,b.maxX-t.w,(b.minX+b.maxX-t.w)/2,...probes.map(v=>v[0])],ys=[b.minY,b.maxY-t.h,(b.minY+b.maxY-t.h)/2,...probes.map(v=>v[1])];for(const x of xs.slice(0,8)){for(const y of ys.slice(0,8))if(fits({x,y,w:t.w,h:t.h},region)){usable=true;break;}if(usable)break;}if(usable)break;}
@@ -224,8 +233,8 @@
     const footprint=polygonArea(storage),total=polygonArea(e.boundary),clearance=polygonArea(safety),gangway=polygonArea(access),obstacle=polygonArea(e.physical),unused=polygonArea(free),sep=layout.groups.reduce((n,g)=>n+(g.paired?g.w*g.separation:0),0)/1e6;
     return {totalWarehouseArea:total,availableStorageArea:polygonArea(diff(e.zone,e.baseAccess)),rackFootprint:polygonArea(rack),groundFootprint:polygonArea(ground),gangwayArea:gangway,mandatoryClearanceArea:clearance,obstacleArea:obstacle,unusedUsableArea:Math.max(0,unused-unusable/1e6),unusableArea:unusable/1e6,wallRackBays:layout.groups.filter(g=>g.wallSide&&g.kind==='rack').reduce((n,g)=>n+g.objects.length,0),racks:layout.groups.filter(g=>g.kind==='rack').reduce((n,g)=>n+g.objects.length,0),rackPositions:layout.generatedRack,groundPositions:layout.generatedGround,accommodatedPallets:layout.accommodatedPallets,requiredPallets:layout.requiredPallets,utilizationPercent:total>0?footprint/total*100:0,connected:connected(access),accessPaths:access,clearancePaths:safety,freePaths:free};
   }
-  function validate(layout,plan,settings){
-    const errors=[...layout.issues],valid=[],ids=new Set(),objectIds=new Set(),expected=new Set(L.makeObjects(plan,settings).groups.flatMap(g=>g.objects.map(o=>o.id)));
+  function validate(layout,plan,settings,source=null){
+    const errors=[...layout.issues],valid=[],ids=new Set(),objectIds=new Set(),expected=new Set((source||L.makeObjects(plan,settings)).groups.flatMap(g=>g.objects.map(o=>o.id)));
     for(const g of layout.groups){let error=placementError(g,layout.groups,layout.env,settings);for(const o of g.objects){if(objectIds.has(o.id)||!expected.has(o.id))error='Duplicate or unknown storage object.';objectIds.add(o.id);}if(ids.has(g.id)||error)errors.push({pn:g.objects.map(o=>o.pn||o.typeName).join(', '),message:error||'Duplicate block identity.'});else valid.push(g);ids.add(g.id);}
     const rack=new Map(),ground=new Map();let generatedRack=0,generatedGround=0,groundPallets=0;
     for(const g of valid)for(const o of g.objects){if(o.kind==='rack')for(const a of o.allocations){generatedRack++;rack.set(a.pn,(rack.get(a.pn)||0)+1);}else{generatedGround++;groundPallets+=o.quantity;ground.set(o.pn,(ground.get(o.pn)||0)+o.quantity);}}
@@ -233,7 +242,7 @@
     const result={generatedRack,generatedGround,unplacedRack:Math.max(0,layout.rackRequired-generatedRack),unplacedGround:Math.max(0,layout.groundRequired-generatedGround),affected,validationErrors:errors,accommodatedPallets:generatedRack+groundPallets,requiredPallets:plan.rows.reduce((n,r)=>n+(r.required||0),0)};
     Object.assign(layout,result);const m=metrics(layout,settings);if(!m.connected)errors.push({pn:'Circulation',message:'Forklift circulation is disconnected. This candidate is invalid.'});
     const baseSafety=!!layout.options.constraintsConfirmed&&!!layout.options.geometryReviewed&&!layout.geometryUnverified;
-    Object.assign(result,{metrics:m,accessValid:errors.length===0,safetyVerified:baseSafety,complete:!affected.length&&!errors.length&&!layout.unplaced.length,aisles:regionShapes(m.accessPaths,layout.env.frame,'aisle','aisle'),clearances:regionShapes(m.clearancePaths,layout.env.frame,'clearance','clearance'),shortage:shortage(layout,plan,settings,valid),markings:groundMarkings(layout)});
+    Object.assign(result,{metrics:m,accessValid:errors.length===0,safetyVerified:baseSafety,complete:!affected.length&&!errors.length&&!layout.unplaced.length,aisles:regionShapes(m.accessPaths,layout.env.frame,'aisle','aisle'),clearances:regionShapes(m.clearancePaths,layout.env.frame,'clearance','clearance'),shortage:shortage(layout,plan,settings,valid,source),markings:groundMarkings(layout)});
     return result;
   }
   const rank=l=>[l.accessValid?1:0,l.accommodatedPallets,l.complete?1:0,l.options.racksAroundWalls?l.metrics.wallRackBays:0,-l.metrics.unusableArea,-l.metrics.gangwayArea,-l.groups.length];
