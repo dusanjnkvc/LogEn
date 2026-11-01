@@ -54,7 +54,7 @@
           }
         }else if(o.kind==='ground'){
           const input=partMap.get(o.pn),qty=o.quantity||0,height=o.height||input?.height,position=o.position||1,location='G'+String(runIndex+1).padStart(3,'0')+'-P'+String(position).padStart(3,'0');
-          groundSlots.push({...primitive(g,o.dx,o.dy,o.w,o.h,12,2),id:'ground-slot:'+o.id,kind:'ground-slot',location,pn:o.pn,quantity:qty,row:g.id,position,height:height*qty,existing:!!g.existing});
+          groundSlots.push({...primitive(g,o.dx,o.dy,o.w,o.h,12,2),id:'ground-slot:'+o.id,kind:'ground-slot',location,pn:o.pn,quantity:qty,row:g.id,rowWidth:(g.rotated?g.h:g.w),rowDepth:(g.rotated?g.w:g.h),rowArea:g.w*g.h/1e6,rowQuantity:g.objects.filter(v=>v.kind==='ground').reduce((n,v)=>n+(v.quantity||0),0),footprintLength:(input?.length||o.w)+(settings.floorPalletClearance||0),footprintWidth:(input?.width||o.h)+(settings.floorPalletClearance||0),position,height:height*qty,existing:!!g.existing});
           for(let layer=0;layer<qty;layer++)pallet(g,o.dx,o.dy,o.w,o.h,height,layer*height,{id:o.id+':'+layer,pn:o.pn,input,storageType:'Ground storage',location:location+'-S'+(layer+1),locationBase:location,row:g.id,position,stackLayer:layer+1,existing:!!g.existing});
         }
       }
