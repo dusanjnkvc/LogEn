@@ -43,7 +43,7 @@
     for(const d of doors){const r=d.bounds,cx=r.x+r.w/2,cy=Math.max(box.minY,Math.min(box.maxY-g,r.y+r.h/2-g/2));routes.push(rect({x:Math.min(spine.x,cx),y:cy,w:Math.max(spine.x+g,cx)-Math.min(spine.x,cx),h:g}));}
     const access=union([...circulation,...routes]),errors=[];
     if(area(diff(access,boundary))>E||area(intersect(access,blocked))>E)errors.push({pn:'Circulation',message:'The perimeter/main route or a door connection intersects blocked geometry or leaves the warehouse. This candidate is invalid.'});
-    return {poly,box,boundary,zone,physical,blocked,doorZones,wallSafety,baseAccess:access,spine,frame,margin,obstacles,doors,errors};
+    return {poly,box,boundary,zone,physical,blocked,doorZones,wallSafety,baseAccess:access,spine,frame,margin,obstacles,doors,errors,requireGroundPairs:true,allowWallStorage:!!options.allowWallStorage,wallClearance:options.wallClearance};
   }
   function wallPose(group,env,options){
     const b=env.box,c=options.wallClearance,side=group.wallSide,g={...group},position=g.wallReverse?g.wallLimit-g.wallOffset-g.w:g.wallOffset;
@@ -80,11 +80,19 @@
     }
     return groups;
   }
+  function groundPairs(rows,env){
+    const blocks=[];
+    for(let i=0;i<rows.length;i+=2){const a=rows[i],b=rows[i+1],secondDepth=b?.h||a.h,backY=a.h;
+      const row=(r,y,side)=>({id:r.id,x:0,y,w:r.w,h:r.h,side,objectIds:r.objects.map(o=>o.id)});
+      blocks.push({id:'ground-pair:'+a.id,kind:'ground',w:Math.max(a.w,b?.w||0),h:a.h+secondDepth,paired:true,rows:2,separation:0,backY,reservedBackRow:!b,groundRows:[row(a,0,'front'),...(b?[row(b,backY,'back')]:[{id:a.id+':reserved',x:0,y:backY,w:a.w,h:secondDepth,side:'back',objectIds:[],reserved:true}])],objects:[...a.objects.map(o=>({...o,groundRowId:a.id,groundFace:'front'})),...(b?b.objects.map(o=>({...o,dy:backY+b.h-o.dy-o.h,groundRowId:b.id,groundFace:'back'})):[])],frame:env.frame});
+    }
+    return blocks;
+  }
   function makeBlocks(source,env,settings,options,rowFraction){
-    if(options.storageMode==='ground'&&options.allowWallStorage&&options.racksAroundWalls){
+    if((options.storageMode==='ground'||!source.groups.some(g=>g.kind==='rack'))&&options.allowWallStorage&&options.racksAroundWalls){
       const rows=source.groups.filter(g=>g.kind==='ground'),units=rows.map(g=>({id:g.id,typeId:'ground-wall',w:g.w,h:g.h,maxRunLength:100000000,sourceRow:g})),wall=allWallBlocks(units,env,settings,options,1),used=new Set(wall.flatMap(g=>g.objects.map(o=>o.id)));
-      const placed=wall.map(g=>({...g,kind:'ground',objects:g.objects.flatMap(unit=>unit.sourceRow.objects.map(o=>({...o,dx:unit.dx+o.dx,dy:unit.dy+o.dy}))),frame:env.frame}));
-      return [...placed,...rows.filter(g=>!used.has(g.id)).map(g=>({...g,paired:false,frame:env.frame}))];
+      const placed=wall.map(g=>({...g,kind:'ground',groundRows:g.objects.map(unit=>({id:unit.id,x:unit.dx,y:unit.dy,w:unit.sourceRow.w,h:unit.sourceRow.h,side:'wall',objectIds:unit.sourceRow.objects.map(o=>o.id)})),objects:g.objects.flatMap(unit=>unit.sourceRow.objects.map(o=>({...o,dx:unit.dx+o.dx,dy:unit.dy+o.dy,groundRowId:unit.id,groundFace:'wall'}))),frame:env.frame}));
+      return [...placed,...groundPairs(rows.filter(g=>!used.has(g.id)),env)];
     }
     const allRack=source.groups.filter(g=>g.kind==='rack').flatMap(g=>g.objects),wallRows=options.allowWallStorage&&options.racksAroundWalls?allWallBlocks(allRack,env,settings,options,rowFraction):[],used=new Set(wallRows.flatMap(g=>g.objects.map(o=>o.id))),rack=allRack.filter(o=>!used.has(o.id)),byType=new Map(),blocks=[];let index=0;
     for(const o of rack){if(!byType.has(o.typeId))byType.set(o.typeId,[]);byType.get(o.typeId).push(o);}
@@ -106,7 +114,7 @@
       while(rows.length){const a=rows.shift(),b=rows.shift(),gap=b?options.backToBackSeparation:0;blocks.push({id:'block:'+a.objects[0].id,kind:'rack',w:Math.max(a.w,b?.w||0),h:a.h+gap+(b?.h||0),objects:[...a.objects,...(b?b.objects.map(o=>({...o,dy:a.h+gap})):[])],paired:!!b,separation:gap,backY:a.h,rows:b?2:1});}
     }
     blocks.sort((a,b)=>b.objects.reduce((n,o)=>n+o.pallets,0)-a.objects.reduce((n,o)=>n+o.pallets,0)||b.w-a.w);
-    return [...wallRows,...blocks,...source.groups.filter(g=>g.kind==='ground').map(g=>({...g,id:g.id,paired:false}))].map(g=>({...g,frame:env.frame,ordinal:++index}));
+    return [...wallRows,...blocks,...groundPairs(source.groups.filter(g=>g.kind==='ground'),env)].map(g=>({...g,frame:env.frame,ordinal:++index}));
   }
   function wallAccess(env,blocks,options,settings){
     const b=env.box,g=settings.gangwayWidth,c=options.allowWallStorage?options.wallClearance:0,depth=side=>Math.max(0,...blocks.filter(v=>v.wallSide===side).map(v=>v.h));
@@ -123,7 +131,7 @@
   function localObjectRect(g,o){return {x:g.x+(g.rotated?g.h-o.dy-o.h:o.dx),y:g.y+(g.rotated?o.dx:o.dy),w:g.rotated?o.h:o.w,h:g.rotated?o.w:o.h};}
   function accessFor(g,env,width){const r=groupRect(g),z=env.inner||env.box,x=z.minX,w=z.maxX-z.minX;
     if(g.wallSide){const horizontal=g.wallSide==='bottom'||g.wallSide==='top',lo=horizontal?z.minX:z.minY,hi=horizontal?z.maxX:z.maxY;return g.objects.map(o=>{const v=localObjectRect(g,o),a=Math.max(horizontal?v.x:v.y,lo),b=Math.min(horizontal?v.x+v.w:v.y+v.h,hi);if(g.wallSide==='bottom')return {x:a,y:v.y+v.h,w:b-a,h:z.minY+width-v.y-v.h};if(g.wallSide==='top')return {x:a,y:z.maxY-width,w:b-a,h:v.y-z.maxY+width};if(g.wallSide==='left')return {x:v.x+v.w,y:a,w:z.minX+width-v.x-v.w,h:b-a};return {x:z.maxX-width,y:a,w:v.x-z.maxX+width,h:b-a};}).filter(v=>v.w>E&&v.h>E);}
-    const bottom={x,y:r.y-width,w,h:width},top={x,y:r.y+r.h,w,h:width};return g.kind==='rack'&&g.paired?[bottom,top]:[bottom];
+    const bottom={x,y:r.y-width,w,h:width},top={x,y:r.y+r.h,w,h:width};return g.paired?[bottom,top]:[bottom];
   }
   function endGangways(layout){
     const z=layout.env.inner||layout.env.box,rects=layout.groups.filter(g=>!g.wallSide).map(groupRect),cuts=[...new Set(rects.flatMap(r=>[r.y,r.y+r.h]))].sort((a,b)=>a-b),out=[];
@@ -143,6 +151,7 @@
   function cachedPlacement(g,env,width){let byGroup=placedGeometry.get(env);if(!byGroup){byGroup=new WeakMap();placedGeometry.set(env,byGroup);}const signature=[g.x,g.y,g.w,g.h,g.rotated,g.wallSide,g.kind,g.paired,g.backY,width,env.inner?.minX,env.inner?.maxX,env.inner?.minY,env.inner?.maxY].join(':');let value=byGroup.get(g);if(!value||value.signature!==signature||value.objects!==g.objects){value={signature,objects:g.objects,r:groupRect(g),access:accessFor(g,env,width)};byGroup.set(g,value);}return value;}
   function placementError(g,placed,env,settings){
     const r=groupRect(g),access=accessFor(g,env,settings.gangwayWidth);
+    if(env.requireGroundPairs&&g.kind==='ground'&&!g.paired){const b=env.box,c=env.wallClearance||0,touch=g.wallSide==='left'?Math.abs(r.x-b.minX-c)<E:g.wallSide==='right'?Math.abs(r.x+r.w-b.maxX+c)<E:g.wallSide==='bottom'?Math.abs(r.y-b.minY-c)<E:g.wallSide==='top'?Math.abs(r.y+r.h-b.maxY+c)<E:false;if(!env.allowWallStorage||!touch)return 'Single ground rows must stay against an approved wall. Interior ground storage must stay back-to-back.';}
     if(!fits(r,env.zone))return 'Storage crosses the storage zone, boundary or mandatory clearance.';
     if(collide(r,env.baseAccess))return 'Storage blocks a circulation route.';
     for(const a of access)if(!fits(a,env.boundary)||collide(a,env.blocked))return 'A full-width access gangway is obstructed or leaves the warehouse.';
@@ -173,7 +182,7 @@
           if(next&&next+block.w<=right+E)px=next;else{const obstacleTop=env.obstacles.filter(o=>o.bounds.y<=py+block.h+g&&o.bounds.y+o.bounds.h>py).map(o=>o.bounds.y+o.bounds.h+options.obstacleClearance+g).sort((a,b)=>a-b)[0];py=Math.max(py+Math.max(depth,block.h)+g,obstacleTop??-Infinity);px=left;depth=0;}
         }
       }
-      if(result){groups.push(result);if(result.wallSide==='bottom'&&!options.racksAroundWalls){y=Math.max(y,result.y+result.h+g);x=left;band=0;}}else if(block.paired){const a=block.objects.filter(o=>o.dy===0),b=block.objects.filter(o=>o.dy>0);for(const row of [a,b])if(row.length)blocks.push({...block,id:'single:'+row[0].id,paired:false,rows:1,separation:0,backY:0,h:row[0].h,w:row.reduce((n,o)=>n+o.w,0),objects:row.map(o=>({...o,dy:0})),wallSide:null});}else unplaced.push({...block,unplacedReason:lastError});
+      if(result){groups.push(result);if(result.wallSide==='bottom'&&!options.racksAroundWalls){y=Math.max(y,result.y+result.h+g);x=left;band=0;}}else if(block.paired&&block.kind==='rack'){const a=block.objects.filter(o=>o.dy===0),b=block.objects.filter(o=>o.dy>0);for(const row of [a,b])if(row.length)blocks.push({...block,id:'single:'+row[0].id,paired:false,rows:1,separation:0,backY:0,h:row[0].h,w:row.reduce((n,o)=>n+o.w,0),objects:row.map(o=>({...o,dy:0})),wallSide:null});}else unplaced.push({...block,unplacedReason:lastError});
     }
     if(options.allowWallStorage&&source.groups.some(g=>g.kind==='rack')&&!groups.some(g=>g.wallSide))env.errors.push({pn:'Wall storage',message:'A wall rack row could not be placed safely. Review the selected walls, obstacles and clearance.'});
     const layout={version:2,orientation,groups,unplaced,env,options:{...options},issues:[...source.issues,...env.errors],rackRequired:source.rackRequired,groundRequired:source.groundRequired,search:{sx,sy,rowFraction:fraction,startOffset},buildingAngle:buildingAngle(geometry.entities.find(e=>e.id===options.boundaryId).points),geometryUnverified:geometry.unreadableEntities||0};
@@ -194,8 +203,11 @@
     for(const g of layout.groups.filter(g=>g.kind==='ground')){
       const at=([x,y])=>[g.x+(g.rotated?g.h-y:x),g.y+(g.rotated?x:y)],outline=[[0,0],[g.w,0],[g.w,g.h],[0,g.h]];
       outline.forEach((p,i)=>line(at(p),at(outline[(i+1)%4])));
-      const objects=[...g.objects].sort((a,b)=>a.dy-b.dy);
-      for(let i=1;i<objects.length;i++){const before=objects[i-1],after=objects[i],y=(before.dy+before.h+after.dy)/2;line(at([0,y]),at([g.w,y]));}
+      for(const row of g.groundRows||[{x:0,y:0,w:g.w,h:g.h,objectIds:g.objects.map(o=>o.id)}]){
+        const edges=[[row.x,row.y],[row.x+row.w,row.y],[row.x+row.w,row.y+row.h],[row.x,row.y+row.h]];edges.forEach((p,i)=>line(at(p),at(edges[(i+1)%4])));
+        const ids=new Set(row.objectIds),objects=g.objects.filter(o=>ids.has(o.id)).sort((a,b)=>a.dy-b.dy);
+        for(let i=1;i<objects.length;i++){const before=objects[i-1],after=objects[i],y=(before.dy+before.h+after.dy)/2;line(at([row.x,y]),at([row.x+row.w,y]));}
+      }
     }
     const result=[];
     for(const [map,flat]of [[horizontal,true],[vertical,false]])for(const [key,ranges]of [...map.entries()].sort((a,b)=>a[0]-b[0])){

@@ -16,7 +16,7 @@
     const groups=layout.groups||[];
     groups.forEach((g,runIndex)=>{
       const rackNumber='R'+String(runIndex+1).padStart(3,'0');
-      for(const o of g.objects){
+      for(const [objectIndex,o]of g.objects.entries()){
         if(o.kind==='rack'){
           const t=types.find(t=>t.id===o.typeId)||layout.infrastructure?.find(v=>v.type?.id===o.typeId)?.type||settings,levels=o.levels||t.rackLevels,sl=t.rackSlotLength,sd=t.rackSlotDepth,sh=t.rackSlotHeight,structural=t.rackStructuralHeight||0,pitch=sh+structural,totalHeight=levels*pitch;
           const bayId='bay:'+o.id,loc=rackNumber+'-B'+String(o.bayNumber||1).padStart(2,'0'),bay={...primitive(g,o.dx,o.dy,o.w,o.h,totalHeight),id:bayId,kind:'rack',rackNumber,bayNumber:o.bayNumber||1,location:loc,levels,typeName:o.typeName,existing:!!g.existing,allocated:0,palletIds:[],emptyIds:[],status:'Rack overview',capacity:null,specs:{usableLength:sl,usableDepth:sd,usableHeight:sh,structuralLength:t.rackStructuralLength,structuralDepth:t.rackStructuralDepth,structuralHeight:structural,betweenBoxesAllowance:t.betweenBoxesAllowance,maxRunLength:t.maxRackRunLength,rotationAllowed:!!t.rackAllowRotation,stackingAllowed:!!t.rackAllowStacking,twoDeepAllowed:!!t.rackAllowDepthRows,outerLength:o.w,outerDepth:o.h,overallHeight:totalHeight}};bays.push(bay);
@@ -53,8 +53,9 @@
             }
           }
         }else if(o.kind==='ground'){
-          const input=partMap.get(o.pn),qty=o.quantity||0,height=o.height||input?.height,position=o.position||1,location='G'+String(runIndex+1).padStart(3,'0')+'-P'+String(position).padStart(3,'0');
-          groundSlots.push({...primitive(g,o.dx,o.dy,o.w,o.h,12,2),id:'ground-slot:'+o.id,kind:'ground-slot',location,pn:o.pn,quantity:qty,row:g.id,rowWidth:(g.rotated?g.h:g.w),rowDepth:(g.rotated?g.w:g.h),rowArea:g.w*g.h/1e6,rowQuantity:g.objects.filter(v=>v.kind==='ground').reduce((n,v)=>n+(v.quantity||0),0),footprintLength:(input?.length||o.w)+(settings.floorPalletClearance||0),footprintWidth:(input?.width||o.h)+(settings.floorPalletClearance||0),position,height:height*qty,existing:!!g.existing});
+          const input=partMap.get(o.pn),qty=o.quantity||0,height=o.height||input?.height,position=objectIndex+1,location='G'+String(runIndex+1).padStart(3,'0')+'-P'+String(position).padStart(3,'0');
+          const groundRow=g.groundRows?.find(r=>r.id===o.groundRowId),rowW=groundRow?.w||g.w,rowH=groundRow?.h||g.h,rowObjects=groundRow?g.objects.filter(v=>v.groundRowId===groundRow.id):g.objects;
+          groundSlots.push({...primitive(g,o.dx,o.dy,o.w,o.h,12,2),id:'ground-slot:'+o.id,kind:'ground-slot',location,pn:o.pn,quantity:qty,row:groundRow?.id||g.id,arrangement:g.paired?'Back-to-back pair':g.wallSide?'Single wall row':'Ground storage',rowWidth:(g.rotated?rowH:rowW),rowDepth:(g.rotated?rowW:rowH),rowArea:rowW*rowH/1e6,rowQuantity:rowObjects.filter(v=>v.kind==='ground').reduce((n,v)=>n+(v.quantity||0),0),footprintLength:(input?.length||o.w)+(settings.floorPalletClearance||0),footprintWidth:(input?.width||o.h)+(settings.floorPalletClearance||0),position,height:height*qty,existing:!!g.existing});
           for(let layer=0;layer<qty;layer++)pallet(g,o.dx,o.dy,o.w,o.h,height,layer*height,{id:o.id+':'+layer,pn:o.pn,input,storageType:'Ground storage',location:location+'-S'+(layer+1),locationBase:location,row:g.id,position,stackLayer:layer+1,existing:!!g.existing});
         }
       }

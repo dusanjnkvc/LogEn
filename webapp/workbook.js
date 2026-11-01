@@ -124,7 +124,7 @@
       const positions=table(workbook,'Ground Positions',['Object ID','Part Number','Quantity (pallets)','Stacking','L (mm)','W (mm)','H (mm)','X (mm)','Y (mm)','Footprint X (mm)','Footprint Y (mm)','Rotation (degrees)','Row ID']);
       const bays=table(workbook,'Rack Bays',['Object ID','Bay','Rack Type','Levels','Assigned Pallets','X (mm)','Y (mm)','Footprint X (mm)','Footprint Y (mm)','Rotation (degrees)','Run ID']);
       const allocations=table(workbook,'Rack Allocations',['Part Number','Bay Object ID','Bay','Level','Position','Quantity (pallets)','Stack Layer','Frontage (mm)','Depth (mm)']);
-      for(const o of objects){if(o.kind==='ground')add(positions,[o.id,o.pn,o.quantity,o.stacking,o.length,o.width,o.height,o.x,o.y,o.w,o.h,o.rotation,o.groupId]);else{add(bays,[o.id,o.bayNumber,o.typeName,o.levels,o.pallets,o.x,o.y,o.w,o.h,o.rotation,o.groupId]);for(const a of o.allocations)add(allocations,[a.pn,o.id,o.bayNumber,a.level,a.position,1,a.stackLayer,a.length,a.depth]);}}
+      for(const o of objects){if(o.kind==='ground')add(positions,[o.id,o.pn,o.quantity,o.stacking,o.length,o.width,o.height,o.x,o.y,o.w,o.h,o.rotation,o.groundRowId||o.groupId]);else{add(bays,[o.id,o.bayNumber,o.typeName,o.levels,o.pallets,o.x,o.y,o.w,o.h,o.rotation,o.groupId]);for(const a of o.allocations)add(allocations,[a.pn,o.id,o.bayNumber,a.level,a.position,1,a.stackLayer,a.length,a.depth]);}}
       const issues=table(workbook,'Unplaced and Validation',['Part Number / Scope','Reason']);
       for(const issue of [...layout.affected,...layout.validationErrors])add(issues,[issue.pn,issue.message]);
       if(!layout.affected.length&&!layout.validationErrors.length)add(issues,['All parts','No missing positions or validation errors.']);

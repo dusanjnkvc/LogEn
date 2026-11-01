@@ -36,3 +36,5 @@ Placement warnings have a hover/focus explanation plus an expandable panel for t
 Mouse-wheel zoom, orbit/pan and Walk/Fly look sensitivity default to 2× and can be adjusted. Full screen is available in the toolbar and directly over the canvas.
 
 The schematic forklift is 1.2 × 2.8 × 2.15 m. It follows a continuous route inside the saved gangways, avoiding rack footprints, ground pallets, walls and obstacles with a conservative circular turning envelope. It uses the largest connected section, drives out and back, and can be paused, reset, focused, followed and speed-adjusted. Animation is paused initially for reduced-motion preferences. If no route fits, it reports the reason and does not drive through storage. This visualization does not perform traffic/capacity analysis or change warehouse calculations.
+
+Ground position outlines retain their dedicated row dimensions even when rows move together in a back-to-back pair. Ground locations are unique across the combined block. The inspector distinguishes back-to-back pairs from single wall rows.
