@@ -137,8 +137,8 @@
     for(const other of placed){if(other.id===g.id)continue;const rr=groupRect(other);if(sharedRowError(g,other,settings.gangwayWidth))return 'Ground storage beside a rack must fit within its row depth. Start a separate row for deeper ground storage.';if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||accessFor(other,env,settings.gangwayWidth).some(a=>core.overlaps(a,r)))return 'Storage or its required accessible face overlaps another storage block.';}
     return null;
   }
-  async function pack(plan,settings,geometry,options,orientation,sx,sy,fraction,startOffset){
-    const source=L.makeObjects(plan,settings),env=environment(geometry,options,settings,orientation,sx,sy),groups=[],unplaced=[],blocks=makeBlocks(source,env,settings,options,fraction),g=settings.gangwayWidth;
+  async function pack(plan,settings,geometry,options,orientation,sx,sy,fraction,startOffset,source=L.makeObjects(plan,settings)){
+    const env=environment(geometry,options,settings,orientation,sx,sy),groups=[],unplaced=[],blocks=makeBlocks(source,env,settings,options,fraction),g=settings.gangwayWidth;
     wallAccess(env,blocks,options,settings);
     const wallDepth=Math.max(0,...blocks.filter(b=>b.wallSide==='bottom').map(b=>b.h));
     let y=env.inner.minY+g+(wallDepth||options.racksAroundWalls?0:startOffset),x=env.inner.minX+g,band=0;
@@ -237,8 +237,9 @@
     if(!plan.available)throw new Error(plan.errors.join(' '));if(!(settings.gangwayWidth>0))throw new Error('Enter a positive gangway width.');
     if(rawOptions.existingMode)return scope.LogEnExistingLayout.generate(plan,settings,geometry,rawOptions,onProgress);
     const options=normalizedOptions(rawOptions),source=L.makeObjects(plan,settings);if(source.groups.reduce((n,g)=>n+g.objects.length,0)>10000)throw new Error('Select a category to keep the drawing within 10,000 objects.');
-    const alternatives={};let n=0;
-    for(const orientation of ['horizontal','vertical']){let best=null;const side=options.allowWallStorage&&options.wallRackMode!=='all'?options.wallRackMode:null,starts=[[1,1],[-1,1],[1,-1],[-1,-1]].filter(([sx,sy])=>!side||(orientation==='horizontal'?(side==='left'?sx===1:side==='right'?sx===-1:side==='top'?sy===-1:sy===1):(side==='left'?sy===-1:side==='right'?sy===1:side==='top'?sx===-1:sx===1)));for(const [sx,sy]of starts)for(const fraction of [1,0.5])for(const shift of side?[0]:[0,settings.gangwayWidth/2]){onProgress(++n,32);await tick();const candidate=await pack(plan,settings,geometry,options,orientation,sx,sy,fraction,shift);if(better(candidate,best))best=candidate;}alternatives[orientation]=best;}
+    const alternatives={};let n=0;const hasRacks=source.groups.some(g=>g.kind==='rack'),fractions=hasRacks?[1,0.5]:[1],shifts=options.racksAroundWalls?[0]:[0,settings.gangwayWidth/2],jobs=[];
+    for(const orientation of ['horizontal','vertical']){let best=null;const side=options.allowWallStorage&&options.wallRackMode!=='all'?options.wallRackMode:null,starts=[[1,1],[-1,1],[1,-1],[-1,-1]].filter(([sx,sy])=>!side||(orientation==='horizontal'?(side==='left'?sx===1:side==='right'?sx===-1:side==='top'?sy===-1:sy===1):(side==='left'?sy===-1:side==='right'?sy===1:side==='top'?sx===-1:sx===1)));for(const [sx,sy]of starts)for(const fraction of fractions)for(const shift of side?[0]:shifts)jobs.push({orientation,sx,sy,fraction,shift});}
+    for(const job of jobs){onProgress(++n,jobs.length);await tick();const {orientation,sx,sy,fraction,shift}=job,candidate=await pack(plan,settings,geometry,options,orientation,sx,sy,fraction,shift,source);if(better(candidate,alternatives[orientation]))alternatives[orientation]=candidate;}
     const recommended=recommend(alternatives);
     const winner=options.warehouseOrientation==='horizontal'?'horizontal':options.warehouseOrientation==='vertical'?'vertical':recommended||'horizontal';
     return {alternatives,winner,layout:alternatives[winner]};
