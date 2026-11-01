@@ -41,5 +41,16 @@
   function overlaps(route,a,b){const pa=footprint(route,a),pb=footprint(route,b);return [a.yaw,b.yaw].flatMap(t=>[[Math.cos(t),-Math.sin(t)],[Math.sin(t),Math.cos(t)]]).every(axis=>{const aa=pa.map(p=>p[0]*axis[0]+p[1]*axis[1]),bb=pb.map(p=>p[0]*axis[0]+p[1]*axis[1]);return Math.max(...aa)>Math.min(...bb)&&Math.max(...bb)>Math.min(...aa);});}
   function lane(route,d,direction){const p=sample(route,d,direction),offset=.8;const shifted={...p,x:p.x+Math.cos(p.yaw)*offset,z:p.z-Math.sin(p.yaw)*offset};return fits(route,shifted)?shifted:p;}
   function steer(route,current,target,dt,speed,others=[]){const dx=target.x-current.x,dz=target.z-current.z,d=Math.hypot(dx,dz),heading=Math.atan2(dx,dz),delta=Math.atan2(Math.sin(heading-current.yaw),Math.cos(heading-current.yaw));const yaw=current.yaw+Math.max(-dt*1.8,Math.min(dt*1.8,delta));const travel=Math.min(d,speed*dt)*(Math.abs(delta)<.4?1:Math.abs(delta)<1.2?.3:0);const next={x:current.x+Math.sin(yaw)*travel,z:current.z+Math.cos(yaw)*travel,yaw};for(let i=1;i<=4;i++){const f=i/4,p={x:current.x+(next.x-current.x)*f,z:current.z+(next.z-current.z)*f,yaw:current.yaw+(yaw-current.yaw)*f};if(!fits(route,p)||others.some(o=>overlaps(route,p,o)))return null;}return next;}
-  scope.LogEnForklift=Object.freeze({plan,sample,footprint,fits,overlaps,lane,steer});
+  function nextLeg(route,start,previous,pose,random=Math.random){
+    const nodes=route.nodes||[],origin=nodes[start];if(!origin)return null;
+    const choices=origin.links.filter(id=>id!==previous),links=choices.length?choices:origin.links;if(!links.length)return null;
+    const score=id=>{const n=nodes[id],dx=n.x-origin.x,dz=n.z-origin.z;return (dx*Math.sin(pose.yaw)+dz*Math.cos(pose.yaw))/Math.hypot(dx,dz);};
+    const sorted=[...links].sort((a,b)=>score(b)-score(a));let end=sorted[0];if(links.length>1&&random()<.2)end=links[Math.floor(random()*links.length)];
+    let prior=start,dx=nodes[end].x-origin.x,dz=nodes[end].z-origin.z,length=Math.hypot(dx,dz);dx/=length;dz/=length;
+    // Drive a useful straight stretch before choosing another direction. Grid nodes
+    // are clearance samples, not destinations where a vehicle should turn each time.
+    while(length<7){const at=nodes[end],next=at.links.find(id=>id!==prior&&Math.abs((nodes[id].x-at.x)*dz-(nodes[id].z-at.z)*dx)<1e-5&&(nodes[id].x-at.x)*dx+(nodes[id].z-at.z)*dz>0);if(next===undefined)break;length+=Math.hypot(nodes[next].x-at.x,nodes[next].z-at.z);prior=end;end=next;}
+    const dest=nodes[end],shifted={x:dest.x+dz*.45,z:dest.z-dx*.45,yaw:Math.atan2(dx,dz)},target=Array.from({length:16},(_,i)=>i*Math.PI/8).every(yaw=>fits(route,{...shifted,yaw}))?shifted:{x:dest.x,z:dest.z};return {end,previous:prior,target};
+  }
+  scope.LogEnForklift=Object.freeze({plan,sample,footprint,fits,overlaps,lane,steer,nextLeg});
 })(globalThis);

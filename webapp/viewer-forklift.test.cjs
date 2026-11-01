@@ -8,3 +8,11 @@ for(let distance=0;distance<=route.length;distance+=.3){const p=F.sample(route,d
 assert(F.plan({...model,surfaces:[{kind:'aisle',points:rect(0,0,30,1.5)}]}).reason,'Narrow gangway must not invent a drive-through route');
 const split=F.plan({...model,surfaces:[{kind:'aisle',points:rect(0,0,30,4.5)}],obstacles:[{points:rect(14,0,2,4.5)}]});assert(split.componentCount===2);for(const p of split.points)assert(p[0]<14||p[0]>16);
 const empty=F.plan({...model,surfaces:[]});assert(empty.reason);assert(!empty.points.length);console.log('Forklift route checked: continuous actual aisles, vehicle envelope at turns, obstacles, disconnected aisles, narrow/no-route cases and unchanged source.');
+// Graph samples must produce long driving legs, not repeated turns at 0.65 m nodes.
+for(const start of route.components[0].filter((_,i)=>i%17===0).slice(0,12)){
+ let seed=start+1;const random=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296),n=route.nodes[start],neighbor=route.nodes[n.links[0]];
+ let node=start,previous=-1,pose={x:n.x,z:n.z,yaw:Math.atan2(neighbor.x-n.x,neighbor.z-n.z)},leg=F.nextLeg(route,node,previous,pose,random),distance=0,still=0,longest=0;
+ for(let i=0;i<1800;i++){if(Math.hypot(leg.target.x-pose.x,leg.target.z-pose.z)<.3){node=leg.end;previous=leg.previous;leg=F.nextLeg(route,node,previous,pose,random);}const next=F.steer(route,pose,leg.target,1/30,1.2);if(next){const moved=Math.hypot(next.x-pose.x,next.z-pose.z);distance+=moved;still=moved>.0001?0:still+1/30;pose=next;assert(F.fits(route,pose));}else still+=1/30;longest=Math.max(longest,still);}
+ assert(distance>25,`Vehicle must drive through gangways, not spin: ${distance.toFixed(2)} m from node ${start}`);assert(longest<5,`Vehicle rotates without driving for ${longest}s`);
+}
+console.log('Long-leg forklift driving checked from 12 aisle locations: forward progress, bounded turning and clearance throughout.');
