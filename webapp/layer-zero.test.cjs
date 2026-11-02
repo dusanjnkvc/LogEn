@@ -1,0 +1,37 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('../.tooling/qa/node_modules/jsdom');
+global.ClipperLib=require('./vendor/clipper');require('./domain');require('./layout');require('./warehouse-geometry');require('./layout-optimizer');
+const A=LogEnWarehouseGeometry,L=LogEnLayout,D=LogEnDomain;
+const rect=(id,x,y,w=15000,h=15000,layer='0')=>({id,layer,type:'LWPOLYLINE',closed:true,boundaryEligible:true,points:L.corners({x,y,w,h}),bounds:[x,y,x+w,y+h]});
+const rooms=[rect('431',0,0),rect('438',20000,0),rect('third',0,20000),rect('fourth',20000,20000)];
+const input={units:4,entities:rooms},options={scale:1,boundaryId:'431',obstacleClearance:0,geometryReviewed:true,constraintsConfirmed:true};
+const settings={...D.createDefaultSettings(),gangwayWidth:1500,maxFloorRowDepth:6000,stackingMode:'imported',shiftsPerDay:1,coverageMode:'custom',customCoverageDays:1};
+const analyze=(entities=rooms,o={})=>A.analyze({units:4,entities},{...options,...o},settings);
+const four=analyze();assert.equal(four.regionCount,4);assert.equal(four.grossArea,900);assert.equal(four.errors.length,0);assert.equal(four.regions.length,4);
+assert.equal(A.area(A.intersect(four.gross,[A.ring(L.corners({x:15000,y:0,w:5000,h:15000}))])),0,'Do not invent storage between separate regions');
+const overlapping=analyze([rect('one',0,0,10000,10000),rect('two',5000,0,10000,10000)]);assert.equal(overlapping.grossArea,150,'Overlaps must be counted once');
+const exclusions=[rect('pillar',2000,2000,1000,1000,'Pillars'),rect('walkway',3000,0,1000,15000,'WALKWAYS'),rect('restricted',22000,2000,1000,1000,'Restricted')];
+assert.equal(analyze([...rooms,...exclusions]).excludedArea,17,'Other layer exclusions remain in force');
+assert.equal(analyze(rooms,{entityRoles:{third:'void'}}).grossArea,675,'Explicit object corrections remain in force');
+assert.equal(A.role({layer:'0',type:'TEXT'}),'reference','Layer 0 labels are not region geometry');
+const lines=rooms.flatMap(r=>r.points.map((p,i)=>({...r,id:r.id+':'+i,type:'LINE',closed:false,boundaryEligible:false,points:[p,r.points[(i+1)%4]]})));
+assert.equal(analyze(lines,{boundaryId:''}).regionCount,4,'Four separate line loops on Layer 0 are all usable');
+async function main(){
+ const part={partNumber:'FOUR-AREAS',qtyBox:1,qtyOnPallet:1,consumptionPerShift:36,doh:1,length:5000,width:5000,height:1000,stacking:1,inputErrors:[]};
+ const plan=D.calculateImplementation([part],settings,{greenfield:true,storageMode:'ground'}),geometry=A.prepare(input),result=await LogEnOptimizer.optimize(plan,settings,geometry,options),objects=L.cadObjects(result.layout);
+ assert.equal(result.layout.metrics.detectedRegions,4);
+ for(const room of rooms)assert(objects.some(o=>(o.points||L.corners(o)).every(p=>L.core.inside(p,room.points))),'No storage was placed in '+room.id);
+ for(const o of objects)assert(A.area(A.diff([A.ring(o.points||L.corners(o))],four.gross))<1e-7,'Placement left usable regions');
+ const dom=new JSDOM('<!doctype html><body></body>',{runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
+ w.ClipperLib=ClipperLib;w.structuredClone=structuredClone;w.HTMLDialogElement.prototype.showModal=function(){};
+ for(const file of ['domain.js','layout.js','warehouse-geometry.js','layout-optimizer.js','layout-ui.js'])w.eval(fs.readFileSync('webapp/'+file,'utf8'));
+ let saved;const dialog=w.LogEnLayoutUI.open({name:'Layer 0 test',plan,settings,geometry:input,options,onSave:async v=>{saved=v;}}),select=dialog.querySelector('[data-layout-boundary]');
+ assert.equal(select.value,'detected:regions','Saved single-outline selection must migrate');
+ assert.equal(select.selectedOptions[0].textContent,'All Layer 0 usable areas (4)');
+ assert.equal(select.options.length,2,'Do not offer single Layer 0 outlines as separate boundaries');
+ assert.match(dialog.querySelector('[data-geometry-diagnostics]').textContent,/4 usable regions/);
+ assert.equal(dialog.querySelector('[data-layout-layer]').value,'usable');
+ dialog.querySelector('[data-layout-save]').click();await new Promise(r=>setTimeout(r,0));assert.equal(saved.options.boundaryId,'detected:regions');
+ dom.window.close();
+ console.log('Layer 0 regression checks passed: four regions, old boundary migration, union/exclusions, line loops, all-region placement and combined UI selection.');
+}
+main().catch(e=>{console.error(e);process.exitCode=1;});

@@ -8,7 +8,7 @@ LogEn now reads supported DWG/DXF geometry locally in a browser worker, previews
 
 The previous editor required one manually chosen closed straight polyline. Other drawing objects defaulted to a single blocked-area role. Connected LINE/open-polyline enclosures were not reconstructed, INSERT geometry could be reduced to bounding boxes, and pedestrian circulation had no separate classification. That combination made valid Layer 0 enclosures difficult to identify and conflated storage exclusions with physical movement barriers.
 
-Layer 0, white objects and locked-layer geometry are not discarded by the new reader. Uncertain enclosures are offered as candidates and require confirmation or a usable-area classification before generation. They are not silently assumed to be warehouse space.
+All valid closed areas on Layer 0 are usable storage by default, as requested. They are selected together as “All Layer 0 usable areas”, including saved projects that previously selected only one Layer 0 outline. Separate areas are combined as a polygon union: overlapping space is counted once and the space between separate outlines is not invented as storage. Explicit object/layer corrections, holes and obstacle exclusions still apply. Text and dimensions do not become storage areas. Uncertain enclosures on other unclassified layers continue to require confirmation. White objects and locked-layer geometry are not discarded.
 
 ## Modules and functions changed
 
@@ -82,8 +82,14 @@ Independent AutoCAD checks executed separately from the browser:
 
 ## Usage and limits
 
-Upload a DWG or DXF in Warehouse Designer. Review the detected regions and colored geometry, confirm unlabelled candidates or classify them, enter real wall/passages/door settings and correct roles where needed. Generate from Parts List and review both orientations, connectivity, warnings and unplaced demand. Review existing rack types/bays before allocation in Existing Layout mode.
+Upload a DWG or DXF in Warehouse Designer. Layer 0 closed areas are all selected together automatically. Review the detected regions and colored geometry, confirm any remaining unlabelled candidates on other layers or classify them, enter real wall/passages/door settings and correct roles where needed. Generate from Parts List and review both orientations, connectivity, warnings and unplaced demand. Review existing rack types/bays before allocation in Existing Layout mode.
 
 DWG/PDF export continues through the existing local AutoCAD workflow. DXF export requires the updated version-7 helper from the app. Browser-only DWG writing remains the separate feasibility experiment; it is not silently substituted for the validated export path. No paid cloud service was added. The bundled reader is pinned `@node-projects/acad-ts@3.7.0` under MIT, with its full notice included in `webapp/vendor/CAD-READER-LICENSE.txt` and the bundle.
 
 Physical Android testing has not been executed. Complex/custom/proxy entities, non-planar CAD, external references, ambiguous wall/door conventions and branching line networks may need explicit classification, additional source outlines or the Windows fallback. Reader notices are exposed and incomplete interpretation prevents a fully verified result. Automatic classification is assistance, not proof that arbitrary customer drawings have been understood correctly. The saved original CAD file is retained for export.
+
+## Layer 0 selection correction
+
+The boundary selector now groups Layer 0 areas instead of offering each as a separate warehouse side. A saved single Layer 0 selection migrates to the combined regions on opening; generation and saved layouts use the same combined geometry. Regenerate old layouts to include all areas.
+
+Targeted regression coverage in `webapp/layer-zero.test.cjs` verifies four separate squares, saved-boundary migration, overlapping areas counted once, no storage in gaps, pillars/walkways/restricted exclusions, explicit object corrections, text handling, reconstructed Layer 0 line loops, placement in all four areas, the combined selector and saved options. The 29 geometry/placement checks and upload/routing checks were rerun for this correction. Demand and footprint formulas remain unchanged.

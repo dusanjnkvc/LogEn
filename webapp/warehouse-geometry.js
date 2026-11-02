@@ -5,7 +5,8 @@
   const roles=['boundary','usable','void','wall','pillar','door','pedestrian','gangway','restricted','existing-rack','existing-ground','crossing','obstacle','reference'];
   const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   const rules=[['pedestrian',/pedestrian|walkways?|footpaths?|chodnik/],['crossing',/crossings?|crosswalk/],['gangway',/forklift|industrial aisle|gangways?|traffic aisle/],['existing-ground',/ground storage|floor storage|pallet positions?/],['existing-rack',/racks?|shelving|regal/],['usable',/usable|storage eligible|storage area/],['boundary',/warehouse boundary|external boundary|building outline|perimeter|source boundary|^boundary$/],['pillar',/pillars?|columns?|stl[pb]/],['door',/doors?|entrance|exit|loading gate/],['wall',/walls?|partition/],['restricted',/restricted|no storage|blocked|machinery|technical|exclusion/],['reference',/annotation|dimension|text|reference|title|defpoints/]];
-  function role(e,o={}){const ids=String(e.id||'').split('/');let inherited;for(let n=ids.length-1;n>0;n--)if(o.entityRoles?.[ids.slice(0,n).join('/')]){inherited=o.entityRoles[ids.slice(0,n).join('/')];break;}const explicit=o.entityRoles?.[e.id]||inherited||o.layerRoles?.[e.layer];if(explicit)return explicit;const alias=Object.entries(o.layerAliases||{}).find(([name])=>normalize(name)===normalize(e.layer));if(alias&&roles.includes(alias[1]))return alias[1];if(e.semanticRole)return e.semanticRole;if(e.type==='POINT'&&rules.find(([,r])=>r.test(normalize(e.layer)))?.[0]==='pillar')return 'pillar';if(['TEXT','MTEXT','DIMENSION','POINT'].includes(e.type))return 'reference';return rules.find(([,r])=>r.test((normalize(e.layer)+' '+normalize(e.blockName)).trim()))?.[0]||'obstacle';}
+  const isLayerZero=e=>normalize(e.layer)==='0';
+  function role(e,o={}){const ids=String(e.id||'').split('/');let inherited;for(let n=ids.length-1;n>0;n--)if(o.entityRoles?.[ids.slice(0,n).join('/')]){inherited=o.entityRoles[ids.slice(0,n).join('/')];break;}const explicit=o.entityRoles?.[e.id]||inherited||o.layerRoles?.[e.layer];if(explicit)return explicit;const alias=Object.entries(o.layerAliases||{}).find(([name])=>normalize(name)===normalize(e.layer));if(alias&&roles.includes(alias[1]))return alias[1];if(e.semanticRole)return e.semanticRole;if(e.type==='POINT'&&rules.find(([,r])=>r.test(normalize(e.layer)))?.[0]==='pillar')return 'pillar';if(['TEXT','MTEXT','DIMENSION','POINT'].includes(e.type))return 'reference';if(isLayerZero(e))return 'usable';return rules.find(([,r])=>r.test((normalize(e.layer)+' '+normalize(e.blockName)).trim()))?.[0]||'obstacle';}
   const path=pts=>pts.map(([x,y])=>({X:Math.round(x*S),Y:Math.round(y*S)}));
   const points=p=>p.map(v=>[v.X/S,v.Y/S]);
   function operation(a,b,type){const C=scope.ClipperLib;if(!a.length)return [];const c=new C.Clipper(),out=[];c.AddPaths(a,C.PolyType.ptSubject,true);if(b.length)c.AddPaths(b,C.PolyType.ptClip,true);c.Execute(type,out,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);return out;}
@@ -38,10 +39,13 @@
     if(selected.length){const pts=selected.flatMap(e=>e.points),b=bounds(pts);entities.push({id:'detected:regions',type:'LWPOLYLINE',layer:'Detected usable regions',semanticRole:'boundary',interpreted:true,closed:true,boundaryEligible:true,points:scope.LogEnLayout.corners({x:b.minX,y:b.minY,w:b.maxX-b.minX,h:b.maxY-b.minY}),bounds:[b.minX,b.minY,b.maxX,b.maxY],regionsUncertain:selected.some(e=>role(e,o)==='obstacle'),regionIds:selected.map(e=>e.id)});}
     return {...input,entities,interpretationVersion:1};
   }
+  // Older projects stored a single Layer 0 outline. It now represents the whole
+  // set of eligible outlines, without filling the space between disjoint areas.
+  function boundaryId(geometry,id){const all=geometry.entities.find(e=>e.id==='detected:regions'),selected=geometry.entities.find(e=>e.id===id);return all&&(!selected||isLayerZero(selected)&&all.regionIds.includes(selected.id))?all.id:id;}
   function analyze(input,o,settings={}){
     const geometry=prepare(input,o),L=scope.LogEnLayout,C=scope.ClipperLib,errors=[],warnings=[],counts={},scale=o.scale;
     if(!(Number.isFinite(scale)&&scale>0))throw new Error('Choose drawing units before geometry analysis.');
-    const selected=geometry.entities.find(e=>e.id===(o.boundaryId||'detected:regions'));
+    const selected=geometry.entities.find(e=>e.id===(boundaryId(geometry,o.boundaryId)||'detected:regions'));
     if(!selected)throw new Error('No reliable enclosed usable region was identified. Classify a boundary/usable-area layer or select a closed outline.');
     if(selected.regionsUncertain&&!o.regionsConfirmed)errors.push('Detected enclosures have no usable-area layer classification. Confirm the candidate regions or classify their source layer before generating storage.');
     const definedUsable=!selected.regionIds&&role(selected,o)!=='usable'?geometry.entities.filter(e=>!e.interpreted&&role(e,o)==='usable'&&e.closed&&L.core.validPolygon(e.points)&&e.points.every(p=>L.core.inside(p,selected.points))):[];
@@ -82,5 +86,5 @@
     return {geometry,warehouse,regions:regionEntities.map(e=>({id:e.id,points:world(e),area:area(intersect(gross,[ring(world(e))]))})),gross,physical,noStorage:intersect(noStorage,gross),movementBlocked:intersect(movement,gross),net,pedestrian,pedestrianFree,approvedCrossings:union(approved),crossingCandidates,zones,doors,errors,warnings,counts,unclassified,regionCount,grossArea:area(gross),excludedArea:area(gross)-area(net),netArea:area(net)};
   }
   function components(ps){if(!ps.length)return 0;const C=scope.ClipperLib,c=new C.Clipper(),tree=new C.PolyTree();c.AddPaths(ps,C.PolyType.ptSubject,true);c.Execute(C.ClipType.ctUnion,tree,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);return tree.Childs().length;}
-  scope.LogEnWarehouseGeometry=Object.freeze({roles,role,normalize,prepare,analyze,path,points,ring,union,diff,intersect,offset,area,components});
+  scope.LogEnWarehouseGeometry=Object.freeze({roles,role,normalize,isLayerZero,boundaryId,prepare,analyze,path,points,ring,union,diff,intersect,offset,area,components});
 })(globalThis);
