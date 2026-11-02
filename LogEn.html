@@ -167,6 +167,8 @@ main>.panel,main>.production-panel,main>.implementation-panel{max-width:100%}
 </head>
 <body>
   <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-designer" viewBox="0 0 24 24"><path d="M3 21V8l9-5 9 5v13H3Z M7 21V11h10v10 M7 15h10 M12 11v10"/></symbol>
+    <symbol id="i-view3d" viewBox="0 0 24 24"><path d="m12 6 6 3.5v7L12 20l-6-3.5v-7L12 6Z M6 9.5l6 3.5 6-3.5 M12 13v7 M3 7V3h4 M17 3h4v4 M21 17v4h-4 M7 21H3v-4"/></symbol>
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
     <symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z M3 8v9l9 5 9-5V8 M12 13v9 M7.5 5.5l9 5"/></symbol>
     <symbol id="i-rack" viewBox="0 0 24 24"><path d="M3 3v18 M21 3v18 M3 11h18 M3 20h18 M6 11V5h5v6 M14 11V5h4v6 M6 20v-6h5v6 M14 20v-6h4v6"/></symbol>
@@ -194,8 +196,8 @@ main>.panel,main>.production-panel,main>.implementation-panel{max-width:100%}
       <button class="nav-item active" data-view="dashboard"><svg class="icon"><use href="#i-grid"/></svg>Overview<span class="nav-dot"></span></button>
       <button class="nav-item" data-view="consumption"><svg class="icon"><use href="#i-chart"/></svg>Shift consumption</button>
       <button class="nav-item" data-view="parts"><svg class="icon"><use href="#i-box"/></svg>Part details<span id="nav-count" class="count-badge">0</span></button>
-      <button class="nav-item" data-view="implementation"><svg class="icon"><use href="#i-folder"/></svg>Warehouse Designer</button>
-      <button class="nav-item" data-view="viewer3d"><svg class="icon"><use href="#i-box"/></svg>3D viewer</button>
+      <button class="nav-item" data-view="implementation"><svg class="icon"><use href="#i-designer"/></svg>Warehouse Designer</button>
+      <button class="nav-item" data-view="viewer3d"><svg class="icon"><use href="#i-view3d"/></svg>3D viewer</button>
       <button class="nav-item" id="settings-nav"><svg class="icon"><use href="#i-settings"/></svg>Warehouse settings</button>
       <button class="nav-item" data-view="projects"><svg class="icon"><use href="#i-folder"/></svg>Projects</button>
     </nav>
