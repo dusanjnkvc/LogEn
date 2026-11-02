@@ -6,6 +6,15 @@
   const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   const rules=[['pedestrian',/pedestrian|walkways?|footpaths?|chodnik/],['crossing',/crossings?|crosswalk/],['gangway',/forklift|industrial aisle|gangways?|traffic aisle/],['existing-ground',/ground storage|floor storage|pallet positions?/],['existing-rack',/racks?|shelving|regal/],['usable',/usable|storage eligible|storage area/],['boundary',/warehouse boundary|external boundary|building outline|perimeter|source boundary|^boundary$/],['pillar',/pillars?|columns?|stl[pb]/],['door',/doors?|entrance|exit|loading gate/],['wall',/walls?|partition/],['restricted',/restricted|no storage|blocked|machinery|technical|exclusion/],['reference',/annotation|dimension|text|reference|title|defpoints/]];
   const isLayerZero=e=>normalize(e.layer)==='0';
+  function storageOptions(input,o={}){
+    if(o.layerZeroStorageVersion===1)return o;
+    const zero=input.entities.filter(e=>!e.interpreted&&isLayerZero(e)),layerRoles={...o.layerRoles},entityRoles={...o.entityRoles};
+    // Existing drawings may have classified Layer 0 as reference or an outline
+    // as an obstacle. Apply the user's new Layer 0 convention once; later
+    // corrections made in the drawing editor remain editable and persistent.
+    for(const e of zero){layerRoles[e.layer]='usable';delete entityRoles[e.id];if(['TEXT','MTEXT','DIMENSION','POINT'].includes(e.type))entityRoles[e.id]='reference';else if(Object.keys(entityRoles).some(id=>e.id.startsWith(id+'/')))entityRoles[e.id]='usable';}
+    return {...o,layerRoles,entityRoles,layerZeroStorageVersion:1};
+  }
   function role(e,o={}){const ids=String(e.id||'').split('/');let inherited;for(let n=ids.length-1;n>0;n--)if(o.entityRoles?.[ids.slice(0,n).join('/')]){inherited=o.entityRoles[ids.slice(0,n).join('/')];break;}const explicit=o.entityRoles?.[e.id]||inherited||o.layerRoles?.[e.layer];if(explicit)return explicit;const alias=Object.entries(o.layerAliases||{}).find(([name])=>normalize(name)===normalize(e.layer));if(alias&&roles.includes(alias[1]))return alias[1];if(e.semanticRole)return e.semanticRole;if(e.type==='POINT'&&rules.find(([,r])=>r.test(normalize(e.layer)))?.[0]==='pillar')return 'pillar';if(['TEXT','MTEXT','DIMENSION','POINT'].includes(e.type))return 'reference';if(isLayerZero(e))return 'usable';return rules.find(([,r])=>r.test((normalize(e.layer)+' '+normalize(e.blockName)).trim()))?.[0]||'obstacle';}
   const path=pts=>pts.map(([x,y])=>({X:Math.round(x*S),Y:Math.round(y*S)}));
   const points=p=>p.map(v=>[v.X/S,v.Y/S]);
@@ -26,6 +35,7 @@
     }return out;
   }
   function prepare(input,o={}){
+    o=storageOptions(input,o);
     const original=input.entities.filter(e=>!e.interpreted),entities=original.map(e=>({...e,points:(e.points||[]).filter(p=>p?.length>=2&&p.slice(0,2).every(Number.isFinite)).map(p=>p.slice(0,2))}));
     const scale=o.scale||({4:1,5:10,6:1000,1:25.4,2:304.8}[input.units])||1,tolerance=Math.max(0,o.geometryTolerance??1)/scale;
     for(const layer of [...new Set(entities.map(e=>e.layer))]){
@@ -43,6 +53,7 @@
   // set of eligible outlines, without filling the space between disjoint areas.
   function boundaryId(geometry,id){const all=geometry.entities.find(e=>e.id==='detected:regions'),selected=geometry.entities.find(e=>e.id===id);return all&&(!selected||isLayerZero(selected)&&all.regionIds.includes(selected.id))?all.id:id;}
   function analyze(input,o,settings={}){
+    o=storageOptions(input,o);
     const geometry=prepare(input,o),L=scope.LogEnLayout,C=scope.ClipperLib,errors=[],warnings=[],counts={},scale=o.scale;
     if(!(Number.isFinite(scale)&&scale>0))throw new Error('Choose drawing units before geometry analysis.');
     const selected=geometry.entities.find(e=>e.id===(boundaryId(geometry,o.boundaryId)||'detected:regions'));
@@ -86,5 +97,5 @@
     return {geometry,warehouse,regions:regionEntities.map(e=>({id:e.id,points:world(e),area:area(intersect(gross,[ring(world(e))]))})),gross,physical,noStorage:intersect(noStorage,gross),movementBlocked:intersect(movement,gross),net,pedestrian,pedestrianFree,approvedCrossings:union(approved),crossingCandidates,zones,doors,errors,warnings,counts,unclassified,regionCount,grossArea:area(gross),excludedArea:area(gross)-area(net),netArea:area(net)};
   }
   function components(ps){if(!ps.length)return 0;const C=scope.ClipperLib,c=new C.Clipper(),tree=new C.PolyTree();c.AddPaths(ps,C.PolyType.ptSubject,true);c.Execute(C.ClipType.ctUnion,tree,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);return tree.Childs().length;}
-  scope.LogEnWarehouseGeometry=Object.freeze({roles,role,normalize,isLayerZero,boundaryId,prepare,analyze,path,points,ring,union,diff,intersect,offset,area,components});
+  scope.LogEnWarehouseGeometry=Object.freeze({roles,role,normalize,isLayerZero,storageOptions,boundaryId,prepare,analyze,path,points,ring,union,diff,intersect,offset,area,components});
 })(globalThis);

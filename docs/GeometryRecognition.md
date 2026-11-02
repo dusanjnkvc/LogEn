@@ -8,7 +8,7 @@ LogEn now reads supported DWG/DXF geometry locally in a browser worker, previews
 
 The previous editor required one manually chosen closed straight polyline. Other drawing objects defaulted to a single blocked-area role. Connected LINE/open-polyline enclosures were not reconstructed, INSERT geometry could be reduced to bounding boxes, and pedestrian circulation had no separate classification. That combination made valid Layer 0 enclosures difficult to identify and conflated storage exclusions with physical movement barriers.
 
-All valid closed areas on Layer 0 are usable storage by default, as requested. They are selected together as “All Layer 0 usable areas”, including saved projects that previously selected only one Layer 0 outline. Separate areas are combined as a polygon union: overlapping space is counted once and the space between separate outlines is not invented as storage. Explicit object/layer corrections, holes and obstacle exclusions still apply. Text and dimensions do not become storage areas. Uncertain enclosures on other unclassified layers continue to require confirmation. White objects and locked-layer geometry are not discarded.
+All valid closed areas on Layer 0 are usable storage by default, as requested. They are selected together as “All Layer 0 usable areas”, including saved projects that previously selected only one Layer 0 outline. Separate areas are combined as a polygon union: overlapping space is counted once and the space between separate outlines is not invented as storage. Older Layer 0 classifications are migrated once to the new usable-area convention; corrections made afterwards remain editable and persistent. Holes and obstacle exclusions on their respective layers still apply. Text and dimensions do not become storage areas. Uncertain enclosures on other unclassified layers continue to require confirmation. White objects and locked-layer geometry are not discarded.
 
 ## Modules and functions changed
 
@@ -90,6 +90,6 @@ Physical Android testing has not been executed. Complex/custom/proxy entities, n
 
 ## Layer 0 selection correction
 
-The boundary selector now groups Layer 0 areas instead of offering each as a separate warehouse side. A saved single Layer 0 selection migrates to the combined regions on opening; generation and saved layouts use the same combined geometry. Regenerate old layouts to include all areas.
+The boundary selector now groups Layer 0 areas instead of offering each as a separate warehouse side. A saved single Layer 0 selection and legacy Layer 0 reference/obstacle classifications migrate to the combined usable regions once on opening; generation and saved layouts use the same combined geometry. Regenerate old layouts to include all areas.
 
 Targeted regression coverage in `webapp/layer-zero.test.cjs` verifies four separate squares, saved-boundary migration, overlapping areas counted once, no storage in gaps, pillars/walkways/restricted exclusions, explicit object corrections, text handling, reconstructed Layer 0 line loops, placement in all four areas, the combined selector and saved options. The 29 geometry/placement checks and upload/routing checks were rerun for this correction. Demand and footprint formulas remain unchanged.

@@ -9,7 +9,7 @@
     const dialog=document.createElement('dialog');dialog.className='physical-layout-dialog';
     const defaults={1:25.4,2:304.8,4:1,5:10,6:1000};
     let setup={scale:defaults[geometry.units]||0,boundaryId:'',obstacleClearance:settings.floorPalletClearance,layerRoles:{},entityRoles:{},manualObstacles:[],...options};
-    geometry=LogEnWarehouseGeometry.prepare(geometry,setup);setup.boundaryId=LogEnWarehouseGeometry.boundaryId(geometry,setup.boundaryId);
+    setup=LogEnWarehouseGeometry.storageOptions(geometry,setup);geometry=LogEnWarehouseGeometry.prepare(geometry,setup);setup.boundaryId=LogEnWarehouseGeometry.boundaryId(geometry,setup.boundaryId);
     let alternatives=savedAlternatives,layout=saved,selected=null,selectedEntity=null,dirty=false,exported=null,drag=null,viewBox=null,optimizing=false;
     const boundaryCandidates=()=>geometry.entities.filter(e=>e.boundaryEligible&&!(LogEnWarehouseGeometry.isLayerZero(e)&&geometry.entities.find(v=>v.id==='detected:regions')?.regionIds.includes(e.id)));
     const boundaryLabel=e=>e.id==='detected:regions'?(e.regionIds.every(id=>LogEnWarehouseGeometry.isLayerZero(geometry.entities.find(v=>v.id===id)))?'All Layer 0 usable areas':'All detected usable areas')+' ('+e.regionIds.length+')':e.layer+' · '+e.id;

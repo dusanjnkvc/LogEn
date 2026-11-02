@@ -6,12 +6,13 @@ const rooms=[rect('431',0,0),rect('438',20000,0),rect('third',0,20000),rect('fou
 const input={units:4,entities:rooms},options={scale:1,boundaryId:'431',obstacleClearance:0,geometryReviewed:true,constraintsConfirmed:true};
 const settings={...D.createDefaultSettings(),gangwayWidth:1500,maxFloorRowDepth:6000,stackingMode:'imported',shiftsPerDay:1,coverageMode:'custom',customCoverageDays:1};
 const analyze=(entities=rooms,o={})=>A.analyze({units:4,entities},{...options,...o},settings);
+const legacy={...options,layerRoles:{'0':'reference'},entityRoles:{'431':'pillar'}},migrated=A.storageOptions(input,legacy);assert.equal(legacy.layerRoles['0'],'reference','Do not mutate saved source options');assert.equal(analyze(rooms,legacy).regionCount,4);assert.equal(analyze(rooms,legacy).excludedArea,0);assert.equal(A.storageOptions(input,{...migrated,entityRoles:{...migrated.entityRoles,third:'void'}}).entityRoles.third,'void','Later corrections remain editable');assert.equal(analyze([...rooms,rect('outer',-1000,-1000,40000,40000,'WAREHOUSE_BOUNDARY')],{...migrated,layerRoles:{'0':'restricted'},boundaryId:'outer'}).excludedArea,900,'Later whole-layer corrections remain editable');
 const four=analyze();assert.equal(four.regionCount,4);assert.equal(four.grossArea,900);assert.equal(four.errors.length,0);assert.equal(four.regions.length,4);
 assert.equal(A.area(A.intersect(four.gross,[A.ring(L.corners({x:15000,y:0,w:5000,h:15000}))])),0,'Do not invent storage between separate regions');
 const overlapping=analyze([rect('one',0,0,10000,10000),rect('two',5000,0,10000,10000)]);assert.equal(overlapping.grossArea,150,'Overlaps must be counted once');
 const exclusions=[rect('pillar',2000,2000,1000,1000,'Pillars'),rect('walkway',3000,0,1000,15000,'WALKWAYS'),rect('restricted',22000,2000,1000,1000,'Restricted')];
 assert.equal(analyze([...rooms,...exclusions]).excludedArea,17,'Other layer exclusions remain in force');
-assert.equal(analyze(rooms,{entityRoles:{third:'void'}}).grossArea,675,'Explicit object corrections remain in force');
+assert.equal(analyze(rooms,{layerZeroStorageVersion:1,entityRoles:{third:'void'}}).grossArea,675,'Explicit object corrections remain in force');
 assert.equal(A.role({layer:'0',type:'TEXT'}),'reference','Layer 0 labels are not region geometry');
 const lines=rooms.flatMap(r=>r.points.map((p,i)=>({...r,id:r.id+':'+i,type:'LINE',closed:false,boundaryEligible:false,points:[p,r.points[(i+1)%4]]})));
 assert.equal(analyze(lines,{boundaryId:''}).regionCount,4,'Four separate line loops on Layer 0 are all usable');
@@ -24,13 +25,13 @@ async function main(){
  const dom=new JSDOM('<!doctype html><body></body>',{runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
  w.ClipperLib=ClipperLib;w.structuredClone=structuredClone;w.HTMLDialogElement.prototype.showModal=function(){};
  for(const file of ['domain.js','layout.js','warehouse-geometry.js','layout-optimizer.js','layout-ui.js'])w.eval(fs.readFileSync('webapp/'+file,'utf8'));
- let saved;const dialog=w.LogEnLayoutUI.open({name:'Layer 0 test',plan,settings,geometry:input,options,onSave:async v=>{saved=v;}}),select=dialog.querySelector('[data-layout-boundary]');
+ let saved;const dialog=w.LogEnLayoutUI.open({name:'Layer 0 test',plan,settings,geometry:input,options:legacy,onSave:async v=>{saved=v;}}),select=dialog.querySelector('[data-layout-boundary]');
  assert.equal(select.value,'detected:regions','Saved single-outline selection must migrate');
  assert.equal(select.selectedOptions[0].textContent,'All Layer 0 usable areas (4)');
  assert.equal(select.options.length,2,'Do not offer single Layer 0 outlines as separate boundaries');
  assert.match(dialog.querySelector('[data-geometry-diagnostics]').textContent,/4 usable regions/);
  assert.equal(dialog.querySelector('[data-layout-layer]').value,'usable');
- dialog.querySelector('[data-layout-save]').click();await new Promise(r=>setTimeout(r,0));assert.equal(saved.options.boundaryId,'detected:regions');
+ dialog.querySelector('[data-layout-save]').click();await new Promise(r=>setTimeout(r,0));assert.equal(saved.options.boundaryId,'detected:regions');assert.equal(saved.options.layerZeroStorageVersion,1);assert.equal(A.role(rooms[0],saved.options),'usable');
  dom.window.close();
  console.log('Layer 0 regression checks passed: four regions, old boundary migration, union/exclusions, line loops, all-region placement and combined UI selection.');
 }
