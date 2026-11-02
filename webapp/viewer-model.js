@@ -76,7 +76,8 @@
     for(const e of geometry?.entities||[]){if(e.id===layout.options.boundaryId||interpretation&&(['boundary','usable','void'].includes(role(e))||interpretation.regions.some(r=>r.id===e.id)||e.interpreted))continue;const r=role(e),pts=e.points.map(p=>p.map(n=>n*layout.options.scale));if(['existing-rack','existing-ground','gangway','reference','pedestrian','restricted','crossing'].includes(r))continue;
       const height=positive(e.height)?e.height*layout.options.scale:buildingHeight;
       if(r==='door'){if(pts.length>=2){let longest=[pts[0],pts[1]];for(let i=1;i<pts.length;i++)if(Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1])>Math.hypot(longest[1][0]-longest[0][0],longest[1][1]-longest[0][1]))longest=[pts[i-1],pts[i]];wallSegment(longest[0],longest[1],Math.min(height,2800),'door',e.id,80);}continue;}
-      if(!e.closed||e.type==='LINE'){for(let i=1;i<pts.length;i++)cutWall(pts[i-1],pts[i],height,'internal-wall',e.id+':'+i);}
+      if(r==='wall'&&interpretation?.wallContourIds?.includes(e.id)){for(let i=0;i<pts.length;i++)cutWall(pts[i],pts[(i+1)%pts.length],height,'internal-wall',e.id+':'+i);}
+      else if(!e.closed||e.type==='LINE'){for(let i=1;i<pts.length;i++)cutWall(pts[i-1],pts[i],height,'internal-wall',e.id+':'+i);}
       else obstacles.push({id:e.id,kind:'obstacle',points:pts.map(p=>world([p[0],p[1],0])),height:height/1000,schematicHeight:!positive(e.height)});
     }
     for(const [i,r]of (layout.options.manualObstacles||[]).entries())obstacles.push({id:'reserved:'+i,kind:'restricted',points:L.corners(r).map(p=>world([p[0],p[1],0])),height:.08});

@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('../.tooling/qa/node_modules/jsdom');
-global.ClipperLib=require('./vendor/clipper');require('./domain');require('./layout');require('./warehouse-geometry');require('./layout-optimizer');
+global.ClipperLib=require('./vendor/clipper');require('./domain');require('./layout');require('./warehouse-geometry');require('./layout-optimizer');require('./viewer-model');
 const A=LogEnWarehouseGeometry,L=LogEnLayout,D=LogEnDomain;
 const rect=(id,x,y,w=15000,h=15000,layer='0')=>({id,layer,type:'LWPOLYLINE',closed:true,boundaryEligible:true,points:L.corners({x,y,w,h}),bounds:[x,y,x+w,y+h]});
 const rooms=[rect('431',0,0),rect('438',20000,0),rect('third',0,20000),rect('fourth',20000,20000)];
@@ -10,6 +10,7 @@ const legacy={...options,layerRoles:{'0':'reference'},entityRoles:{'431':'pillar
 const four=analyze();assert.equal(four.regionCount,4);assert.equal(four.grossArea,900);assert.equal(four.errors.length,0);assert.equal(four.regions.length,4);
 assert.equal(A.area(A.intersect(four.gross,[A.ring(L.corners({x:15000,y:0,w:5000,h:15000}))])),0,'Do not invent storage between separate regions');
 const overlapping=analyze([rect('one',0,0,10000,10000),rect('two',5000,0,10000,10000)]);assert.equal(overlapping.grossArea,150,'Overlaps must be counted once');
+const wallFrame=analyze([rect('space',1000,1000,8000,8000),rect('wall-out',0,0,10000,10000,'Walls'),rect('wall-in',300,300,9400,9400,'Walls')]);assert.equal(wallFrame.netArea,64,'Nested wall faces must not fill the storage interior');assert(Math.abs(A.area(wallFrame.physical)-11.64)<1e-7);
 const exclusions=[rect('pillar',2000,2000,1000,1000,'Pillars'),rect('walkway',3000,0,1000,15000,'WALKWAYS'),rect('restricted',22000,2000,1000,1000,'Restricted')];
 assert.equal(analyze([...rooms,...exclusions]).excludedArea,17,'Other layer exclusions remain in force');
 assert.equal(analyze(rooms,{layerZeroStorageVersion:1,entityRoles:{third:'void'}}).grossArea,675,'Explicit object corrections remain in force');
@@ -20,6 +21,7 @@ async function main(){
  const part={partNumber:'FOUR-AREAS',qtyBox:1,qtyOnPallet:1,consumptionPerShift:36,doh:1,length:5000,width:5000,height:1000,stacking:1,inputErrors:[]};
  const plan=D.calculateImplementation([part],settings,{greenfield:true,storageMode:'ground'}),geometry=A.prepare(input),result=await LogEnOptimizer.optimize(plan,settings,geometry,options),objects=L.cadObjects(result.layout);
  assert.equal(result.layout.metrics.detectedRegions,4);
+ const frameGeometry=A.prepare({units:4,entities:[...rooms,rect('frame-out',-1000,-1000,40000,40000,'Walls'),rect('frame-in',-700,-700,39400,39400,'Walls')]}),model=LogEnViewerModel.build({layout:result.layout,geometry:frameGeometry,parts:[part],settings});assert(!model.obstacles.some(v=>v.id==='frame-out'||v.id==='frame-in'),'3D must not render the warehouse interior as a solid wall block');assert(model.walls.some(v=>v.id.startsWith('frame-out:'))); 
  for(const room of rooms)assert(objects.some(o=>(o.points||L.corners(o)).every(p=>L.core.inside(p,room.points))),'No storage was placed in '+room.id);
  for(const o of objects)assert(A.area(A.diff([A.ring(o.points||L.corners(o))],four.gross))<1e-7,'Placement left usable regions');
  const dom=new JSDOM('<!doctype html><body></body>',{runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;

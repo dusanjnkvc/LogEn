@@ -62,15 +62,20 @@
     const definedUsable=!selected.regionIds&&role(selected,o)!=='usable'?geometry.entities.filter(e=>!e.interpreted&&role(e,o)==='usable'&&e.closed&&L.core.validPolygon(e.points)&&e.points.every(p=>L.core.inside(p,selected.points))):[];
     const regionEntities=selected.regionIds?selected.regionIds.map(id=>geometry.entities.find(e=>e.id===id)):definedUsable.length?definedUsable:[selected],excluded=new Set(regionEntities.flatMap(e=>[e.id,...(e.enclosureOfWalls?[]:e.sourceIds||[])]));excluded.add('detected:regions');excluded.add(selected.id);
     const world=e=>e.points.map(p=>p.map(n=>n*scale));
+    // Nested closed contours on a wall layer describe its outer and inner
+    // faces. Keep the wall band, rather than filling the enclosed warehouse.
+    const wallContours=geometry.entities.filter(e=>!e.interpreted&&!excluded.has(e.id)&&role(e,o)==='wall'&&e.closed&&L.core.validPolygon(world(e))).map(e=>({id:e.id,layer:e.layer,paths:[ring(world(e))],depth:0,children:[]})).sort((a,b)=>area(b.paths)-area(a.paths));
+    for(let i=0;i<wallContours.length;i++){const child=wallContours[i],parent=wallContours.slice(0,i).filter(p=>p.layer===child.layer&&area(p.paths)>area(child.paths)+1e-7&&area(diff(child.paths,p.paths))<1e-7).at(-1);if(parent){child.depth=parent.depth+1;parent.children.push(child);}}
+    const wallMasks=new Map(wallContours.map(e=>[e.id,e.depth%2?[]:diff(e.paths,union(e.children.map(c=>c.paths[0])))]));
     const outers=regionEntities.map(e=>world(e));for(const p of outers)if(!L.core.validPolygon(p))errors.push('An identified usable region is invalid or self-intersecting.');
     let gross=union(outers.filter(p=>L.core.validPolygon(p)).map(p=>ring(p))),physical=[],voids=[],noStorage=[],movement=[],pedestrians=[],forklifts=[],crossings=[],zones=[],doors=[],unclassified=0;
     const add=(array,ps)=>array.push(...ps);
     for(const e of geometry.entities){if(excluded.has(e.id)||e.interpreted&&!e.sourceIds)continue;let r=role(e,o);counts[r]=(counts[r]||0)+1;if(r==='reference'||r==='boundary'||r==='usable')continue;
-      if(e.interpreted&&e.sourceIds?.some(id=>excluded.has(id)))continue;
+      if(e.enclosureOfWalls||e.interpreted&&e.sourceIds?.some(id=>excluded.has(id)))continue;
       const pts=world(e);if(pts.length<2){if(['wall','pillar'].includes(r))errors.push(e.id+': physical footprint is missing. Supply a closed outline, or classify the marker as reference and add the actual reserved footprint.');else warnings.push(e.id+': geometry unavailable.');continue;}
       const closed=e.closed&&L.core.validPolygon(pts);let ps=[];
       if(e.closed&&!closed){errors.push(e.id+': invalid/self-intersecting polygon.');continue;}
-      if(closed)ps=[ring(pts)];else if(r==='wall'){
+      if(closed)ps=r==='wall'&&wallMasks.has(e.id)?wallMasks.get(e.id):[ring(pts)];else if(r==='wall'){
         if(!(o.wallThickness>0)){errors.push(e.id+': enter an explicit wall thickness for line/open wall geometry.');continue;}ps=offset([path(pts)],o.wallThickness/2+(e.curveError||0)*scale,true);
       }else{const b=bounds(pts);ps=[ring(L.corners({x:b.minX,y:b.minY,w:Math.max(.1,b.maxX-b.minX),h:Math.max(.1,b.maxY-b.minY)}))];if(r!=='door')warnings.push(e.id+': open/unclassified geometry uses a conservative bounding envelope.');}
       if(r==='void'){gross=diff(gross,ps);voids.push(...ps);continue;}
@@ -94,7 +99,7 @@
     const namedBoundary=geometry.entities.filter(e=>!e.interpreted&&role(e,o)==='boundary'&&e.closed&&L.core.validPolygon(world(e))).map(e=>ring(world(e))),warehouse=namedBoundary.length?diff(union(namedBoundary),union(voids)):gross;if(area(diff(gross,warehouse))>1e-7)errors.push('A usable region leaves the classified warehouse boundary. Correct the regions or boundary before generation.');
     const net=diff(gross,noStorage),regionCount=components(gross);for(const n of input.notifications||[])warnings.push('CAD reader: '+n);
     if(!gross.length)errors.push('No valid usable area remains.');if(input.unreadableEntities)warnings.push(input.unreadableEntities+' source entities could not be interpreted; add their restrictions before confirming geometry.');
-    return {geometry,warehouse,regions:regionEntities.map(e=>({id:e.id,points:world(e),area:area(intersect(gross,[ring(world(e))]))})),gross,physical,noStorage:intersect(noStorage,gross),movementBlocked:intersect(movement,gross),net,pedestrian,pedestrianFree,approvedCrossings:union(approved),crossingCandidates,zones,doors,errors,warnings,counts,unclassified,regionCount,grossArea:area(gross),excludedArea:area(gross)-area(net),netArea:area(net)};
+    return {geometry,warehouse,wallContourIds:wallContours.filter(e=>e.children.length||e.depth>0).map(e=>e.id),regions:regionEntities.map(e=>({id:e.id,points:world(e),area:area(intersect(gross,[ring(world(e))]))})),gross,physical,noStorage:intersect(noStorage,gross),movementBlocked:intersect(movement,gross),net,pedestrian,pedestrianFree,approvedCrossings:union(approved),crossingCandidates,zones,doors,errors,warnings,counts,unclassified,regionCount,grossArea:area(gross),excludedArea:area(gross)-area(net),netArea:area(net)};
   }
   function components(ps){if(!ps.length)return 0;const C=scope.ClipperLib,c=new C.Clipper(),tree=new C.PolyTree();c.AddPaths(ps,C.PolyType.ptSubject,true);c.Execute(C.ClipType.ctUnion,tree,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);return tree.Childs().length;}
   scope.LogEnWarehouseGeometry=Object.freeze({roles,role,normalize,isLayerZero,storageOptions,boundaryId,prepare,analyze,path,points,ring,union,diff,intersect,offset,area,components});

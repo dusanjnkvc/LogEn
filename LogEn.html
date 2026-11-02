@@ -9649,7 +9649,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   const overlaps=(a,b,g=0)=>a.x<b.x+b.w+g-EPS&&a.x+a.w+g>b.x+EPS&&a.y<b.y+b.h+g-EPS&&a.y+a.h+g>b.y+EPS;
   const expand=(r,g)=>({x:r.x-g,y:r.y-g,w:r.w+2*g,h:r.h+2*g});
   const rectFromBounds=b=>({x:b.minX,y:b.minY,w:Math.max(EPS,b.maxX-b.minX),h:Math.max(EPS,b.maxY-b.minY)});
-  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,existingMode:!config.greenfield,allowNewStorageConstruction:!config.greenfield&&!!config.allowNewStorageConstruction,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:23,wallRackMode:config.wallRackMode||(config.racksAroundWalls?"all":"bottom"),allWalls:!!config.racksAroundWalls,groundStartVertical:config.groundStartVertical||"right",groundStartHorizontal:config.groundStartHorizontal||"top",wallStartSide:config.wallStartSide||"left",orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
+  function sourceKey(plan,settings,config,stamp){return JSON.stringify({stamp,existingMode:!config.greenfield,allowNewStorageConstruction:!config.greenfield&&!!config.allowNewStorageConstruction,rows:plan.rows.map(r=>[r.input,r.required,r.rackPallets,r.groundPallets,r.ground]),rack:plan.rack.bayLayouts?.map(b=>[b.typeId,b.settings,b.shelves.map(sh=>sh.placements)]),settings,wall:!!config.allowWallStorage,optimizer:24,wallRackMode:config.wallRackMode||(config.racksAroundWalls?"all":"bottom"),allWalls:!!config.racksAroundWalls,groundStartVertical:config.groundStartVertical||"right",groundStartHorizontal:config.groundStartHorizontal||"top",wallStartSide:config.wallStartSide||"left",orientation:config.warehouseOrientation||"auto",backToBackSeparation:config.backToBackSeparation||0,wallClearance:config.wallClearance||0});}
   function makeObjects(plan,settings){
     const groups=[],issues=[];let rackRequired=0,groundRequired=0;
     for(const row of plan.rows){if(row.errors.length||row.required===null)issues.push({pn:row.input.partNumber,message:row.errors.join(' ')||'Required quantity is unavailable.'});rackRequired+=row.rackPallets||0;}
@@ -9853,15 +9853,20 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const definedUsable=!selected.regionIds&&role(selected,o)!=='usable'?geometry.entities.filter(e=>!e.interpreted&&role(e,o)==='usable'&&e.closed&&L.core.validPolygon(e.points)&&e.points.every(p=>L.core.inside(p,selected.points))):[];
     const regionEntities=selected.regionIds?selected.regionIds.map(id=>geometry.entities.find(e=>e.id===id)):definedUsable.length?definedUsable:[selected],excluded=new Set(regionEntities.flatMap(e=>[e.id,...(e.enclosureOfWalls?[]:e.sourceIds||[])]));excluded.add('detected:regions');excluded.add(selected.id);
     const world=e=>e.points.map(p=>p.map(n=>n*scale));
+    // Nested closed contours on a wall layer describe its outer and inner
+    // faces. Keep the wall band, rather than filling the enclosed warehouse.
+    const wallContours=geometry.entities.filter(e=>!e.interpreted&&!excluded.has(e.id)&&role(e,o)==='wall'&&e.closed&&L.core.validPolygon(world(e))).map(e=>({id:e.id,layer:e.layer,paths:[ring(world(e))],depth:0,children:[]})).sort((a,b)=>area(b.paths)-area(a.paths));
+    for(let i=0;i<wallContours.length;i++){const child=wallContours[i],parent=wallContours.slice(0,i).filter(p=>p.layer===child.layer&&area(p.paths)>area(child.paths)+1e-7&&area(diff(child.paths,p.paths))<1e-7).at(-1);if(parent){child.depth=parent.depth+1;parent.children.push(child);}}
+    const wallMasks=new Map(wallContours.map(e=>[e.id,e.depth%2?[]:diff(e.paths,union(e.children.map(c=>c.paths[0])))]));
     const outers=regionEntities.map(e=>world(e));for(const p of outers)if(!L.core.validPolygon(p))errors.push('An identified usable region is invalid or self-intersecting.');
     let gross=union(outers.filter(p=>L.core.validPolygon(p)).map(p=>ring(p))),physical=[],voids=[],noStorage=[],movement=[],pedestrians=[],forklifts=[],crossings=[],zones=[],doors=[],unclassified=0;
     const add=(array,ps)=>array.push(...ps);
     for(const e of geometry.entities){if(excluded.has(e.id)||e.interpreted&&!e.sourceIds)continue;let r=role(e,o);counts[r]=(counts[r]||0)+1;if(r==='reference'||r==='boundary'||r==='usable')continue;
-      if(e.interpreted&&e.sourceIds?.some(id=>excluded.has(id)))continue;
+      if(e.enclosureOfWalls||e.interpreted&&e.sourceIds?.some(id=>excluded.has(id)))continue;
       const pts=world(e);if(pts.length<2){if(['wall','pillar'].includes(r))errors.push(e.id+': physical footprint is missing. Supply a closed outline, or classify the marker as reference and add the actual reserved footprint.');else warnings.push(e.id+': geometry unavailable.');continue;}
       const closed=e.closed&&L.core.validPolygon(pts);let ps=[];
       if(e.closed&&!closed){errors.push(e.id+': invalid/self-intersecting polygon.');continue;}
-      if(closed)ps=[ring(pts)];else if(r==='wall'){
+      if(closed)ps=r==='wall'&&wallMasks.has(e.id)?wallMasks.get(e.id):[ring(pts)];else if(r==='wall'){
         if(!(o.wallThickness>0)){errors.push(e.id+': enter an explicit wall thickness for line/open wall geometry.');continue;}ps=offset([path(pts)],o.wallThickness/2+(e.curveError||0)*scale,true);
       }else{const b=bounds(pts);ps=[ring(L.corners({x:b.minX,y:b.minY,w:Math.max(.1,b.maxX-b.minX),h:Math.max(.1,b.maxY-b.minY)}))];if(r!=='door')warnings.push(e.id+': open/unclassified geometry uses a conservative bounding envelope.');}
       if(r==='void'){gross=diff(gross,ps);voids.push(...ps);continue;}
@@ -9885,7 +9890,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const namedBoundary=geometry.entities.filter(e=>!e.interpreted&&role(e,o)==='boundary'&&e.closed&&L.core.validPolygon(world(e))).map(e=>ring(world(e))),warehouse=namedBoundary.length?diff(union(namedBoundary),union(voids)):gross;if(area(diff(gross,warehouse))>1e-7)errors.push('A usable region leaves the classified warehouse boundary. Correct the regions or boundary before generation.');
     const net=diff(gross,noStorage),regionCount=components(gross);for(const n of input.notifications||[])warnings.push('CAD reader: '+n);
     if(!gross.length)errors.push('No valid usable area remains.');if(input.unreadableEntities)warnings.push(input.unreadableEntities+' source entities could not be interpreted; add their restrictions before confirming geometry.');
-    return {geometry,warehouse,regions:regionEntities.map(e=>({id:e.id,points:world(e),area:area(intersect(gross,[ring(world(e))]))})),gross,physical,noStorage:intersect(noStorage,gross),movementBlocked:intersect(movement,gross),net,pedestrian,pedestrianFree,approvedCrossings:union(approved),crossingCandidates,zones,doors,errors,warnings,counts,unclassified,regionCount,grossArea:area(gross),excludedArea:area(gross)-area(net),netArea:area(net)};
+    return {geometry,warehouse,wallContourIds:wallContours.filter(e=>e.children.length||e.depth>0).map(e=>e.id),regions:regionEntities.map(e=>({id:e.id,points:world(e),area:area(intersect(gross,[ring(world(e))]))})),gross,physical,noStorage:intersect(noStorage,gross),movementBlocked:intersect(movement,gross),net,pedestrian,pedestrianFree,approvedCrossings:union(approved),crossingCandidates,zones,doors,errors,warnings,counts,unclassified,regionCount,grossArea:area(gross),excludedArea:area(gross)-area(net),netArea:area(net)};
   }
   function components(ps){if(!ps.length)return 0;const C=scope.ClipperLib,c=new C.Clipper(),tree=new C.PolyTree();c.AddPaths(ps,C.PolyType.ptSubject,true);c.Execute(C.ClipType.ctUnion,tree,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);return tree.Childs().length;}
   scope.LogEnWarehouseGeometry=Object.freeze({roles,role,normalize,isLayerZero,storageOptions,boundaryId,prepare,analyze,path,points,ring,union,diff,intersect,offset,area,components});
@@ -10691,7 +10696,8 @@ SOFTWARE.
     for(const e of geometry?.entities||[]){if(e.id===layout.options.boundaryId||interpretation&&(['boundary','usable','void'].includes(role(e))||interpretation.regions.some(r=>r.id===e.id)||e.interpreted))continue;const r=role(e),pts=e.points.map(p=>p.map(n=>n*layout.options.scale));if(['existing-rack','existing-ground','gangway','reference','pedestrian','restricted','crossing'].includes(r))continue;
       const height=positive(e.height)?e.height*layout.options.scale:buildingHeight;
       if(r==='door'){if(pts.length>=2){let longest=[pts[0],pts[1]];for(let i=1;i<pts.length;i++)if(Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1])>Math.hypot(longest[1][0]-longest[0][0],longest[1][1]-longest[0][1]))longest=[pts[i-1],pts[i]];wallSegment(longest[0],longest[1],Math.min(height,2800),'door',e.id,80);}continue;}
-      if(!e.closed||e.type==='LINE'){for(let i=1;i<pts.length;i++)cutWall(pts[i-1],pts[i],height,'internal-wall',e.id+':'+i);}
+      if(r==='wall'&&interpretation?.wallContourIds?.includes(e.id)){for(let i=0;i<pts.length;i++)cutWall(pts[i],pts[(i+1)%pts.length],height,'internal-wall',e.id+':'+i);}
+      else if(!e.closed||e.type==='LINE'){for(let i=1;i<pts.length;i++)cutWall(pts[i-1],pts[i],height,'internal-wall',e.id+':'+i);}
       else obstacles.push({id:e.id,kind:'obstacle',points:pts.map(p=>world([p[0],p[1],0])),height:height/1000,schematicHeight:!positive(e.height)});
     }
     for(const [i,r]of (layout.options.manualObstacles||[]).entries())obstacles.push({id:'reserved:'+i,kind:'restricted',points:L.corners(r).map(p=>world([p[0],p[1],0])),height:.08});
