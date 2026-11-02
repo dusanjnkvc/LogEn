@@ -21,10 +21,19 @@ function Invoke-LogEnLayoutJob([byte[]]$Drawing, [string]$Mode, $Plan=$null) {
   if (-not $script:ConsolePath -or -not (Test-Path -LiteralPath $script:ConsolePath)) { throw 'AutoCAD Core Console was not found.' }
   $tempRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath());$folder=Join-Path $tempRoot ('LogEnCAD-'+[Guid]::NewGuid().ToString('N'));[IO.Directory]::CreateDirectory($folder)|Out-Null
   try {
-    $inputPath=Join-Path $folder 'warehouse.dwg';$resultPath=Join-Path $folder 'result.json';$pdfPath=Join-Path $folder 'warehouse.pdf';$scriptPath=Join-Path $folder 'layout.scr'
+    $isDwg=[Text.Encoding]::ASCII.GetString($Drawing,0,[Math]::Min(6,$Drawing.Length)) -match '^AC[0-9]{4}$';$inputPath=Join-Path $folder $(if($isDwg){'warehouse.dwg'}else{'warehouse.dxf'});$resultPath=Join-Path $folder 'result.json';$pdfPath=Join-Path $folder 'warehouse.pdf';$scriptPath=Join-Path $folder 'layout.scr'
     [IO.File]::WriteAllBytes($inputPath,$Drawing)
+    $outputPath=if($isDwg){$inputPath}else{Join-Path $folder 'layout.dwg'}
+    $openPath=$inputPath
+    if(-not $isDwg){$openPath=Join-Path $folder 'bootstrap.dwg';[IO.File]::Copy((Join-Path $PSScriptRoot 'LogEn-Empty.dwg'),$openPath)}
     $commands=New-Object 'Collections.Generic.List[string]'
     foreach($line in @('(setvar "FILEDIA" 0)','(setvar "CMDDIA" 0)','(setvar "BACKGROUNDPLOT" 0)','(setvar "SECURELOAD" 2)','(setvar "TILEMODE" 1)')){$commands.Add($line)}
+    if(-not $isDwg){$commands.Add('(command "_.DXFIN" '+(ConvertTo-LogEnLispString $inputPath.Replace('\','/'))+')')}
+    if(-not $isDwg){
+      $header=[Text.Encoding]::ASCII.GetString($Drawing,0,[Math]::Min($Drawing.Length,1048576));$unitMatch=[regex]::Match($header,'(?m)^\s*9\r?\n\s*\$INSUNITS\r?\n\s*70\r?\n\s*(\d+)');$unit=if($unitMatch.Success){[int]$unitMatch.Groups[1].Value}else{0}
+      if($Mode -notin @('geometry','geometry-existing')){foreach($pair in @(@(1,4),@(10,5),@(1000,6),@(25.4,1),@(304.8,2))){if([Math]::Abs([double]$Plan.scale-$pair[0])-lt .000001){$unit=$pair[1];break}}}
+      if($unit -ge 0 -and $unit -le 24){$commands.Add('(setvar "INSUNITS" '+$unit+')')}
+    }
     foreach($form in Get-LogEnLispForms){$commands.Add($form)}
     if($Mode -in @('geometry','geometry-existing')) {if($Mode -eq 'geometry-existing'){$commands.Add('(setq lg:includeGenerated T)')};$commands.Add('(lg:extract '+(ConvertTo-LogEnLispString $resultPath.Replace('\','/'))+')')}
     else {
@@ -86,13 +95,13 @@ function Invoke-LogEnLayoutJob([byte[]]$Drawing, [string]$Mode, $Plan=$null) {
       $commands.Add('(setq lg:status (open '+$resultFile+' "w"))')
       $commands.Add('(write-line (strcat "{\"created\":" (itoa lg:entitycount) "}") lg:status)')
       $commands.Add('(close lg:status)')
-      $commands.Add('(command "_.QSAVE")')
+      $commands.Add($(if($isDwg){'(command "_.QSAVE")'}else{'(command "_.SAVEAS" "2018" '+(ConvertTo-LogEnLispString $outputPath.Replace('\','/'))+')'}))
       $commands.Add('(command "_.UCS" "_World")');$commands.Add('(command "_.PLAN" "_World")');$commands.Add('(command "_.ZOOM" "_Extents")')
       $commands.Add('(command "_.-PLOT" "_Yes" "Model" "DWG To PDF.pc3" "ISO full bleed A3 (420.00 x 297.00 MM)" "_Millimeters" "_Landscape" "_No" "_Extents" "_Fit" "_Center" "_Yes" "" "_Yes" "_Wireframe" '+(ConvertTo-LogEnLispString $pdfPath.Replace('\','/'))+' "_No" "_Yes")')
     }
     $commands.Add('(command "_.QUIT" "_No")');$commands.Add('')
     [IO.File]::WriteAllLines($scriptPath,$commands,[Text.Encoding]::ASCII)
-    $info=New-Object Diagnostics.ProcessStartInfo;$info.FileName=$script:ConsolePath;$info.Arguments='/i "'+$inputPath+'" /s "'+$scriptPath+'" /l en-US';$info.WorkingDirectory=$folder;$info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+    $info=New-Object Diagnostics.ProcessStartInfo;$info.FileName=$script:ConsolePath;$info.Arguments='/i "'+$openPath+'" /s "'+$scriptPath+'" /l en-US';$info.WorkingDirectory=$folder;$info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
     $process=New-Object Diagnostics.Process;$process.StartInfo=$info;$null=$process.Start();$stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
     if(-not $process.WaitForExit(180000)){$process.Kill();throw 'AutoCAD layout job timed out. Check its license and drawing.'};$process.WaitForExit()
     if($env:LOGEN_CAD_KEEP -eq '1'){[IO.File]::WriteAllText((Join-Path $folder 'console.txt'),$stdout.Result);Write-Host $folder}
@@ -100,7 +109,7 @@ function Invoke-LogEnLayoutJob([byte[]]$Drawing, [string]$Mode, $Plan=$null) {
     $result=[IO.File]::ReadAllText($resultPath,[Text.Encoding]::Default)|ConvertFrom-Json
     if($Mode -in @('geometry','geometry-existing')){return $result}
     if($result.created -ne $expected){throw "AutoCAD created $($result.created) of $expected entities. Export stopped to prevent an incomplete layout."}
-    $output=@{dwg=[Convert]::ToBase64String([IO.File]::ReadAllBytes($inputPath));created=$result.created}
+    $output=@{dwg=[Convert]::ToBase64String([IO.File]::ReadAllBytes($outputPath));created=$result.created}
     if(Test-Path -LiteralPath $pdfPath){$pdf=[IO.File]::ReadAllBytes($pdfPath);if([Text.Encoding]::ASCII.GetString($pdf,0,5) -eq '%PDF-'){$output.pdf=[Convert]::ToBase64String($pdf)}}
     if(-not $output.pdf){$output.pdfError='DWG exported successfully, but AutoCAD could not plot the PDF. Check DWG To PDF.pc3.'}
     return $output

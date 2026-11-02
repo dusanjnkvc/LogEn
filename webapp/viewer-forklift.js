@@ -11,8 +11,8 @@
     const failure=reason=>({points:[],length:0,vehicle,radius,reason,componentCount:0,safePaths:[]});
     if(!aisles.length)return failure('No generated gangways are available for the forklift preview.');
     if(model.buildingHeight<vehicle.height)return failure('The displayed building height is lower than the preview forklift.');
-    const blocked=G.union([...model.bays.map(rectangle),...model.pallets.filter(p=>p.storageType!=='Rack'&&p.stackLayer===1).map(rectangle),...model.walls.map(rectangle),...model.obstacles.map(o=>polygon(o.points))]);
-    const floor=[polygon(model.boundary)],walkable=G.diff(G.intersect(aisles,floor),blocked),safe=G.offset(walkable,-radius*1000);
+    const blocked=G.union([...model.bays.map(rectangle),...model.pallets.filter(p=>p.storageType!=='Rack'&&p.stackLayer===1).map(rectangle),...model.walls.map(rectangle),...model.obstacles.map(o=>polygon(o.points)),...(model.movementRestrictions||[]).map(o=>normalized(o.points.map(p=>[p[0]*1000,p[2]*1000]),o.hole))]);
+    const floor=G.union(model.boundaryRegions?model.boundaryRegions.map(r=>normalized(r.points.map(p=>[p[0]*1000,p[2]*1000]),r.hole)):(model.boundaries||[model.boundary]).map(polygon)),walkable=G.diff(G.intersect(aisles,floor),blocked),safe=G.offset(walkable,-radius*1000);
     if(!safe.length)return failure('No continuous gangway has enough clearance for the schematic 1.2 × 2.8 m forklift.');
     const box=L.bounds(safe.flatMap(G.points)),step=Math.max(650,Math.sqrt((box.maxX-box.minX)*(box.maxY-box.minY)/24000)),cols=Math.ceil((box.maxX-box.minX)/step),rows=Math.ceil((box.maxY-box.minY)/step),nodes=[],grid=new Map();
     const inside=(x,y)=>{let winding=0;const point={X:Math.round(x*10),Y:Math.round(y*10)};for(const ring of safe){const value=C.Clipper.PointInPolygon(point,ring);if(value===-1)return false;if(value)winding+=C.Clipper.Orientation(ring)?1:-1;}return winding>0;};

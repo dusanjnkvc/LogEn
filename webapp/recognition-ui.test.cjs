@@ -1,0 +1,17 @@
+const assert=require('node:assert/strict'),fs=require('fs'),{JSDOM}=require('../.tooling/qa/node_modules/jsdom');
+async function upload(name,fail=false){
+ const html=fs.readFileSync('webapp/index.html','utf8').replace('__STYLES__','').replace('__SCRIPTS__',''),dom=new JSDOM(html,{url:'https://logen.test/',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,values=new Map();let opened=null,reads=0;
+ w.structuredClone=structuredClone;w.scrollTo=()=>{};w.ClipperLib=require('./vendor/clipper');w.ExcelJS=require('./vendor/exceljs.min');w.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};w.HTMLDialogElement.prototype.close=function(){this.dispatchEvent(new w.Event('close'));};
+ w.fetch=()=>{throw Error('Unexpected network use');};w.indexedDB={open(){const req={};setTimeout(()=>{req.result={close(){},transaction(){const tx={};tx.objectStore=()=>({get(key){const r={};setTimeout(()=>{r.result=values.get(key);r.onsuccess?.();tx.oncomplete?.();},0);return r;},put(value,key){values.set(key,value);const r={};setTimeout(()=>{r.onsuccess?.();tx.oncomplete?.();},0);return r;}});return tx;}};req.onsuccess();},0);return req;}};
+ for(const file of ['domain.js','workbook.js','editors.js','layout.js','warehouse-geometry.js'])w.eval(fs.readFileSync('webapp/'+file,'utf8'));
+ const D=w.LogEnDomain,part={partNumber:'TEST-UPLOAD',qtyBox:1,qtyOnPallet:1,consumptionPerShift:1,doh:1,length:1200,width:1000,height:1000,stacking:1,inputErrors:[]},project={id:'qa',name:'QA',parts:[part],settings:D.createDefaultSettings(),implementation:{greenfield:true,allowNewStorageConstruction:true}};
+ w.localStorage.setItem('logen.offline.workspace.v1',JSON.stringify({version:3,projects:[project],activeId:'qa'}));
+ w.LogEnCADReader={read:async()=>{reads++;if(fail)throw Error('Unsupported test CAD object');return {units:4,entities:[{id:'boundary',type:'LWPOLYLINE',layer:'WAREHOUSE_BOUNDARY',points:[[0,0],[30000,0],[30000,20000],[0,20000]],closed:true,boundaryEligible:true,bounds:[0,0,30000,20000]}]};}};w.LogEnLayoutUI={open:opts=>{opened=opts;}};
+ w.eval(fs.readFileSync('webapp/app.js','utf8'));
+ const input=w.document.getElementById('dwg-input'),file={name,size:40,slice:()=>({text:async()=>name.endsWith('.dwg')?'AC1032':'0\nSECT'})};Object.defineProperty(input,'files',{value:[file]});input.dispatchEvent(new w.Event('change'));
+ const end=Date.now()+5000;while(!values.get('qa')||reads===0||(!fail&&!opened)){if(Date.now()>end)throw Error('Upload/automatic preview timed out');await new Promise(r=>setTimeout(r,20));}
+ await new Promise(r=>setTimeout(r,100));assert.equal(values.get('qa'),file);assert.equal(reads,1,'Cached geometry should be reused by the automatic preview');const state=JSON.parse(w.localStorage.getItem('logen.offline.workspace.v1'));assert.equal(state.projects[0].implementation.allowNewStorageConstruction,false);assert.equal(state.projects[0].parts[0].partNumber,part.partNumber);
+ if(fail){assert.equal(opened,null);assert.equal(values.has('qa:geometry'),false);}else{assert(opened.geometry.entities.some(e=>e.id==='detected:regions'));assert.equal(values.get('qa:geometry').readerVersion,3);}
+ dom.window.close();
+}
+(async()=>{await upload('warehouse.dwg');await upload('warehouse.dxf');await upload('unsupported.dwg',true);console.log('3 upload integration checks passed: DWG, DXF, failed analysis retains original; automatic preview/cache and construction reset verified.');})().catch(e=>{console.error(e);process.exitCode=1;});

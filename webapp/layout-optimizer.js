@@ -27,6 +27,12 @@
   function normalizedOptions(options){const o={warehouseOrientation:'auto',backToBackSeparation:0,wallClearance:0,suitableWallEdges:[],...options};if(o.allowWallStorage&&o.wallRackMode){o.racksAroundWalls=true;if(o.wallRackMode!=='all')o.wallStartSide=o.wallRackMode;}for(const k of ['backToBackSeparation','wallClearance','obstacleClearance'])if(!Number.isFinite(o[k])||o[k]<0)throw new Error('Enter non-negative rack separation, wall and obstacle clearances.');return o;}
   function environment(geometry,options,settings,orientation,sx,sy){
     const raw=L.environment(geometry,options),angle=buildingAngle(raw.poly)+(orientation==='vertical'?Math.PI/2:0),frame={angle,sx,sy},poly=raw.poly.map(p=>toLocal(p,frame)),boundary=[oriented(poly)],box=L.bounds(poly),g=settings.gangwayWidth;
+    if(raw.analysis){
+      const A=scope.LogEnWarehouseGeometry,a=A.analyze(geometry,options,settings),transform=ps=>ps.map(p=>{const q=path(A.points(p).map(v=>toLocal(v,frame)));if(C.Clipper.Orientation(q)!==C.Clipper.Orientation(p))q.reverse();return q;}),boundsPath=p=>rectBounds(points(p));
+      const all=transform(a.warehouse),physical=transform(a.physical),blocked=transform(a.movementBlocked),storageBlocked=transform(union([...a.noStorage,...diff(a.warehouse,a.gross)])),margin=options.allowWallStorage?options.wallClearance:g,zone=intersect(transform(a.net),offset(all,-margin)),complex=all.length!==1||Math.abs(area(all)-(box.maxX-box.minX)*(box.maxY-box.minY))>E;
+      const existingAccess=transform(union(a.zones.filter(z=>z.role==='gangway').flatMap(z=>z.paths))),access=diff(union([...diff(all,offset(all,-g)),...existingAccess]),blocked),obstacles=storageBlocked.map((p,i)=>({id:'zone:'+i,path:p,bounds:boundsPath(p)})),doors=a.doors.filter(d=>d.forklift).flatMap(d=>transform(d.paths).map(p=>({id:d.id,path:p,bounds:boundsPath(p)})));
+      return {poly,box:regionBounds(all),boundary:all,zone,physical,blocked,storageBlocked,doorZones:[],wallSafety:diff(all,offset(all,-margin)),baseAccess:access,spine:{x:box.minX,y:box.minY,w:g,h:box.maxY-box.minY},frame,margin,obstacles,doors,errors:[],complex,existingAccess,analysis:{regionCount:a.regionCount,grossArea:a.grossArea,excludedArea:a.excludedArea,netArea:a.netArea,warnings:a.warnings,counts:a.counts},requireGroundPairs:true,allowWallStorage:!!options.allowWallStorage,wallClearance:options.wallClearance};
+    }
     const obstacles=[],doors=[];
     for(const e of geometry.entities){if(e.id===options.boundaryId)continue;const role=options.entityRoles?.[e.id]||options.layerRoles?.[e.layer]||'obstacle';if(role==='reference')continue;
       const reliable=e.closed&&e.type!=='INSERT'&&core.validPolygon(e.points),p=(reliable?e.points:[[e.bounds[0],e.bounds[1]],[e.bounds[2],e.bounds[1]],[e.bounds[2],e.bounds[3]],[e.bounds[0],e.bounds[3]]]).map(v=>toLocal(v.map(n=>n*options.scale),frame));
@@ -130,7 +136,7 @@
       const actualDepths=remaining.map(r=>(remaining.length===1?Math.ceil(r.objects.length/2):r.objects.length)*(r.objects[0].h+clearance)),singleDepths=remaining.map(r=>r.objects[0].h+clearance),maximum=Math.min(limit,physicalDepth,Math.max(...actualDepths)),depths=[...new Set([maximum,Math.min(maximum,Math.max(...singleDepths)),Math.min(maximum,Math.min(...singleDepths))])].filter(d=>d>0);
       searchLane:for(const depth of depths){
         const {usable,oversize}=splitGroundRows(remaining,depth,clearance,settings.groundAllowRotation===true);if(!usable.length)continue;
-        const occupied=[...env.obstacles.map(o=>o.bounds),...env.doors.map(o=>o.bounds),...groups.map(groupRect)],ys=[bottom,top-2*depth,...occupied.flatMap(r=>[r.y+r.h+gap,r.y-2*depth-gap]),...env.poly.flatMap(p=>[p[1]+gap,p[1]-2*depth-gap])].filter(y=>y>=bottom-E&&y+2*depth<=top+E).sort((a,b)=>direction>0?b-a:a-b);
+        const occupied=[...env.obstacles.map(o=>o.bounds),...env.doors.map(o=>o.bounds),...groups.map(groupRect)],ys=[bottom,top-2*depth,...occupied.flatMap(r=>[r.y+r.h+gap,r.y-2*depth-gap]),...env.boundary.flatMap(points).flatMap(p=>[p[1]+gap,p[1]-2*depth-gap])].filter(y=>y>=bottom-E&&y+2*depth<=top+E).sort((a,b)=>direction>0?b-a:a-b);
         for(const y of [...new Set(ys)]){
           await tick();for(const [x,end]of groundLaneIntervals(y,depth,left,right,groups,env,settings)){
             const filled=fillGroundLane(usable,end-x,depth,env,serial,settings.groundAllowRotation===true,clearance);if(!filled)continue;
@@ -184,6 +190,7 @@
   function wallAccess(env,blocks,options,settings){
     const b=env.box,g=settings.gangwayWidth,c=options.allowWallStorage?options.wallClearance:0,depth=side=>Math.max(0,...blocks.filter(v=>v.wallSide===side).map(v=>v.h));
     env.inner={minX:b.minX+c+depth('left'),maxX:b.maxX-c-depth('right'),minY:b.minY+c+depth('bottom'),maxY:b.maxY-c-depth('top')};
+    if(env.complex)return;
     if(!options.allowWallStorage)return;
     const z=env.inner;env.spine={x:z.minX,y:z.minY,w:g,h:Math.max(0,z.maxY-z.minY)};
     const right={x:z.maxX-g,y:z.minY,w:g,h:Math.max(0,z.maxY-z.minY)},bottom={x:z.minX,y:z.minY,w:Math.max(0,z.maxX-z.minX),h:g},routes=[env.spine,right,bottom].filter(v=>v.w>0&&v.h>0).map(rect);
@@ -194,7 +201,7 @@
   }
   function groupRect(g){return {x:g.x,y:g.y,w:g.rotated?g.h:g.w,h:g.rotated?g.w:g.h};}
   function localObjectRect(g,o){return {x:g.x+(g.rotated?g.h-o.dy-o.h:o.dx),y:g.y+(g.rotated?o.dx:o.dy),w:g.rotated?o.h:o.w,h:g.rotated?o.w:o.h};}
-  function accessFor(g,env,width){const r=groupRect(g),z=env.inner||env.box,x=z.minX,w=z.maxX-z.minX;
+  function accessFor(g,env,width){const r=groupRect(g),z=env.inner||env.box,x=env.complex?r.x-width:z.minX,w=env.complex?r.w+2*width:z.maxX-z.minX;
     if(g.wallSide){const horizontal=g.wallSide==='bottom'||g.wallSide==='top',lo=horizontal?z.minX:z.minY,hi=horizontal?z.maxX:z.maxY;return (g.kind==='ground'&&g.groundRows?g.groundRows.map(o=>({...o,dx:o.x,dy:o.y})):g.objects).map(o=>{const v=localObjectRect(g,o),a=Math.max(horizontal?v.x:v.y,lo),b=Math.min(horizontal?v.x+v.w:v.y+v.h,hi);if(g.wallSide==='bottom')return {x:a,y:v.y+v.h,w:b-a,h:z.minY+width-v.y-v.h};if(g.wallSide==='top')return {x:a,y:z.maxY-width,w:b-a,h:v.y-z.maxY+width};if(g.wallSide==='left')return {x:v.x+v.w,y:a,w:z.minX+width-v.x-v.w,h:b-a};return {x:z.maxX-width,y:a,w:v.x-z.maxX+width,h:b-a};}).filter(v=>v.w>E&&v.h>E);}
     if(g.groundLane)return [{x:r.x,y:r.y-width,w:r.w,h:width},{x:r.x,y:r.y+r.h,w:r.w,h:width},{x:r.x-width,y:r.y,w:width,h:r.h},{x:r.x+r.w,y:r.y,w:width,h:r.h}];
     const bottom={x,y:r.y-width,w,h:width},top={x,y:r.y+r.h,w,h:width};return g.paired?[bottom,top]:[bottom];
@@ -338,7 +345,7 @@
   }
   function metrics(layout,settings){
     const e=layout.env,rack=union(layout.groups.filter(g=>g.kind==='rack').flatMap(g=>g.objects.map(o=>rect(localObjectRect(g,o))))),ground=union(layout.groups.filter(g=>g.kind==='ground').map(g=>rect(groupRect(g)))),storage=union([...rack,...ground]),access=union([...e.baseAccess,...endGangways(layout),...layout.groups.flatMap(g=>accessFor(g,e,settings.gangwayWidth).map(rect))]);
-    const safety=diff(union([...diff(e.blocked,e.physical),...e.wallSafety,...e.doorZones,...layout.groups.filter(g=>g.paired&&g.separation>0).map(g=>rect({x:g.x,y:g.y+g.backY,w:g.w,h:g.separation}))]),union([...access,...storage]));
+    const safety=diff(union([...diff(e.blocked,e.physical),...e.wallSafety,...(e.storageBlocked||[]),...e.doorZones,...layout.groups.filter(g=>g.paired&&g.separation>0).map(g=>rect({x:g.x,y:g.y+g.backY,w:g.w,h:g.separation}))]),union([...access,...storage]));
     const free=diff(e.boundary,union([...storage,...access,...safety,...e.physical]));
     // Component areas use polygon clipping, including holes. Fit probes classify remaining components conservatively.
     const templateSizes=new Set();
@@ -349,7 +356,7 @@
       if(!usable)unusable+=area(region);
     }
     const footprint=polygonArea(storage),total=polygonArea(e.boundary),clearance=polygonArea(safety),gangway=polygonArea(access),obstacle=polygonArea(e.physical),unused=polygonArea(free),sep=layout.groups.reduce((n,g)=>n+(g.paired?g.w*g.separation:0),0)/1e6;
-    return {totalWarehouseArea:total,availableStorageArea:polygonArea(diff(e.zone,e.baseAccess)),rackFootprint:polygonArea(rack),groundFootprint:polygonArea(ground),gangwayArea:gangway,mandatoryClearanceArea:clearance,obstacleArea:obstacle,unusedUsableArea:Math.max(0,unused-unusable/1e6),unusableArea:unusable/1e6,wallRackBays:layout.groups.filter(g=>g.wallSide&&g.kind==='rack').reduce((n,g)=>n+g.objects.length,0),racks:layout.groups.filter(g=>g.kind==='rack').reduce((n,g)=>n+g.objects.length,0),rackPositions:layout.generatedRack,groundPositions:layout.generatedGround,accommodatedPallets:layout.accommodatedPallets,requiredPallets:layout.requiredPallets,utilizationPercent:total>0?footprint/total*100:0,connected:connected(access),accessPaths:access,clearancePaths:safety,freePaths:free};
+    return {newGangwayArea:polygonArea(diff(access,e.existingAccess||[])),placedStorageArea:footprint,remainingUnoccupiedArea:unused,grossIdentifiedArea:e.analysis?.grossArea??total,excludedArea:e.analysis?.excludedArea??polygonArea(e.physical),netStorageEligibleArea:e.analysis?.netArea??polygonArea(e.zone),detectedRegions:e.analysis?.regionCount??1,totalWarehouseArea:total,availableStorageArea:polygonArea(diff(e.zone,e.baseAccess)),rackFootprint:polygonArea(rack),groundFootprint:polygonArea(ground),gangwayArea:gangway,mandatoryClearanceArea:clearance,obstacleArea:obstacle,unusedUsableArea:Math.max(0,unused-unusable/1e6),unusableArea:unusable/1e6,wallRackBays:layout.groups.filter(g=>g.wallSide&&g.kind==='rack').reduce((n,g)=>n+g.objects.length,0),racks:layout.groups.filter(g=>g.kind==='rack').reduce((n,g)=>n+g.objects.length,0),rackPositions:layout.generatedRack,groundPositions:layout.generatedGround,accommodatedPallets:layout.accommodatedPallets,requiredPallets:layout.requiredPallets,utilizationPercent:total>0?footprint/total*100:0,connected:connected(access),accessPaths:access,clearancePaths:safety,freePaths:free};
   }
   function validate(layout,plan,settings,source=null){
     const errors=[...layout.issues],valid=[],ids=new Set(),objectIds=new Set(),expected=new Set((source||L.makeObjects(plan,settings)).groups.flatMap(g=>g.objects.map(o=>o.id)));
@@ -358,8 +365,8 @@
     for(const g of valid)for(const o of g.objects){if(o.kind==='rack')for(const a of o.allocations){generatedRack++;rack.set(a.pn,(rack.get(a.pn)||0)+1);}else{generatedGround++;groundPallets+=o.quantity;ground.set(o.pn,(ground.get(o.pn)||0)+o.quantity);}}
     const affected=plan.rows.filter(r=>r.required===null||r.errors.length||(rack.get(r.input.partNumber)||0)!==r.rackPallets||(ground.get(r.input.partNumber)||0)!==r.groundPallets).map(r=>({pn:r.input.partNumber,message:r.errors.join(' ')||`Rack pallets ${rack.get(r.input.partNumber)||0}/${r.rackPallets}; ground pallets ${ground.get(r.input.partNumber)||0}/${r.groundPallets}`}));
     const result={generatedRack,generatedGround,unplacedRack:Math.max(0,layout.rackRequired-generatedRack),unplacedGround:Math.max(0,layout.groundRequired-generatedGround),affected,validationErrors:errors,accommodatedPallets:generatedRack+groundPallets,requiredPallets:plan.rows.reduce((n,r)=>n+(r.required||0),0)};
-    Object.assign(layout,result);const m=metrics(layout,settings);if(!m.connected)errors.push({pn:'Circulation',message:'Forklift circulation is disconnected. This candidate is invalid.'});
-    const baseSafety=!!layout.options.constraintsConfirmed&&!!layout.options.geometryReviewed&&!layout.geometryUnverified;
+    Object.assign(layout,result);const m=metrics(layout,settings);if(!m.connected&&(layout.env.analysis?.regionCount||1)===1)errors.push({pn:'Circulation',message:'Forklift circulation is disconnected. This candidate is invalid.'});
+    const baseSafety=m.connected&&!!layout.options.constraintsConfirmed&&!!layout.options.geometryReviewed&&!layout.geometryUnverified&&!(layout.env.analysis?.warnings.length);
     Object.assign(result,{metrics:m,accessValid:errors.length===0,safetyVerified:baseSafety,complete:!affected.length&&!errors.length&&!layout.unplaced.length,aisles:regionShapes(m.accessPaths,layout.env.frame,'aisle','aisle'),clearances:regionShapes(m.clearancePaths,layout.env.frame,'clearance','clearance'),shortage:shortage(layout,plan,settings,valid,source),markings:groundMarkings(layout)});
     return result;
   }

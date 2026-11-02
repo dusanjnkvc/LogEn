@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src http://127.0.0.1:8765; font-src data:; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src http://127.0.0.1:8765; worker-src blob:; font-src data:; base-uri 'none'; form-action 'none'">
   <title>LogEn · Warehouse Footprint Calculator</title>
   <link rel="icon" href="__LOGO__">
   <style>__STYLES__</style>
@@ -55,7 +55,7 @@
     <main id="main" tabindex="-1"></main>
     <footer class="page-footer"><span>LogEn · Warehouse Footprint Calculator</span><span>Allocated planning estimates · Dedicated floor rows · Shared rack bays</span></footer>
   </div>
-  <input id="dwg-input" type="file" accept=".dwg" hidden>
+  <input id="dwg-input" type="file" accept=".dwg,.dxf" hidden>
   <input id="excel-input" type="file" accept=".xlsx" hidden>
   <input id="backup-input" type="file" accept=".json" hidden>
   <div id="toast" role="status" aria-live="polite"></div>
