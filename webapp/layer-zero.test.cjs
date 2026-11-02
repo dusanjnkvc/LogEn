@@ -3,7 +3,7 @@ global.ClipperLib=require('./vendor/clipper');require('./domain');require('./lay
 const A=LogEnWarehouseGeometry,L=LogEnLayout,D=LogEnDomain;
 const rect=(id,x,y,w=15000,h=15000,layer='0')=>({id,layer,type:'LWPOLYLINE',closed:true,boundaryEligible:true,points:L.corners({x,y,w,h}),bounds:[x,y,x+w,y+h]});
 const rooms=[rect('431',0,0),rect('438',20000,0),rect('third',0,20000),rect('fourth',20000,20000)];
-const input={units:4,entities:rooms},options={scale:1,boundaryId:'431',obstacleClearance:0,geometryReviewed:true,constraintsConfirmed:true};
+const input={units:4,entities:rooms},options={scale:1,boundaryId:'431',obstacleClearance:0,pillarClearance:0,geometryReviewed:true,constraintsConfirmed:true};
 const settings={...D.createDefaultSettings(),gangwayWidth:1500,maxFloorRowDepth:6000,stackingMode:'imported',shiftsPerDay:1,coverageMode:'custom',customCoverageDays:1};
 const analyze=(entities=rooms,o={})=>A.analyze({units:4,entities},{...options,...o},settings);
 const legacy={...options,layerRoles:{'0':'reference'},entityRoles:{'431':'pillar'}},migrated=A.storageOptions(input,legacy);assert.equal(legacy.layerRoles['0'],'reference','Do not mutate saved source options');assert.equal(analyze(rooms,legacy).regionCount,4);assert.equal(analyze(rooms,legacy).excludedArea,0);assert.equal(A.storageOptions(input,{...migrated,entityRoles:{...migrated.entityRoles,third:'void'}}).entityRoles.third,'void','Later corrections remain editable');assert.equal(analyze([...rooms,rect('outer',-1000,-1000,40000,40000,'WAREHOUSE_BOUNDARY')],{...migrated,layerRoles:{'0':'restricted'},boundaryId:'outer'}).excludedArea,900,'Later whole-layer corrections remain editable');

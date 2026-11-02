@@ -5,7 +5,7 @@ let serial=0,passed=0;const checks=[];
 const poly=(layer,points,extra={})=>{const b=L.bounds(points);return {id:'test'+(++serial),layer,type:'LWPOLYLINE',closed:true,boundaryEligible:true,points,bounds:[b.minX,b.minY,b.maxX,b.maxY],...extra};};
 const rect=(layer,x,y,w,h,extra)=>poly(layer,L.corners({x,y,w,h}),extra);
 const base=()=>rect('WAREHOUSE_BOUNDARY',0,0,50000,40000);
-const options={scale:1,boundaryId:'detected:regions',obstacleClearance:0,backToBackSeparation:0,wallClearance:0,allowWallStorage:false,geometryReviewed:true,constraintsConfirmed:true,wallThickness:200};
+const options={scale:1,boundaryId:'detected:regions',obstacleClearance:0,pillarClearance:0,backToBackSeparation:0,wallClearance:0,allowWallStorage:false,geometryReviewed:true,constraintsConfirmed:true,wallThickness:200};
 const settings={...D.createDefaultSettings(),gangwayWidth:1500,maxFloorRowDepth:2500,shiftsPerDay:1,coverageMode:'custom',customCoverageDays:1};
 const analyze=(entities,o={})=>A.analyze({units:4,entities},{...options,...o},settings);
 function test(name,fn){fn();checks.push(name);passed++;}

@@ -30,8 +30,9 @@
     if(raw.analysis){
       const A=scope.LogEnWarehouseGeometry,a=A.analyze(geometry,options,settings),transform=ps=>ps.map(p=>{const q=path(A.points(p).map(v=>toLocal(v,frame)));if(C.Clipper.Orientation(q)!==C.Clipper.Orientation(p))q.reverse();return q;}),boundsPath=p=>rectBounds(points(p));
       const all=transform(a.warehouse),physical=transform(a.physical),blocked=transform(a.movementBlocked),storageBlocked=transform(union([...a.noStorage,...diff(a.warehouse,a.gross)])),margin=options.allowWallStorage?options.wallClearance:g,zone=intersect(transform(a.net),offset(all,-margin)),complex=all.length!==1||Math.abs(area(all)-(box.maxX-box.minX)*(box.maxY-box.minY))>E;
-      const existingAccess=transform(union(a.zones.filter(z=>z.role==='gangway').flatMap(z=>z.paths))),access=diff(union([...diff(all,offset(all,-g)),...existingAccess]),blocked),obstacles=storageBlocked.map((p,i)=>({id:'zone:'+i,path:p,bounds:boundsPath(p)})),doors=a.doors.filter(d=>d.forklift).flatMap(d=>transform(d.paths).map(p=>({id:d.id,path:p,bounds:boundsPath(p)})));
-      return {poly,box:regionBounds(all),boundary:all,zone,physical,blocked,storageBlocked,doorZones:[],wallSafety:diff(all,offset(all,-margin)),baseAccess:access,spine:{x:box.minX,y:box.minY,w:g,h:box.maxY-box.minY},frame,margin,obstacles,doors,errors:[],complex,existingAccess,analysis:{regionCount:a.regionCount,grossArea:a.grossArea,excludedArea:a.excludedArea,netArea:a.netArea,warnings:a.warnings,counts:a.counts},requireGroundPairs:true,allowWallStorage:!!options.allowWallStorage,wallClearance:options.wallClearance};
+      const existingAccess=transform(union(a.zones.filter(z=>z.role==='gangway').flatMap(z=>z.paths))),access=diff(union([...(options.allowWallStorage?[]:diff(all,offset(all,-g))),...existingAccess]),blocked),obstacles=storageBlocked.map((p,i)=>({id:'zone:'+i,path:p,bounds:boundsPath(p)})),doors=a.doors.filter(d=>d.forklift).flatMap(d=>transform(d.paths).map(p=>({id:d.id,path:p,bounds:boundsPath(p)})));
+      const interiors=transform(a.wallInterior||[]),wallBoundary=interiors.length&&area(diff(transform(a.gross),interiors))<E?interiors:transform(a.gross),wallPoly=points([...wallBoundary].sort((a,b)=>Math.abs(C.Clipper.Area(b))-Math.abs(C.Clipper.Area(a)))[0]),wallBox=regionBounds(wallBoundary);
+      return {poly,wallPoly,wallBox,regions:a.regions.map(r=>({id:r.id,points:r.points.map(p=>toLocal(p,frame))})),pillarClearances:transform(a.pillarClearancePaths),box:regionBounds(all),boundary:all,zone,physical,blocked,storageBlocked,doorZones:[],wallSafety:diff(all,offset(all,-margin)),baseAccess:access,spine:{x:box.minX,y:box.minY,w:g,h:box.maxY-box.minY},frame,margin,obstacles,doors,errors:[],complex,existingAccess,analysis:{regionCount:a.regionCount,grossArea:a.grossArea,excludedArea:a.excludedArea,netArea:a.netArea,warnings:a.warnings,counts:a.counts},requireGroundPairs:true,allowWallStorage:!!options.allowWallStorage,wallClearance:options.wallClearance,optionsObstacleClearance:options.obstacleClearance};
     }
     const obstacles=[],doors=[];
     for(const e of geometry.entities){if(e.id===options.boundaryId)continue;const role=options.entityRoles?.[e.id]||options.layerRoles?.[e.layer]||'obstacle';if(role==='reference')continue;
@@ -49,10 +50,10 @@
     for(const d of doors){const r=d.bounds,cx=r.x+r.w/2,cy=Math.max(box.minY,Math.min(box.maxY-g,r.y+r.h/2-g/2));routes.push(rect({x:Math.min(spine.x,cx),y:cy,w:Math.max(spine.x+g,cx)-Math.min(spine.x,cx),h:g}));}
     const access=union([...circulation,...routes]),errors=[];
     if(area(diff(access,boundary))>E||area(intersect(access,blocked))>E)errors.push({pn:'Circulation',message:'The perimeter/main route or a door connection intersects blocked geometry or leaves the warehouse. This candidate is invalid.'});
-    return {poly,box,boundary,zone,physical,blocked,doorZones,wallSafety,baseAccess:access,spine,frame,margin,obstacles,doors,errors,requireGroundPairs:true,allowWallStorage:!!options.allowWallStorage,wallClearance:options.wallClearance};
+    return {poly,box,boundary,zone,physical,blocked,doorZones,wallSafety,baseAccess:access,spine,frame,margin,obstacles,doors,errors,requireGroundPairs:true,allowWallStorage:!!options.allowWallStorage,wallClearance:options.wallClearance,optionsObstacleClearance:options.obstacleClearance};
   }
   function wallPose(group,env,options){
-    const b=env.box,c=options.wallClearance,side=group.wallSide,g={...group},position=g.wallReverse?g.wallLimit-g.wallOffset-g.w:g.wallOffset;
+    const b=env.wallBox||env.box,c=options.wallClearance+(env.analysis?options.obstacleClearance:0),side=group.wallSide,g={...group},position=g.wallReverse?g.wallLimit-g.wallOffset-g.w:g.wallOffset;
     g.rotated=side==='left'||side==='right';
     if(g.kind!=='ground')g.objects=g.objects.map(o=>({...o,dy:side==='top'||side==='left'?g.h-o.h:0}));
     if(g.rotated){g.x=side==='left'?b.minX+c:b.maxX-c-g.h;g.y=g.wallStart+position;}
@@ -60,8 +61,8 @@
     return g;
   }
   function allWallBlocks(rack,env,settings,options,fraction){
-    const b=env.box,c=options.wallClearance,gap=settings.gangwayWidth,d=Math.max(0,...rack.map(o=>o.h)),approved=options.suitableWallEdges||[],sides=[];
-    for(const side of ['bottom','top','left','right']){const horizontal=side==='bottom'||side==='top',axis=horizontal?1:0,value=side==='bottom'?b.minY:side==='top'?b.maxY:side==='left'?b.minX:b.maxX;const edge=env.poly.findIndex((p,i)=>{const q=env.poly[(i+1)%env.poly.length];return (!approved.length||approved.includes(i))&&Math.abs(p[axis]-value)<E&&Math.abs(q[axis]-value)<E;});if(edge>=0)sides.push({side,edge,horizontal,cursor:0,last:null});}
+    const b=env.wallBox||env.box,c=options.wallClearance+(env.analysis?options.obstacleClearance:0),gap=settings.gangwayWidth,d=Math.max(0,...rack.map(o=>o.h)),approved=options.suitableWallEdges||[],sides=[];
+    for(const side of ['bottom','top','left','right']){const horizontal=side==='bottom'||side==='top',axis=horizontal?1:0,value=side==='bottom'?b.minY:side==='top'?b.maxY:side==='left'?b.minX:b.maxX;const edge=(env.wallPoly||env.poly).findIndex((p,i,outline)=>{const q=outline[(i+1)%outline.length];return (!approved.length||approved.includes(i))&&Math.abs(p[axis]-value)<E&&Math.abs(q[axis]-value)<E;});if(edge>=0)sides.push({side,edge,horizontal,cursor:0,last:null});}
     const orders={left:['left','top','right','bottom'],right:['right','bottom','left','top'],bottom:['bottom','left','top','right'],top:['top','right','bottom','left']},baseAngle=buildingAngle(env.poly.map(p=>toWorld(p,env.frame))),normals={left:[-1,0],right:[1,0],bottom:[0,-1],top:[0,1]},order=(orders[options.wallStartSide]||orders.left).map(side=>{const [x,y]=normals[side],c=Math.cos(baseAngle),sn=Math.sin(baseAngle),v=toLocal([x*c-y*sn,x*sn+y*c],env.frame);return Math.abs(v[0])>Math.abs(v[1])?(v[0]<0?'left':'right'):(v[1]<0?'bottom':'top');});sides.sort((a,b)=>order.indexOf(a.side)-order.indexOf(b.side));for(const slot of sides){const side=(orders[options.wallStartSide]||orders.left)[order.indexOf(slot.side)],v=side==='left'?[0,1]:side==='top'?[1,0]:side==='right'?[0,-1]:[-1,0],c=Math.cos(baseAngle),sn=Math.sin(baseAngle),local=toLocal([v[0]*c-v[1]*sn,v[0]*sn+v[1]*c],env.frame);slot.reverse=(slot.horizontal?local[0]:local[1])<0;}
     if(options.wallRackMode&&options.wallRackMode!=='all'){const chosen=order[0];for(let i=sides.length-1;i>=0;i--)if(sides[i].side!==chosen)sides.splice(i,1);}
     const groups=[];let turn=0;
@@ -119,12 +120,12 @@
     const bad=[...diff([storage],env.zone),...intersect([storage],env.baseAccess),...diff(access,env.boundary),...intersect(access,env.blocked)];
     const whole=rect({x:left,y:y-gap,w:right-left,h:2*depth+2*gap});
     for(const group of groups){const fixed=cachedPlacement(group,env,gap);bad.push(...intersect([whole],[rect(fixed.r)]),...intersect([storage],fixed.access.map(rect)));}
-    const cuts=bad.filter(p=>Math.abs(C.Clipper.Area(p))/(S*S)>E).map(p=>{const b=rectBounds(points(p));return [Math.max(left,b.x),Math.min(right,b.x+b.w)];}).filter(v=>v[1]>v[0]+E).sort((a,b)=>a[0]-b[0]),merged=[];
-    for(const cut of cuts){const prev=merged[merged.length-1];if(prev&&cut[0]<=prev[1]+E)prev[1]=Math.max(prev[1],cut[1]);else merged.push([...cut]);}
-    const intervals=[];let start=left;
-    for(const [a,b]of merged){if(a>start+E)intervals.push([start,a]);start=Math.max(start,b);}if(start<right-E)intervals.push([start,right]);
-    // Keep cross-access at an obstacle break; perimeter cross-aisles already exist at both ends.
-    return intervals.map(([a,b])=>[a+(a>left+E?gap:0),b-(b<right-E?gap:0)]).filter(([a,b])=>b>a+E);
+    const cuts=bad.filter(p=>C.Clipper.Area(p)/(S*S)>E).map(p=>{const b=rectBounds(points(p));return [Math.max(left,b.x),Math.min(right,b.x+b.w),env.pillarClearances?.length>0&&area(diff([p],env.pillarClearances))<E];}).filter(v=>v[1]>v[0]+E).sort((a,b)=>a[0]-b[0]),merged=[];
+    for(const cut of cuts){const prev=merged[merged.length-1];if(prev&&cut[0]<=prev[1]+E){prev[1]=Math.max(prev[1],cut[1]);prev[2]=prev[2]&&cut[2];}else merged.push([...cut]);}
+    const intervals=[];let start=left,startAtPillar=false;
+    for(const [a,b,pillarOnly]of merged){if(a>start+E)intervals.push([start,a,{skipStartAccess:startAtPillar,skipEndAccess:pillarOnly}]);start=Math.max(start,b);startAtPillar=pillarOnly;}if(start<right-E)intervals.push([start,right,{skipStartAccess:startAtPillar,skipEndAccess:false}]);
+    // Pillar breaks use their own clearance; other breaks retain cross-access.
+    return intervals.map(([a,b,ends])=>[a+(a>left+E&&!ends.skipStartAccess?gap:0),b-(b<right-E&&!ends.skipEndAccess?gap:0),ends]).filter(([a,b])=>b>a+E);
   }
   async function placeGroundLanes(input,env,settings,options,orientation,groups,unplaced){
     let remaining=input.map(row=>({...row,objects:row.objects.map(o=>({...o}))})),serial=1;
@@ -138,9 +139,9 @@
         const {usable,oversize}=splitGroundRows(remaining,depth,clearance,settings.groundAllowRotation===true);if(!usable.length)continue;
         const occupied=[...env.obstacles.map(o=>o.bounds),...env.doors.map(o=>o.bounds),...groups.map(groupRect)],ys=[bottom,top-2*depth,...occupied.flatMap(r=>[r.y+r.h+gap,r.y-2*depth-gap]),...env.boundary.flatMap(points).flatMap(p=>[p[1]+gap,p[1]-2*depth-gap])].filter(y=>y>=bottom-E&&y+2*depth<=top+E).sort((a,b)=>direction>0?b-a:a-b);
         for(const y of [...new Set(ys)]){
-          await tick();for(const [x,end]of groundLaneIntervals(y,depth,left,right,groups,env,settings)){
+          await tick();for(const [x,end,ends]of groundLaneIntervals(y,depth,left,right,groups,env,settings)){
             const filled=fillGroundLane(usable,end-x,depth,env,serial,settings.groundAllowRotation===true,clearance);if(!filled)continue;
-            const group={...filled.group,x,y};if(placementError(group,groups,env,settings))continue;
+            const group={...filled.group,...ends,x,y};if(placementError(group,groups,env,settings))continue;
             chosen={group,remaining:[...usable.filter(row=>!filled.used.has(row.id)),...oversize]};break searchLane;
           }
         }
@@ -188,7 +189,7 @@
     return [...wallRows,...blocks,...source.groups.filter(g=>g.kind==='ground').map(row=>({...row,groundPending:true}))].map(g=>({...g,frame:env.frame,ordinal:++index}));
   }
   function wallAccess(env,blocks,options,settings){
-    const b=env.box,g=settings.gangwayWidth,c=options.allowWallStorage?options.wallClearance:0,depth=side=>Math.max(0,...blocks.filter(v=>v.wallSide===side).map(v=>v.h));
+    const b=env.wallBox||env.box,g=settings.gangwayWidth,c=options.allowWallStorage?options.wallClearance+(env.analysis?options.obstacleClearance:0):0,depth=side=>Math.max(0,...blocks.filter(v=>v.wallSide===side).map(v=>v.h));
     env.inner={minX:b.minX+c+depth('left'),maxX:b.maxX-c-depth('right'),minY:b.minY+c+depth('bottom'),maxY:b.maxY-c-depth('top')};
     if(env.complex)return;
     if(!options.allowWallStorage)return;
@@ -203,7 +204,7 @@
   function localObjectRect(g,o){return {x:g.x+(g.rotated?g.h-o.dy-o.h:o.dx),y:g.y+(g.rotated?o.dx:o.dy),w:g.rotated?o.h:o.w,h:g.rotated?o.w:o.h};}
   function accessFor(g,env,width){const r=groupRect(g),z=env.inner||env.box,x=env.complex?r.x-width:z.minX,w=env.complex?r.w+2*width:z.maxX-z.minX;
     if(g.wallSide){const horizontal=g.wallSide==='bottom'||g.wallSide==='top',lo=horizontal?z.minX:z.minY,hi=horizontal?z.maxX:z.maxY;return (g.kind==='ground'&&g.groundRows?g.groundRows.map(o=>({...o,dx:o.x,dy:o.y})):g.objects).map(o=>{const v=localObjectRect(g,o),a=Math.max(horizontal?v.x:v.y,lo),b=Math.min(horizontal?v.x+v.w:v.y+v.h,hi);if(g.wallSide==='bottom')return {x:a,y:v.y+v.h,w:b-a,h:z.minY+width-v.y-v.h};if(g.wallSide==='top')return {x:a,y:z.maxY-width,w:b-a,h:v.y-z.maxY+width};if(g.wallSide==='left')return {x:v.x+v.w,y:a,w:z.minX+width-v.x-v.w,h:b-a};return {x:z.maxX-width,y:a,w:v.x-z.maxX+width,h:b-a};}).filter(v=>v.w>E&&v.h>E);}
-    if(g.groundLane)return [{x:r.x,y:r.y-width,w:r.w,h:width},{x:r.x,y:r.y+r.h,w:r.w,h:width},{x:r.x-width,y:r.y,w:width,h:r.h},{x:r.x+r.w,y:r.y,w:width,h:r.h}];
+    if(g.groundLane)return [{x:r.x,y:r.y-width,w:r.w,h:width},{x:r.x,y:r.y+r.h,w:r.w,h:width},...(!g.skipStartAccess?[{x:r.x-width,y:r.y,w:width,h:r.h}]:[]),...(!g.skipEndAccess?[{x:r.x+r.w,y:r.y,w:width,h:r.h}]:[])];
     const bottom={x,y:r.y-width,w,h:width},top={x,y:r.y+r.h,w,h:width};return g.paired?[bottom,top]:[bottom];
   }
   function endGangways(layout){
@@ -221,10 +222,10 @@
     return false;
   }
   const placedGeometry=new WeakMap();
-  function cachedPlacement(g,env,width){let byGroup=placedGeometry.get(env);if(!byGroup){byGroup=new WeakMap();placedGeometry.set(env,byGroup);}const signature=[g.x,g.y,g.w,g.h,g.rotated,g.wallSide,g.kind,g.paired,g.groundLane,g.backY,width,env.inner?.minX,env.inner?.maxX,env.inner?.minY,env.inner?.maxY].join(':');let value=byGroup.get(g);if(!value||value.signature!==signature||value.objects!==g.objects){value={signature,objects:g.objects,r:groupRect(g),access:accessFor(g,env,width)};byGroup.set(g,value);}return value;}
+  function cachedPlacement(g,env,width){let byGroup=placedGeometry.get(env);if(!byGroup){byGroup=new WeakMap();placedGeometry.set(env,byGroup);}const signature=[g.x,g.y,g.w,g.h,g.rotated,g.wallSide,g.kind,g.paired,g.groundLane,g.backY,g.skipStartAccess,g.skipEndAccess,width,env.inner?.minX,env.inner?.maxX,env.inner?.minY,env.inner?.maxY].join(':');let value=byGroup.get(g);if(!value||value.signature!==signature||value.objects!==g.objects){value={signature,objects:g.objects,r:groupRect(g),access:accessFor(g,env,width)};byGroup.set(g,value);}return value;}
   function placementError(g,placed,env,settings){
     const r=groupRect(g),access=accessFor(g,env,settings.gangwayWidth);
-    if(env.requireGroundPairs&&g.kind==='ground'&&!g.paired){const b=env.box,c=env.wallClearance||0,touch=g.wallSide==='left'?Math.abs(r.x-b.minX-c)<E:g.wallSide==='right'?Math.abs(r.x+r.w-b.maxX+c)<E:g.wallSide==='bottom'?Math.abs(r.y-b.minY-c)<E:g.wallSide==='top'?Math.abs(r.y+r.h-b.maxY+c)<E:false;if(!env.allowWallStorage||!touch)return 'Single ground rows must stay against an approved wall. Interior ground storage must stay back-to-back.';}
+    if(env.requireGroundPairs&&g.kind==='ground'&&!g.paired){const b=env.wallBox||env.box,c=(env.wallClearance||0)+(env.analysis?(env.optionsObstacleClearance||0):0),touch=g.wallSide==='left'?Math.abs(r.x-b.minX-c)<E:g.wallSide==='right'?Math.abs(r.x+r.w-b.maxX+c)<E:g.wallSide==='bottom'?Math.abs(r.y-b.minY-c)<E:g.wallSide==='top'?Math.abs(r.y+r.h-b.maxY+c)<E:false;if(!env.allowWallStorage||!touch)return 'Single ground rows must stay against an approved wall. Interior ground storage must stay back-to-back.';}
     if(!fits(r,env.zone))return 'Storage crosses the storage zone, boundary or mandatory clearance.';
     if(collide(r,env.baseAccess))return 'Storage blocks a circulation route.';
     for(const a of access)if(!fits(a,env.boundary)||collide(a,env.blocked))return 'A full-width access gangway is obstructed or leaves the warehouse.';
@@ -254,7 +255,7 @@
         }
         if(objects.length!==a.objects.length+b.objects.length)continue;
         const w=Math.max(...Object.values(cursor)),reverse=a.wallSide&&a.wallReverse,start=reverse?Math.max(along(a)+a.w,along(b)+b.w)-w:Math.min(along(a),along(b));
-        const merged={...a,w,h,objects,groundRows,[rotated?'y':'x']:start,...(a.groundLane?{backY:depth,centerLine:[[0,depth],[w,depth]],reservedBackRow:!cursor.front||!cursor.back}:{})};
+        const merged={...a,w,h,objects,groundRows,[rotated?'y':'x']:start,...(a.groundLane?{backY:depth,centerLine:[[0,depth],[w,depth]],reservedBackRow:!cursor.front||!cursor.back,skipStartAccess:ordered[0].skipStartAccess,skipEndAccess:ordered.at(-1).skipEndAccess}:{})};
         const other=groups.filter((_,k)=>k!==i&&k!==j);
         const axis=rotated?'x':'y',origins=a.groundLane?[a.y+a.backY-depth,b.y+b.backY-depth,Math.min(a.y,b.y),Math.max(a.y+a.h,b.y+b.h)-h]:[a.wallSide==='top'||a.wallSide==='right'?Math.max(cross(a)+a.h,cross(b)+b.h)-h:Math.min(cross(a),cross(b))];
         let fitted=false;for(const origin of [...new Set(origins)]){merged[axis]=origin;if(!placementError(merged,other,env,settings)){fitted=true;break;}}
@@ -266,6 +267,38 @@
   function compactGround(layout,plan,settings){
     if(layout.version!==2)throw new Error('Ground line compaction requires a generated greenfield layout.');
     compactGroundGroups(layout.groups,layout.env,settings);Object.assign(layout,validate(layout,plan,settings));return layout;
+  }
+  function freeRackIntervals(block,y,left,right,groups,env,settings){
+    const g=settings.gangwayWidth,storage=rect({x:left,y,w:right-left,h:block.h}),faces=[rect({x:left-g,y:y-g,w:right-left+2*g,h:g})];
+    if(block.paired)faces.push(rect({x:left-g,y:y+block.h,w:right-left+2*g,h:g}));
+    const bad=[...diff([storage],env.zone),...intersect([storage],env.baseAccess),...diff(faces,env.boundary),...intersect(faces,env.blocked)];
+    for(const other of groups){const fixed=cachedPlacement(other,env,g);bad.push(...intersect([storage],[rect(fixed.r)]),...intersect([storage],fixed.access.map(rect)),...intersect(faces,[rect(fixed.r)]));}
+    const cuts=bad.filter(p=>C.Clipper.Area(p)>E*S*S).map(p=>rectBounds(points(p))).map(b=>[Math.max(left,b.x),Math.min(right,b.x+b.w)]).filter(([a,b])=>b>a+E).sort((a,b)=>a[0]-b[0]),merged=[];
+    for(const cut of cuts){const prev=merged.at(-1);if(prev&&cut[0]<=prev[1]+E)prev[1]=Math.max(prev[1],cut[1]);else merged.push([...cut]);}
+    const free=[];let start=left;for(const [a,b]of merged){if(a-start>=block.w-E)free.push([start,a]);start=Math.max(start,b);}if(right-start>=block.w-E)free.push([start,right]);return free;
+  }
+  async function findRackPose(block,groups,env,settings){
+    const gap=settings.gangwayWidth,regions=(env.regions||[{points:env.poly}]).map(r=>L.bounds(r.points)).sort((a,b)=>a.minY-b.minY||a.minX-b.minX),occupied=[...env.obstacles.map(o=>o.bounds),...groups.map(groupRect)];
+    for(const b of regions){if(b.maxX-b.minX<block.w-E||b.maxY-b.minY<block.h+gap-E)continue;
+      const ys=[b.minY+gap,b.maxY-block.h-gap,...occupied.flatMap(r=>[r.y+r.h+gap,r.y-block.h-gap]),...env.zone.flatMap(points).flatMap(p=>[p[1]+gap,p[1]-block.h-gap])];
+      for(let y=b.minY+gap;y+block.h+gap<=b.maxY+E;y+=block.h+gap)ys.push(y);
+      for(const y of [...new Set(ys.map(v=>Math.round(v*S)/S))].filter(y=>y>=b.minY-E&&y+block.h<=b.maxY+E).sort((a,b)=>a-b)){
+        for(const [left,right]of freeRackIntervals(block,y,b.minX,b.maxX,groups,env,settings))for(const x of [...new Set([left,left+gap,right-block.w,right-block.w-gap])]){
+          if(x<left-E||x+block.w>right+E)continue;const trial={...block,x,y,wallSide:null};if(!placementError(trial,groups,env,settings))return trial;
+        }
+      }
+      await tick();
+    }return null;
+  }
+  async function recoverRackBays(unplaced,groups,env,settings,options){
+    const pending=unplaced.filter(g=>g.kind==='rack').flatMap(g=>g.objects);if(!pending.length)return;
+    for(let i=unplaced.length-1;i>=0;i--)if(unplaced[i].kind==='rack')unplaced.splice(i,1);
+    while(pending.length){const first=pending.shift(),next=pending[0],canPair=next&&next.typeId===first.typeId&&Math.abs(next.h-first.h)<E,separation=options.backToBackSeparation||0;
+      const single={id:'rack-fit:'+first.id,kind:'rack',frame:env.frame,w:first.w,h:first.h,paired:false,rows:1,separation:0,backY:0,objects:[{...first,dx:0,dy:0}]};
+      let placed=null;if(canPair){const pair={...single,h:first.h+separation+next.h,paired:true,rows:2,separation,backY:first.h,objects:[single.objects[0],{...next,dx:0,dy:first.h+separation}]};placed=await findRackPose(pair,groups,env,settings);if(placed)pending.shift();}
+      if(!placed)placed=await findRackPose(single,groups,env,settings);
+      if(placed)groups.push(placed);else unplaced.push({...single,unplacedReason:'No remaining shelf footprint and loading aisle fit outside the configured clearances in any usable region.'});
+    }
   }
   async function pack(plan,settings,geometry,options,orientation,sx,sy,fraction,startOffset,source=L.makeObjects(plan,settings)){
     const env=environment(geometry,options,settings,orientation,sx,sy),groups=[],unplaced=[],blocks=makeBlocks(source,env,settings,options,fraction),g=settings.gangwayWidth;
@@ -294,9 +327,9 @@
       }
       if(result){groups.push(result);if(result.wallSide==='bottom'&&!options.racksAroundWalls){y=Math.max(y,result.y+result.h+g);x=left;band=0;}}else if(block.paired&&block.kind==='rack'){const a=block.objects.filter(o=>o.dy===0),b=block.objects.filter(o=>o.dy>0);for(const row of [a,b])if(row.length)blocks.push({...block,id:'single:'+row[0].id,paired:false,rows:1,separation:0,backY:0,h:row[0].h,w:row.reduce((n,o)=>n+o.w,0),objects:row.map(o=>({...o,dy:0})),wallSide:null});}else unplaced.push({...block,unplacedReason:lastError});
     }
+    if(env.analysis)await recoverRackBays(unplaced,groups,env,settings,options);
     await placeGroundLanes(pendingGround,env,settings,options,orientation,groups,unplaced);
     compactGroundGroups(groups,env,settings);
-    if(options.allowWallStorage&&source.groups.some(g=>g.kind==='rack')&&!groups.some(g=>g.wallSide))env.errors.push({pn:'Wall storage',message:'A wall rack row could not be placed safely. Review the selected walls, obstacles and clearance.'});
     const layout={version:2,orientation,groups,unplaced,env,options:{...options},issues:[...source.issues,...env.errors],rackRequired:source.rackRequired,groundRequired:source.groundRequired,search:{sx,sy,rowFraction:fraction,startOffset},buildingAngle:buildingAngle(geometry.entities.find(e=>e.id===options.boundaryId).points),geometryUnverified:geometry.unreadableEntities||0};
     Object.assign(layout,validate(layout,plan,settings,source));return layout;
   }

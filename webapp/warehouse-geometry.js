@@ -4,7 +4,7 @@
   const S=10,EPS=.11;
   const roles=['boundary','usable','void','wall','pillar','door','pedestrian','gangway','restricted','existing-rack','existing-ground','crossing','obstacle','reference'];
   const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
-  const rules=[['pedestrian',/pedestrian|walkways?|footpaths?|chodnik/],['crossing',/crossings?|crosswalk/],['gangway',/forklift|industrial aisle|gangways?|traffic aisle/],['existing-ground',/ground storage|floor storage|pallet positions?/],['existing-rack',/racks?|shelving|regal/],['usable',/usable|storage eligible|storage area/],['boundary',/warehouse boundary|external boundary|building outline|perimeter|source boundary|^boundary$/],['pillar',/pillars?|columns?|stl[pb]/],['door',/doors?|entrance|exit|loading gate/],['wall',/walls?|partition/],['restricted',/restricted|no storage|blocked|machinery|technical|exclusion/],['reference',/annotation|dimension|text|reference|title|defpoints/]];
+  const rules=[['pedestrian',/pedestrian|walkways?|footpaths?|chodnik|^gangways?$/],['crossing',/crossings?|crosswalk/],['gangway',/forklift|industrial aisle|gangways?|traffic aisle/],['existing-ground',/ground storage|floor storage|pallet positions?/],['existing-rack',/racks?|shelving|regal/],['usable',/usable|storage eligible|storage area/],['boundary',/warehouse boundary|external boundary|building outline|perimeter|source boundary|^boundary$/],['pillar',/pillars?|columns?|stl[pb]/],['door',/doors?|entrance|exit|loading gate/],['wall',/walls?|partition/],['restricted',/restricted|no storage|blocked|machinery|technical|exclusion/],['reference',/annotation|dimension|text|reference|title|defpoints/]];
   const isLayerZero=e=>normalize(e.layer)==='0';
   function storageOptions(input,o={}){
     if(o.layerZeroStorageVersion===1)return o;
@@ -54,6 +54,8 @@
   function boundaryId(geometry,id){const all=geometry.entities.find(e=>e.id==='detected:regions'),selected=geometry.entities.find(e=>e.id===id);return all&&(!selected||isLayerZero(selected)&&all.regionIds.includes(selected.id))?all.id:id;}
   function analyze(input,o,settings={}){
     o=storageOptions(input,o);
+    const clearances={pillar:o.pillarClearance??1000,restricted:o.restrictedClearance??0,pedestrian:o.pedestrianClearance??0,door:o.doorClearance??settings.gangwayWidth??0};
+    for(const [name,value]of Object.entries(clearances))if(!Number.isFinite(value)||value<0)throw new Error('Enter a non-negative '+name+' clearance in millimetres.');
     const geometry=prepare(input,o),L=scope.LogEnLayout,C=scope.ClipperLib,errors=[],warnings=[],counts={},scale=o.scale;
     if(!(Number.isFinite(scale)&&scale>0))throw new Error('Choose drawing units before geometry analysis.');
     const selected=geometry.entities.find(e=>e.id===(boundaryId(geometry,o.boundaryId)||'detected:regions'));
@@ -68,7 +70,7 @@
     for(let i=0;i<wallContours.length;i++){const child=wallContours[i],parent=wallContours.slice(0,i).filter(p=>p.layer===child.layer&&area(p.paths)>area(child.paths)+1e-7&&area(diff(child.paths,p.paths))<1e-7).at(-1);if(parent){child.depth=parent.depth+1;parent.children.push(child);}}
     const wallMasks=new Map(wallContours.map(e=>[e.id,e.depth%2?[]:diff(e.paths,union(e.children.map(c=>c.paths[0])))]));
     const outers=regionEntities.map(e=>world(e));for(const p of outers)if(!L.core.validPolygon(p))errors.push('An identified usable region is invalid or self-intersecting.');
-    let gross=union(outers.filter(p=>L.core.validPolygon(p)).map(p=>ring(p))),physical=[],voids=[],noStorage=[],movement=[],pedestrians=[],forklifts=[],crossings=[],zones=[],doors=[],unclassified=0;
+    let gross=union(outers.filter(p=>L.core.validPolygon(p)).map(p=>ring(p))),physical=[],generalPhysical=[],pillarClearancePaths=[],clearanceZones=[],voids=[],noStorage=[],movement=[],pedestrians=[],forklifts=[],crossings=[],zones=[],doors=[],unclassified=0;
     const add=(array,ps)=>array.push(...ps);
     for(const e of geometry.entities){if(excluded.has(e.id)||e.interpreted&&!e.sourceIds)continue;let r=role(e,o);counts[r]=(counts[r]||0)+1;if(r==='reference'||r==='boundary'||r==='usable')continue;
       if(e.enclosureOfWalls||e.interpreted&&e.sourceIds?.some(id=>excluded.has(id)))continue;
@@ -81,25 +83,28 @@
       if(r==='void'){gross=diff(gross,ps);voids.push(...ps);continue;}
       if(r==='crossing'){crossings.push({id:e.id,paths:ps});continue;}
       const shape={id:e.id,role:r,paths:ps,points:pts,closed};zones.push(shape);
-      if(r==='door'){const type=o.doorTypes?.[e.id]||'unknown';doors.push({...shape,type,forklift:['forklift','loading'].includes(type)});if(!['forklift','loading'].includes(type))movement.push(...ps);if(type==='unknown')warnings.push(e.id+': classify the door type; forklift access is not assumed.');ps=offset(ps,o.doorClearance??settings.gangwayWidth??0);}
+      if(['wall','pillar','obstacle'].includes(r))add(physical,ps);
+      if(['wall','obstacle'].includes(r))add(generalPhysical,ps);
+      if(clearances[r]!==undefined){ps=offset(ps,clearances[r]);shape.clearancePaths=ps;if(clearances[r]>0)clearanceZones.push({id:e.id,role:r,distance:clearances[r],paths:diff(ps,shape.paths)});}
+      if(r==='pillar')add(pillarClearancePaths,ps);
+      if(r==='door'){const type=o.doorTypes?.[e.id]||'unknown';doors.push({...shape,type,forklift:['forklift','loading'].includes(type)});if(!['forklift','loading'].includes(type))movement.push(...shape.paths);if(type==='unknown')warnings.push(e.id+': classify the door type; forklift access is not assumed.');}
       if(r==='pedestrian')pedestrians.push(shape);if(r==='gangway')forklifts.push(shape);
       if(r==='obstacle'){unclassified++;warnings.push(e.id+': unclassified; storage and movement are conservatively blocked.');}
-      if(['wall','pillar','obstacle'].includes(r))add(physical,ps);
       if(['wall','pillar','obstacle','restricted'].includes(r))add(movement,ps);
       // Installed infrastructure is handled separately by Existing Layout allocation.
       if(!(o.existingMode&&['existing-rack','existing-ground'].includes(r)))add(noStorage,ps);
     }
-    for(const [i,r]of(o.manualObstacles||[]).entries()){if(![r.x,r.y,r.w,r.h].every(Number.isFinite)||r.w<=0||r.h<=0){errors.push('Invalid reserved area '+i);continue;}const p=ring(L.corners(r));physical.push(p);movement.push(p);noStorage.push(p);}
-    physical=union(physical);const clearance=Math.max(0,o.obstacleClearance||0);noStorage=union([...noStorage,...offset(physical,clearance)]);movement=union([...movement,...offset(physical,clearance)]);
-    const pedestrian=union(pedestrians.flatMap(e=>e.paths)),crossingCandidates=[];let approved=[];
-    for(const p of pedestrians)for(const f of [...forklifts,...crossings]){const overlap=intersect(p.paths,f.paths);if(!area(overlap))continue;const id=p.id+'::'+f.id,b=bounds(overlap.flatMap(points)),pb=bounds(p.paths.flatMap(points)),longX=pb.maxX-pb.minX>=pb.maxY-pb.minY,along=longX?b.maxX-b.minX:b.maxY-b.minY,valid=along<=(settings.gangwayWidth||0)+.1&&!area(intersect(overlap,physical));const ok=valid&&o.approvedCrossings?.[id]===true;crossingCandidates.push({id,pedestrian:p.id,route:f.id,valid,approved:ok,paths:overlap});if(ok)approved.push(...overlap);else warnings.push(id+': pedestrian/forklift crossing requires site safety review'+(valid?'.':' and has insufficient geometry/clearance.'));}
-    movement=union([...movement,...diff(pedestrian,union(approved))]);
+    for(const [i,r]of(o.manualObstacles||[]).entries()){if(![r.x,r.y,r.w,r.h].every(Number.isFinite)||r.w<=0||r.h<=0){errors.push('Invalid reserved area '+i);continue;}const p=ring(L.corners(r));physical.push(p);generalPhysical.push(p);movement.push(p);noStorage.push(p);}
+    physical=union(physical);const clearance=Math.max(0,o.obstacleClearance||0);noStorage=union([...noStorage,...offset(union(generalPhysical),clearance)]);movement=union([...movement,...offset(union(generalPhysical),clearance)]);
+    const pedestrian=union(pedestrians.flatMap(e=>e.paths)),pedestrianBuffered=union(pedestrians.flatMap(e=>e.clearancePaths||e.paths)),crossingCandidates=[];let approved=[];
+    for(const p of pedestrians)for(const f of [...forklifts,...crossings]){const overlap=intersect(p.clearancePaths||p.paths,f.paths);if(!area(overlap))continue;const id=p.id+'::'+f.id,b=bounds(overlap.flatMap(points)),pb=bounds(p.paths.flatMap(points)),longX=pb.maxX-pb.minX>=pb.maxY-pb.minY,along=longX?b.maxX-b.minX:b.maxY-b.minY,valid=along<=(settings.gangwayWidth||0)+.1&&!area(intersect(overlap,physical));const ok=valid&&o.approvedCrossings?.[id]===true;crossingCandidates.push({id,pedestrian:p.id,route:f.id,valid,approved:ok,paths:overlap});if(ok)approved.push(...overlap);else warnings.push(id+': pedestrian/forklift crossing requires site safety review'+(valid?'.':' and has insufficient geometry/clearance.'));}
+    movement=union([...movement,...diff(pedestrianBuffered,union(approved))]);
     const pedestrianFree=diff(pedestrian,physical);
     if(o.minimumPedestrianWidth>0)for(const p of pedestrians){const free=diff(p.paths,physical),eroded=offset(free,-o.minimumPedestrianWidth/2);if(!eroded.length||components(eroded)>components(p.paths))warnings.push(p.id+': unobstructed passage may be narrower than the configured pedestrian minimum. Review the pillar clearance.');}
-    const namedBoundary=geometry.entities.filter(e=>!e.interpreted&&role(e,o)==='boundary'&&e.closed&&L.core.validPolygon(world(e))).map(e=>ring(world(e))),warehouse=namedBoundary.length?diff(union(namedBoundary),union(voids)):gross;if(area(diff(gross,warehouse))>1e-7)errors.push('A usable region leaves the classified warehouse boundary. Correct the regions or boundary before generation.');
+    const namedBoundary=geometry.entities.filter(e=>!e.interpreted&&role(e,o)==='boundary'&&e.closed&&L.core.validPolygon(world(e))).map(e=>ring(world(e))),wallOutlines=union(wallContours.filter(e=>e.depth===0).flatMap(e=>e.paths)),fromWalls=wallOutlines.length&&area(diff(gross,wallOutlines))<1e-7,warehouseSource=namedBoundary.length?'boundary':fromWalls?'walls':'usable-regions',warehouse=namedBoundary.length?diff(union(namedBoundary),union(voids)):fromWalls?diff(wallOutlines,union(voids)):gross;if(area(diff(gross,warehouse))>1e-7)errors.push('A usable region leaves the classified warehouse boundary. Correct the regions or boundary before generation.');
     const net=diff(gross,noStorage),regionCount=components(gross);for(const n of input.notifications||[])warnings.push('CAD reader: '+n);
     if(!gross.length)errors.push('No valid usable area remains.');if(input.unreadableEntities)warnings.push(input.unreadableEntities+' source entities could not be interpreted; add their restrictions before confirming geometry.');
-    return {geometry,warehouse,wallContourIds:wallContours.filter(e=>e.children.length||e.depth>0).map(e=>e.id),regions:regionEntities.map(e=>({id:e.id,points:world(e),area:area(intersect(gross,[ring(world(e))]))})),gross,physical,noStorage:intersect(noStorage,gross),movementBlocked:intersect(movement,gross),net,pedestrian,pedestrianFree,approvedCrossings:union(approved),crossingCandidates,zones,doors,errors,warnings,counts,unclassified,regionCount,grossArea:area(gross),excludedArea:area(gross)-area(net),netArea:area(net)};
+    return {geometry,warehouse,warehouseSource,wallInterior:union(wallContours.filter(e=>e.depth===1).flatMap(e=>e.paths)),clearances,pillarClearancePaths:union(pillarClearancePaths),clearanceZones,wallContourIds:wallContours.filter(e=>e.children.length||e.depth>0).map(e=>e.id),regions:regionEntities.map(e=>({id:e.id,points:world(e),area:area(intersect(gross,[ring(world(e))]))})),gross,physical,noStorage:intersect(noStorage,gross),movementBlocked:intersect(movement,warehouse),net,pedestrian,pedestrianFree,approvedCrossings:union(approved),crossingCandidates,zones,doors,errors,warnings,counts,unclassified,regionCount,grossArea:area(gross),excludedArea:area(gross)-area(net),netArea:area(net)};
   }
   function components(ps){if(!ps.length)return 0;const C=scope.ClipperLib,c=new C.Clipper(),tree=new C.PolyTree();c.AddPaths(ps,C.PolyType.ptSubject,true);c.Execute(C.ClipType.ctUnion,tree,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);return tree.Childs().length;}
   scope.LogEnWarehouseGeometry=Object.freeze({roles,role,normalize,isLayerZero,storageOptions,boundaryId,prepare,analyze,path,points,ring,union,diff,intersect,offset,area,components});
