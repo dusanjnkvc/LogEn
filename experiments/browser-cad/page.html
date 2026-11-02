@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'none'; script-src 'unsafe-inline' blob:; worker-src blob:; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+  <title>LogEn · Browser DWG proof</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#0f1215;color:#e9eef5;font:16px/1.6 system-ui,sans-serif}main{max-width:1050px;padding:28px;margin:auto}h1{font-size:clamp(24px,5vw,34px);margin:.15em 0}h2{font-size:19px}.eyebrow{color:#ffd600;font-weight:750;font-size:12px;letter-spacing:2px}.muted{color:#a4b1c0}.panel{background:#191e23;border:1px solid #303840;border-radius:16px;padding:22px;margin:22px 0}.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center}button,.file{font:650 14px system-ui;background:#ffd600;color:#101316;border:0;padding:13px 18px;border-radius:8px;cursor:pointer;min-height:44px}button.secondary,.file{background:#20282f;color:#f0f3f7;border:1px solid #495663}button:disabled{opacity:.4;cursor:default}button:focus-visible,.file:focus-within{outline:3px solid #fff;outline-offset:3px}.file input{position:absolute;width:1px;height:1px;opacity:0}#status{margin-bottom:0;font-weight:650;color:#ffd600}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:18px}.stat{background:#10161c;padding:15px;border-radius:8px;font-size:13px;color:#a4b1c0}.stat strong{display:block;font-size:24px;color:#fff}svg{display:block;width:100%;height:340px;background:#10161c;border-radius:8px}pre{max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}details{margin-top:20px}a{color:#ffdd39}.warning{color:#f2c68f}footer{font-size:13px;color:#a4b1c0}#downloads{margin-top:16px}[hidden]{display:none!important}@media(max-width:580px){main{padding:16px}.panel{padding:16px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.controls>*{flex:1 1 auto}svg{height:290px}}
+  </style>
+</head>
+<body><main>
+  <div class="eyebrow">LOGEN · ISOLATED FEASIBILITY TEST</div>
+  <h1>Browser DWG import & export</h1>
+  <p class="muted">A local CAD experiment. Your saved LogEn projects and production app are unchanged.</p>
+  <section class="panel">
+    <h2>Two racks. One ground location. A real DWG.</h2>
+    <p>Read the included synthetic warehouse drawing, add three outlines, and download the edited DWG. All CAD processing runs on this device. Server connections are blocked on this page.</p>
+    <div class="controls">
+      <button id="sample">Run sample DWG</button>
+      <label class="file">Choose test DWG<input type="file" id="upload" accept=".dwg" aria-label="Choose test DWG"></label>
+      <button class="secondary" id="source">Download source sample</button>
+    </div>
+    <p class="muted">Use a copy of a small drawing in millimetres. This proof adds fixed test positions; it does not run the warehouse optimizer. Limit: 20 MB.</p>
+    <p role="status" id="status">Ready · No AutoCAD or helper required for this experiment.</p>
+    <div class="stats" id="stats" hidden></div>
+    <div class="controls" id="downloads" hidden>
+      <button id="dwg">Download edited DWG</button>
+      <button class="secondary" id="report">Download test report</button>
+    </div>
+  </section>
+  <section class="panel" id="result" hidden>
+    <h2>Geometry preview</h2>
+    <p class="muted">Source outlines in grey · Two racks in blue · Ground location in green. Text, dimensions and blocks are retained for the independent CAD check; this preview is limited.</p>
+    <svg id="preview" role="img" aria-label="Source warehouse boundary with two rack outlines and one ground-storage outline"></svg>
+    <p id="warnings" class="warning"></p>
+    <details><summary>Processing report</summary><pre id="json"></pre></details>
+  </section>
+  <footer>
+    <p>Powered locally by <a href="https://github.com/node-projects/acad-ts" target="_blank" rel="noopener">acad-ts 3.7.0</a> (MIT). No paid API, no helper, no runtime CDN. Generated DWG files must be independently validated before production use. Physical Android Chrome testing is pending.</p>
+    <details><summary>Third-party license</summary><pre>__LICENSE__</pre></details>
+  </footer>
+</main>
+<script>
+/* This self-contained file has no external JavaScript, telemetry or conversion endpoint. */
+const sampleBase64 = __SAMPLE__;
+const workerSource = __WORKER__;
+const $ = id => document.getElementById(id);
+let output = null;
+let currentWorker = null;
+let activeUrl = null;
+let timer = null;
+const downloadUrls = new Set();
+const encodeSample = () => Uint8Array.from(atob(sampleBase64), ch => ch.charCodeAt(0));
+function download(data, type, filename) {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  downloadUrls.add(url);
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); downloadUrls.delete(url); }, 60000);
+}
+function cleanWorker() {
+  clearTimeout(timer);
+  if (currentWorker) currentWorker.terminate();
+  if (activeUrl) URL.revokeObjectURL(activeUrl);
+  currentWorker = null; activeUrl = null;
+  $('sample').disabled = false; $('upload').disabled = false;
+}
+function fail(message) { cleanWorker(); $('status').textContent = 'Could not complete this proof: ' + message; }
+function preview(report) {
+  const svg = $('preview'); svg.replaceChildren();
+  const NS = 'http://www.w3.org/2000/svg';
+  let extent = [];
+  function add(name, attrs) { const n = document.createElementNS(NS, name); for (const [k,v] of Object.entries(attrs)) n.setAttribute(k, v); svg.append(n); return n; }
+  for (const e of report.geometry) {
+    if (e.points?.length && !e.curved) {
+      const pts = e.closed ? [...e.points, e.points[0]] : e.points;
+      extent.push(...pts);
+      add('polyline', { points: pts.map(p => `${p[0]},${-p[1]}`).join(' '), fill:'none', stroke:'#9caaba', 'stroke-width':140 });
+    } else if (e.center && e.radius > 0) {
+      add('circle', {cx:e.center[0], cy:-e.center[1], r:e.radius, fill:'none', stroke:'#9caaba', 'stroke-width':140});
+    }
+  }
+  for (const spec of report.added) {
+    extent.push([spec.x,spec.y],[spec.x+spec.w,spec.y+spec.h]);
+    add('rect', {x:spec.x,y:-spec.y-spec.h,width:spec.w,height:spec.h,fill:spec.layer==='POC_RACKS'?'#4285f444':'#34a85344',stroke:spec.layer==='POC_RACKS'?'#6cafff':'#3feb83','stroke-width':180});
+  }
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for (const [x,y] of extent) { minX=Math.min(minX,x); maxX=Math.max(maxX,x); minY=Math.min(minY,y); maxY=Math.max(maxY,y); }
+  svg.setAttribute('viewBox', `${minX-1600} ${-maxY-1600} ${maxX-minX+3200} ${maxY-minY+3200}`);
+}
+function run(bytes) {
+  output = null;
+  $('downloads').hidden = true; $('result').hidden = true; $('stats').hidden = true;
+  if (!('Worker' in window)) { fail('This browser does not support workers. Existing LogEn export is unaffected.'); return; }
+  if (bytes.byteLength > 20*1024*1024) { fail('Choose a test drawing smaller than 20 MB.'); return; }
+  $('sample').disabled = true; $('upload').disabled = true;
+  $('status').textContent = 'Starting local CAD worker…';
+  activeUrl = URL.createObjectURL(new Blob([workerSource], {type:'text/javascript'}));
+  currentWorker = new Worker(activeUrl);
+  timer = setTimeout(() => fail('The local CAD experiment exceeded 30 seconds. Try the included small sample.'), 30000);
+  currentWorker.onerror = e => fail(e.message || 'CAD worker could not start.');
+  currentWorker.onmessage = e => {
+    if (e.data.stage) { $('status').textContent = e.data.stage; return; }
+    if (e.data.error) { fail(e.data.error); return; }
+    output = e.data.result;
+    cleanWorker();
+    const r = output.report;
+    r.browser = navigator.userAgent;
+    r.networkPolicy = 'CSP connect-src none; worker fetch/XMLHttpRequest/WebSocket/importScripts disabled';
+    $('status').textContent = `Binary ${r.outputHeader} DWG created locally in ${r.totalMs} ms. Independent CAD validation is required.`;
+    $('stats').replaceChildren();
+    for (const [label,value] of [['Source entities',r.originalModelEntities],['Added outlines',r.added.length],['Units','mm'],['DWG bytes',r.outputBytes.toLocaleString()]]) {
+      const item = document.createElement('div'); item.className='stat'; item.textContent=label;
+      const strong = document.createElement('strong'); strong.textContent=value; item.append(strong); $('stats').append(item);
+    }
+    $('stats').hidden=false; $('downloads').hidden=false; $('result').hidden=false;
+    $('warnings').textContent = r.notifications.length ? `${r.notifications.length} reader/writer notifications. Review the report; full fidelity for arbitrary drawings is not guaranteed.` : 'No reader/writer notifications.';
+    $('json').textContent = JSON.stringify(r,null,2);
+    preview(r);
+  };
+  const buffer = bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
+  currentWorker.postMessage(buffer,[buffer]);
+}
+$('sample').addEventListener('click', () => run(encodeSample()));
+$('upload').addEventListener('change', async event => {
+  const file=event.target.files?.[0];
+  if (!file) return;
+  try { if(file.size>20*1024*1024) throw new Error('Choose a test drawing smaller than 20 MB.'); run(new Uint8Array(await file.arrayBuffer())); }
+  catch(error) { fail(error.message); }
+  finally { event.target.value=''; }
+});
+$('source').addEventListener('click', () => download(encodeSample(),'application/acad','LogEn_CAD_Source_Sample.dwg'));
+$('dwg').addEventListener('click', () => { if(output) download(output.bytes,'application/acad','LogEn_Browser_CAD_Proof.dwg'); });
+$('report').addEventListener('click', () => { if(output) download(JSON.stringify(output.report,null,2),'application/json','LogEn_Browser_CAD_Report.json'); });
+window.addEventListener('beforeunload', () => { cleanWorker(); for(const url of downloadUrls) URL.revokeObjectURL(url); });
+</script>
+</body>
+</html>

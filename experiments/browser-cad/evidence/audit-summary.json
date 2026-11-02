@@ -1,0 +1,27 @@
+{
+  "initial": {
+    "reader": "AutoCAD 2021 Core Console R.47.0.0",
+    "audit_errors": 0,
+    "audit_fixed": 0,
+    "input_sha256": "f374101ff254edb1825a1182ed083ffd2092fafe6d1fc76fe06e70353276749d"
+  },
+  "after_edit": {
+    "reader": "AutoCAD 2021 Core Console R.47.0.0",
+    "audit_errors": 0,
+    "audit_fixed": 0,
+    "input_sha256": "f374101ff254edb1825a1182ed083ffd2092fafe6d1fc76fe06e70353276749d"
+  },
+  "reopened": {
+    "reader": "AutoCAD 2021 Core Console R.47.0.0",
+    "audit_errors": 0,
+    "audit_fixed": 0,
+    "input_sha256": "00f3601c4ba6882c85ad306bf58c2f2e225ef521f6921e41ca686e667d7c8dc4"
+  },
+  "source": {
+    "reader": "AutoCAD 2021 Core Console R.47.0.0",
+    "audit_errors": 0,
+    "audit_fixed": 0,
+    "input_sha256": "2383e7dfc4daccd7d9de8950cb09902e0ff03d814f7e3554605c3f2fc4958253"
+  },
+  "processing_server_stopped_run": true
+}

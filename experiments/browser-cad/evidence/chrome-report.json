@@ -1,0 +1,188 @@
+{
+  "test": "LogEn isolated browser DWG feasibility / Phase A",
+  "library": "@node-projects/acad-ts",
+  "libraryVersion": "3.7.0",
+  "license": "MIT",
+  "inputHeader": "AC1032",
+  "outputHeader": "AC1032",
+  "units": 4,
+  "unitsName": "millimetres",
+  "inputBytes": 30718,
+  "outputBytes": 13355,
+  "originalModelEntities": 8,
+  "originalTypes": {
+    "LWPOLYLINE": 2,
+    "LINE": 1,
+    "CIRCLE": 1,
+    "TEXT": 1,
+    "MTEXT": 1,
+    "INSERT": 1,
+    "DIMENSION": 1
+  },
+  "outputModelEntities": 11,
+  "added": [
+    {
+      "id": "RACK-01",
+      "layer": "POC_RACKS",
+      "color": 4,
+      "x": 4000,
+      "y": 6000,
+      "w": 2850,
+      "h": 1400
+    },
+    {
+      "id": "RACK-02",
+      "layer": "POC_RACKS",
+      "color": 4,
+      "x": 4000,
+      "y": 11900,
+      "w": 2850,
+      "h": 1400
+    },
+    {
+      "id": "GROUND-01",
+      "layer": "POC_GROUND",
+      "color": 3,
+      "x": 12000,
+      "y": 6000,
+      "w": 1300,
+      "h": 1100
+    }
+  ],
+  "readMs": 96,
+  "totalMs": 186,
+  "notifications": [
+    {
+      "message": "Unlisted object with DXF name ACDBDETAILVIEWSTYLE has been read as an UnknownNonGraphicalObject",
+      "type": 2
+    },
+    {
+      "message": "Unlisted object with DXF name ACDBDETAILVIEWSTYLE has been read as an UnknownNonGraphicalObject",
+      "type": 2
+    },
+    {
+      "message": "Unlisted object with DXF name ACDBSECTIONVIEWSTYLE has been read as an UnknownNonGraphicalObject",
+      "type": 2
+    },
+    {
+      "message": "Unlisted object with DXF name ACDBSECTIONVIEWSTYLE has been read as an UnknownNonGraphicalObject",
+      "type": 2
+    },
+    {
+      "message": "Entry not found Imperial24|107 for dictionary ACAD_DETAILVIEWSTYLE|106",
+      "type": 2
+    },
+    {
+      "message": "Entry not found Metric50|178 for dictionary ACAD_DETAILVIEWSTYLE|106",
+      "type": 2
+    },
+    {
+      "message": "Entry not found Imperial24|105 for dictionary ACAD_SECTIONVIEWSTYLE|104",
+      "type": 2
+    },
+    {
+      "message": "Entry not found Metric50|177 for dictionary ACAD_SECTIONVIEWSTYLE|104",
+      "type": 2
+    }
+  ],
+  "geometry": [
+    {
+      "type": "LWPOLYLINE",
+      "layer": "SOURCE_BOUNDARY",
+      "points": [
+        [
+          1000,
+          2000
+        ],
+        [
+          41000,
+          2000
+        ],
+        [
+          41000,
+          62000
+        ],
+        [
+          1000,
+          62000
+        ]
+      ],
+      "closed": true,
+      "curved": false
+    },
+    {
+      "type": "LWPOLYLINE",
+      "layer": "SOURCE_PILLARS",
+      "points": [
+        [
+          11000,
+          12000
+        ],
+        [
+          11500,
+          12000
+        ],
+        [
+          11500,
+          12500
+        ],
+        [
+          11000,
+          12500
+        ]
+      ],
+      "closed": true,
+      "curved": false
+    },
+    {
+      "type": "LINE",
+      "layer": "SOURCE_DOOR",
+      "points": [
+        [
+          1000,
+          4000
+        ],
+        [
+          1000,
+          7000
+        ]
+      ]
+    },
+    {
+      "type": "CIRCLE",
+      "layer": "SOURCE_PILLARS",
+      "center": [
+        35000,
+        50000
+      ],
+      "radius": 300
+    },
+    {
+      "type": "TEXT",
+      "layer": "SOURCE_ANNOTATIONS"
+    },
+    {
+      "type": "MTEXT",
+      "layer": "SOURCE_ANNOTATIONS"
+    },
+    {
+      "type": "INSERT",
+      "layer": "SOURCE_PILLARS"
+    },
+    {
+      "type": "DIMENSION",
+      "layer": "SOURCE_ANNOTATIONS"
+    }
+  ],
+  "scope": "Fixed test positions, not the production warehouse optimizer. Independent CAD validation is required.",
+  "processing": "In-memory JavaScript inside a dedicated browser worker. No upload, helper or server processing.",
+  "limitations": [
+    "This is an isolated feasibility experiment; the LogEn production import/export is unchanged.",
+    "Preview shows supported line, circle and polyline geometry; it is not a full CAD renderer.",
+    "Known reader notifications must be reviewed; full fidelity for arbitrary DWG objects is not promised.",
+    "Output version follows the source document. Only the included AC1032 sample is independently validated.",
+    "A physical Android Chrome device has not yet been tested."
+  ],
+  "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+  "networkPolicy": "CSP connect-src none; worker fetch/XMLHttpRequest/WebSocket/importScripts disabled"
+}

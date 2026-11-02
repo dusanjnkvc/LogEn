@@ -1,0 +1,14 @@
+{
+  "name": "logen-browser-cad-proof",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.cjs"
+  },
+  "dependencies": {
+    "@node-projects/acad-ts": "3.7.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}
