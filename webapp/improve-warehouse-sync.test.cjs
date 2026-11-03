@@ -32,9 +32,9 @@ test('Overview threshold and category changes appear in Designer; switching Auto
  change('#category-filter',JSON.stringify('Bulk'));$('[data-action="improve-warehouse"]').click();change('#rack-planning-threshold','3','input');
  const overview=Object.fromEntries([...w.document.querySelectorAll('[data-improvement-pn]')].map(e=>[e.dataset.improvementPn,e.dataset.improvementStorage]));
  $('[data-split-close]').click();$('[data-view="implementation"]').click();assert.deepEqual(designer(),overview);
- change('[data-storage-pn="THREE"]','ground');await new Promise(r=>setTimeout(r,10));assert.equal($('#implementation-storage-mode').value,'manual');
+ change('[data-storage-pn="THREE"]','ground');await new Promise(r=>setTimeout(r,10));assert.equal($('#implementation-storage-mode').value,'manual');assert.deepEqual(Object.keys(JSON.parse(w.localStorage.getItem('logen.offline.workspace.v1')).projects[0].implementation.storageOverrides),['THREE']);
  change('#implementation-storage-mode','auto');await new Promise(r=>setTimeout(r,10));assert.deepEqual(designer(),overview);
- const saved=JSON.parse(w.localStorage.getItem('logen.offline.workspace.v1')).projects[0];assert.deepEqual(saved.implementation.storageOverrides,{});assert.equal(saved.improvementThreshold,3);assert.deepEqual(errors,[]);
+ const saved=JSON.parse(w.localStorage.getItem('logen.offline.workspace.v1')).projects[0];assert.deepEqual(saved.implementation.storageOverrides,{});assert.equal(saved.improvementThreshold,3);change('#implementation-storage-mode','ground');await new Promise(r=>setTimeout(r,10));change('[data-storage-pn="ONE"]','rack');await new Promise(r=>setTimeout(r,10));assert.deepEqual(designer(),{ONE:'rack',TWO:'ground',THREE:'ground'});assert.deepEqual(errors,[]);
 });
 
 test('Existing Layout follows the Overview list and respects construction OFF',async()=>{
