@@ -78,9 +78,13 @@
     for(const r of plan.rows)if(r.required!==null&&![r.input.length,r.input.width,r.input.height].every(v=>Number.isFinite(v)&&v>0))issues.push({pn:r.input.partNumber,message:'Invalid pallet dimensions; existing storage allocation requires positive L, W and H.'});
     const rows=[...plan.rows].filter(r=>r.required===null||[r.input.length,r.input.width,r.input.height].every(v=>Number.isFinite(v)&&v>0)).sort((a,b)=>(a.required??Infinity)-(b.required??Infinity)||a.input.partNumber.localeCompare(b.input.partNumber));
     const savedGroundPNs=new Set();for(const zone of zones)for(const saved of zone.config.occupancy||[])if(saved.status==='ALLOCATED'&&saved.pn){savedGroundPNs.add(saved.pn);remaining.set(saved.pn,Math.max(0,(remaining.get(saved.pn)||0)-(saved.quantity||1)));}
+    if(options.storageMode==='auto'&&plan.assignmentSource==='improve-warehouse')for(const r of rows){
+      const pn=r.input.partNumber,wantsRack=r.storageType==='Rack storage',savedRack=existingRack.some(v=>v.slots.some(s=>s.status==='ALLOCATED'&&s.pn===pn));
+      if((wantsRack&&savedGroundPNs.has(pn))||(!wantsRack&&savedRack))issues.push({pn,message:'Saved occupancy conflicts with the Overview → Improve Warehouse assignment. Review existing occupancy or select Manual per-part assignments before saving/exporting this layout.'});
+    }
     for(const r of rows){
       if(r.required===null){issues.push({pn:r.input.partNumber,message:r.errors.join(' ')});continue;}
-      const pn=r.input.partNumber,mode=options.storageOverrides?.[pn]||(options.storageMode==='rack'?'rack':options.storageMode==='ground'?'ground':'auto'),n=remaining.get(pn)||0;
+      const pn=r.input.partNumber,fromOverview=options.storageMode==='auto'&&plan.assignmentSource==='improve-warehouse',mode=fromOverview?(r.storageType==='Rack storage'?'rack':'ground'):options.storageOverrides?.[pn]||(options.storageMode==='rack'?'rack':options.storageMode==='ground'?'ground':'auto'),n=remaining.get(pn)||0;
       targets[pn]=mode==='ground'||savedGroundPNs.has(pn)?'ground':'rack';if(targets[pn]==='ground')continue;
       const possible=existingRack.flatMap(item=>item.slots.filter(slot=>slot.status==='EMPTY').map(slot=>({item,slot,fit:slotFit(r.input,item,slot)})).filter(v=>v.fit));
       if(possible.length>=n||mode==='rack'||(options.allowNewStorageConstruction&&possible.length>0)){const allocated=Math.min(n,possible.length);for(const {slot,fit}of possible.slice(0,allocated))Object.assign(slot,fit,{status:'ALLOCATED',pn});remaining.set(pn,n-allocated);}else if(mode==='auto'&&!existingRack.some(v=>v.slots.some(s=>s.status==='ALLOCATED'&&s.pn===pn)))targets[pn]='ground';

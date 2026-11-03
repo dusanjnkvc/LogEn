@@ -550,7 +550,9 @@
   }
   function calculateImplementation(parts,settings,config={},category=null){
     const base=calculateProject(parts,settings,category),errors=[...base.settingsErrors],types=configuredRackTypes({...createDefaultSettings(),...settings}),limits={};
-    if((config.storageMode&&config.storageMode!=='auto')||Object.keys(config.storageOverrides||{}).length){
+    // Automatic is the Overview split. Old per-PN overrides belong to manual
+    // mode and must not change that saved list when Automatic is selected.
+    if((config.storageMode&&config.storageMode!=='auto')||(!config.storageMode&&Object.keys(config.storageOverrides||{}).length)){
       const original=calculateImplementation(parts,settings,{...config,storageMode:'auto',storageOverrides:{}},category);if(!original.available)return original;
       const desired=r=>config.storageOverrides?.[r.input.partNumber]||(config.storageMode==='ground'?'ground':config.storageMode==='rack'?'rack':original.rows.find(v=>v.input.partNumber===r.input.partNumber)?.rackPallets>0?'rack':'ground');
       let capacity=null;if(!config.greenfield){capacity={};if(config.useExistingRacks)for(const v of config.existingRacks||[])capacity[v.typeId]=(capacity[v.typeId]||0)+v.bays;}
@@ -559,7 +561,7 @@
       const sum=fn=>rows.reduce((n,r)=>n+(fn(r)||0),0),groundWithoutGangways=sum(r=>r.ground?.withoutGangways),groundWithGangways=sum(r=>r.ground?.withGangways);
       return {available:true,errors:[],greenfield:!!config.greenfield,rows,rack,totalPallets:base.totalRequiredPallets,rackPallets:sum(r=>r.rackPallets),groundPallets:sum(r=>r.groundPallets),groundWithoutGangways,groundWithGangways,totalWithoutGangways:rack.withoutGangways+groundWithoutGangways,totalWithGangways:rack.withGangways+groundWithGangways,invalidCount:rows.filter(r=>r.errors.length).length};
     }
-    if(config.greenfield){
+    if(config.greenfield||config.storageMode==='auto'){
       if(errors.length)return {available:false,errors};
       const threshold=Number.isSafeInteger(config.improvementThreshold)&&config.improvementThreshold>=0?config.improvementThreshold:2;
       const split=calculateStorageSplit(parts,settings,threshold,category,base),rackResults=new Map(split.rack.results.map(r=>[r.input.partNumber,r]));
@@ -570,7 +572,7 @@
       });
       rows.sort((a,b)=>(a.required??Infinity)-(b.required??Infinity)||a.input.partNumber.localeCompare(b.input.partNumber,'en',{numeric:true}));
       const rack={...split.rack.sharedRack,bays:split.rack.totalRackBays,withoutGangways:split.rack.rackWithoutGangways,withGangways:split.rack.rackWithGangways};
-      return {available:true,errors:[],greenfield:true,threshold,rows,rack,totalPallets:base.totalRequiredPallets,rackPallets:split.rackPallets,groundPallets:split.groundPallets,groundWithoutGangways:split.groundWithoutGangways,groundWithGangways:split.groundWithGangways,totalWithoutGangways:rack.withoutGangways+split.groundWithoutGangways,totalWithGangways:rack.withGangways+split.groundWithGangways,invalidCount:rows.filter(r=>r.errors.length).length};
+      return {available:true,errors:[],greenfield:!!config.greenfield,assignmentSource:'improve-warehouse',threshold,category,rows,rack,totalPallets:base.totalRequiredPallets,rackPallets:split.rackPallets,groundPallets:split.groundPallets,groundWithoutGangways:split.groundWithoutGangways,groundWithGangways:split.groundWithGangways,totalWithoutGangways:rack.withoutGangways+split.groundWithoutGangways,totalWithGangways:rack.withGangways+split.groundWithGangways,invalidCount:rows.filter(r=>r.errors.length).length};
     }
     if(!config.greenfield&&config.useExistingRacks){
       for(const row of config.existingRacks||[]){
