@@ -24,6 +24,7 @@ test('Manual toolbar saves invalid drafts and blocks final export in the live DO
  const shape=d.querySelector('[data-storage]');shape.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
  for(let i=0;i<3;i++)d.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowLeft',shiftKey:true,bubbles:true}));
  l.groups[0].x=-100000;d.querySelector('[data-manual="validate"]').click();assert(d.querySelector('.manual-validation'));assert(d.querySelector('[data-layout-export]').disabled);
+ const fixButton=d.querySelector('.manual-validation [data-manual="fix"]');assert(fixButton);fixButton.click();await new Promise(r=>setTimeout(r,10));assert(d.querySelector('.layout-inline-error').textContent.includes('No safe spacing repair'));
  d.querySelector('[data-layout-save]').click();await new Promise(r=>setTimeout(r,5));assert(saved?.layout);assert(saved.layout.manualEdited);
  d.querySelector('[data-manual="undo"]').click();d.querySelector('[data-manual="redo"]').click();
  assert.equal(exports,0);d.close();dom.window.close();
@@ -49,4 +50,17 @@ test('Ground continuation beside racks snaps with box clearance instead of touch
 });
 test('Rotated footprints with overlapping bounding boxes do not produce false overlap errors',()=>{
  const l=M.clone(base),g=l.groups[0];g.frame={angle:Math.PI/4,sx:1,sy:1};g.x=10000;g.y=10000;g.objects=[{id:'ground:test1',kind:'ground',pn:'QA',dx:0,dy:0,w:1200,h:1000,quantity:1,height:1000,stacking:1,rotation:0},{id:'ground:test2',kind:'ground',pn:'QA',dx:1300,dy:0,w:1200,h:1000,quantity:1,height:1000,stacking:1,rotation:0}];g.kind='ground';g.w=2500;g.h=1000;l.groups=[g];const v=M.validate(l,plan,settings,geometry);assert(!v.errors.some(e=>e.message.startsWith('ground:test')||e.message.startsWith('Storage clearance between')));
+});
+async function damagedGround(){const s={...settings,maxFloorRowDepth:4000},p=D.calculateImplementation([{...parts[0],consumptionPerShift:6}],s,{greenfield:true,storageMode:'ground'}),l=(await O.optimize(p,s,geometry,{...options,storageMode:'ground'})).layout;const g=l.groups.find(g=>g.kind==='ground'&&g.objects.length>2),row=g.groundRows.find(r=>r.objectIds.length>1),objects=g.objects.filter(o=>row.objectIds.includes(o.id)).sort((a,b)=>a.dy-b.dy);assert(objects.length>1);objects[1].dy=objects[0].dy+objects[0].h+41;return {l,p,s,g};}
+test('Fix Errors restores missing clearance inside ground blocks without losing assignments',async()=>{
+ const {l,p,s}=await damagedGround(),h=M.session(l),before=M.clone(l),inventory=()=>l.groups.flatMap(g=>g.objects).map(o=>[o.id,o.pn,o.quantity,o.w,o.h]).sort();const stock=inventory();h.checkpoint();
+ assert(M.validate(l,p,s,geometry).errors.some(e=>e.code==='storage-clearance'));const result=await M.fixErrors(l,p,s,geometry);assert(result.changes>0);assert(!l.manualValidation.errors.some(e=>e.code==='storage-clearance'||e.code==='storage-overlap'));assert.deepEqual(inventory(),stock);assert(h.undo());assert.deepEqual(l,before);assert(h.redo());assert.deepEqual(inventory(),stock);
+});
+test('Fix Errors is a no-op for valid layouts and respects fixed infrastructure',async()=>{
+ const l=M.clone(base),positions=JSON.stringify(l.groups);let r=await M.fixErrors(l,plan,settings,geometry);assert.equal(r.changes,0);assert.equal(JSON.stringify(l.groups),positions);
+ const f=await damagedGround();for(const g of f.l.groups)g.existing=true;const fixed=JSON.stringify(f.l.groups);r=await M.fixErrors(f.l,f.p,f.s,geometry);assert.equal(r.changes,0);assert.equal(JSON.stringify(f.l.groups),fixed);assert(r.remaining>0);
+});
+test('Fix Errors can separate colliding rack bays without changing assigned parts',async()=>{
+ const p=D.calculateImplementation([{...parts[0],consumptionPerShift:80}],settings,{greenfield:true,improvementThreshold:100}),l=(await O.optimize(p,settings,geometry,options)).layout,g=l.groups.find(g=>g.kind==='rack'&&g.objects.length>1);assert(g);const id=M.split(l,g.objects[0].id),a=l.groups.find(g=>g.id===id),b=l.groups.find(g=>g.id!==id&&g.kind==='rack'),pos=L.placedObjects(a)[0].center,target=L.placedObjects(b)[0].center;M.translate(l,[id],target[0]-pos[0],target[1]-pos[1]);const assignments=JSON.stringify(l.groups.flatMap(g=>g.objects).map(o=>[o.id,o.allocations]).sort());
+ assert(M.validate(l,p,settings,geometry).errors.some(e=>e.code==='storage-overlap'));const result=await M.fixErrors(l,p,settings,geometry);assert(result.changes>0);assert(!l.manualValidation.errors.some(e=>e.code==='storage-overlap'));assert.equal(JSON.stringify(l.groups.flatMap(g=>g.objects).map(o=>[o.id,o.allocations]).sort()),assignments);
 });

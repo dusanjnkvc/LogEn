@@ -50,7 +50,7 @@
  }
  function validate(layout,plan,settings,geometry){
   const result=L.validate(layout,plan,settings);Object.assign(layout,result);
-  const errors=[],warnings=[],add=(groupId,message)=>errors.push({groupId,pn:groupId,message});
+  const errors=[],warnings=[],add=(groupId,message,details={})=>errors.push({groupId,pn:groupId,message,...details});
   const objects=layout.groups.flatMap(g=>L.placedObjects(g).map(o=>({g,o,b:L.bounds(o.points||L.corners(o))})));
   for(const {g,o,b} of objects){
    const rect={x:b.minX,y:b.minY,w:b.maxX-b.minX,h:b.maxY-b.minY};
@@ -75,17 +75,59 @@
    const a=objects[i],b=objects[j],pa=a.o.points||L.corners(a.o),pb=b.o.points||L.corners(b.o),G=O().geometry;
    if(a.g.id===b.g.id&&a.o.kind!=='ground'&&b.o.kind!=='ground')continue;
    const overlap=G.area(G.intersect([G.path(pa)],[G.path(pb)]));
-   if(overlap>.1){add(a.g.id,`${a.o.id} overlaps ${b.o.id}: ${Math.round(overlap)} mm².`);if(a.g.id!==b.g.id)add(b.g.id,`${b.o.id} overlaps ${a.o.id}.`);continue;}
+   if(overlap>.1){add(a.g.id,`${a.o.id} overlaps ${b.o.id}: ${Math.round(overlap)} mm².`,{code:'storage-overlap',objectIds:[a.o.id,b.o.id],required:(a.o.kind==='ground'||b.o.kind==='ground')?(settings.floorPalletClearance||0):0,measured:0});if(a.g.id!==b.g.id)add(b.g.id,`${b.o.id} overlaps ${a.o.id}.`);continue;}
    if(a.o.kind!=='ground'&&b.o.kind!=='ground')continue;
    const required=settings.floorPalletClearance||0;
    if(a.b.minX>b.b.maxX+required||b.b.minX>a.b.maxX+required||a.b.minY>b.b.maxY+required||b.b.minY>a.b.maxY+required)continue;
    let gap=Infinity;for(const [p,q] of [[pa,pb],[pb,pa]])for(const v of p)for(let k=0;k<q.length;k++)gap=Math.min(gap,segmentDistance(v,q[k],q[(k+1)%q.length]));
-   if(gap<required-.11){const text=`Storage clearance between ${a.o.id} and ${b.o.id} is ${Math.round(gap)} mm; required ${required} mm.`;add(a.g.id,text);if(a.g.id!==b.g.id)add(b.g.id,text);}
+   if(gap<required-.11){const text=`Storage clearance between ${a.o.id} and ${b.o.id} is ${Math.round(gap)} mm; required ${required} mm.`;add(a.g.id,text,{code:'storage-clearance',objectIds:[a.o.id,b.o.id],required,measured:gap});if(a.g.id!==b.g.id)add(b.g.id,text,{code:'storage-clearance',objectIds:[a.o.id,b.o.id],required,measured:gap});}
   }
   if(layout.version===3)for(const g of layout.groups.filter(g=>!g.existing)){try{const trial=clone(layout),p=origin(g);scope.LogEnExistingLayout.move(trial,g.id,p[0],p[1],!!g.rotated,plan,settings);}catch(error){add(g.id,error.message);}}
   for(const e of result.validationErrors||[]){const groups=layout.groups.filter(g=>g.objects.some(o=>e.pn?.includes(o.pn||o.typeName)));if(groups.length)groups.forEach(g=>add(g.id,e.message));else errors.push(e);}
   layout.manualValidation={errors,warnings};layout.validationErrors=errors;layout.accessValid=errors.length===0;layout.complete=layout.complete&&layout.accessValid;return layout.manualValidation;
  }
+ // Explicit repair is bounded, transactional, and validated against all current constraints.
+ async function fixErrors(layout,plan,settings,geometry,onProgress=()=>{},budget=240){
+  const start=clone(layout);validate(layout,plan,settings,geometry);
+  const spacing=e=>!!e.objectIds||/clearance to|accessible face|Forklift clearance/i.test(e.message);
+  const fingerprint=e=>(e.groupId||e.pn||'')+':'+(e.code||e.message.replace(/\d+(?:\.\d+)?/g,'#'));
+  const hardKeys=l=>new Set(l.manualValidation.errors.filter(e=>!spacing(e)).map(fingerprint));
+  const score=l=>[hardKeys(l).size,l.manualValidation.errors.filter(spacing).length,l.manualValidation.errors.filter(e=>e.objectIds).reduce((n,e)=>n+Math.max(0,e.required-e.measured),0)];
+  const better=(a,b)=>{for(let i=0;i<a.length;i++){if(Math.abs(a[i]-b[i])>.01)return a[i]<b[i];}return false;};
+  const restore=v=>{for(const key of Object.keys(layout))delete layout[key];Object.assign(layout,clone(v));};
+  let attempts=0,changes=0;
+  while(attempts<budget){
+   const current=clone(layout),allowed=hardKeys(layout),oldScore=score(layout),records=layout.groups.flatMap(g=>L.placedObjects(g).map(o=>({g,o}))),byId=new Map(records.map(v=>[v.o.id,v])),pairs=new Map();
+   for(const e of layout.manualValidation.errors){if(!spacing(e))continue;if(e.objectIds){const [a,b]=e.objectIds.map(id=>byId.get(id));if(a&&b)pairs.set(e.objectIds.slice().sort().join('|'),{a,b,gap:e.required});}
+    else{const owners=layout.groups.filter(g=>g.id===e.groupId||g.objects.some(o=>e.pn?.includes(o.pn||o.typeName)));for(const g of owners){const b=box(g),near=layout.groups.filter(v=>v.id!==g.id).map(v=>({v,b:box(v)})).sort((a,c)=>Math.hypot(a.b.minX-b.minX,a.b.minY-b.minY)-Math.hypot(c.b.minX-b.minX,c.b.minY-b.minY)).slice(0,3);for(const {v}of near)pairs.set(g.id+'|'+v.id,{a:records.find(r=>r.g.id===g.id),b:records.find(r=>r.g.id===v.id),gap:settings.gangwayWidth});}}
+   }
+   const candidates=[];
+   for(const {a,b,gap}of pairs.values())for(const [fixed,moving]of [[a,b],[b,a]]){
+    if(!fixed||!moving||moving.g.existing)continue;
+    // Only explicit repair may adjust a box within an existing ground block.
+    const internal=fixed.g.id===moving.g.id;if(internal&&moving.o.kind!=='ground')continue;
+    const pa=fixed.o.points||L.corners(fixed.o),pb=moving.o.points||L.corners(moving.o);
+    for(let i=0;i<2;i++){const edge=[pa[i+1][0]-pa[i][0],pa[i+1][1]-pa[i][1]],length=Math.hypot(...edge);if(!length)continue;const axis=edge.map(v=>v/length),project=p=>p[0]*axis[0]+p[1]*axis[1],aa=pa.map(project),bb=pb.map(project);
+     for(const delta of [Math.max(...aa)+gap-Math.min(...bb),Math.min(...aa)-gap-Math.max(...bb)])if(Math.abs(delta)>.01)candidates.push({groupId:moving.g.id,objectId:internal?moving.o.id:null,dx:axis[0]*delta,dy:axis[1]*delta,distance:Math.abs(delta)});
+    }
+   }
+   candidates.sort((a,b)=>a.distance-b.distance);let best=null,bestScore=oldScore;
+   for(const c of candidates){if(attempts++>=budget)break;restore(current);
+    if(c.objectId){const g=layout.groups.find(g=>g.id===c.groupId),o=g.objects.find(o=>o.id===c.objectId),v=g.frame?O().toLocal([c.dx,c.dy],g.frame):[c.dx,c.dy];o.dx+=g.rotated?v[1]:v[0];o.dy+=g.rotated?-v[0]:v[1];
+     const minX=Math.min(0,...g.objects.map(o=>o.dx)),minY=Math.min(0,...g.objects.map(o=>o.dy)),oldH=g.h;g.w=Math.max(g.w,...g.objects.map(o=>o.dx+o.w))-minX;g.h=Math.max(g.h,...g.objects.map(o=>o.dy+o.h))-minY;
+     for(const o of g.objects){o.dx-=minX;o.dy-=minY;}g.x+=g.rotated?oldH-g.h-minY:minX;g.y+=g.rotated?minX:minY;
+     if(g.backY!==undefined)g.backY-=minY;if(g.centerLine)g.centerLine=[[0,g.backY],[g.w,g.backY]];
+     for(const row of g.groundRows||[]){const list=g.objects.filter(o=>row.objectIds.includes(o.id));if(list.length){row.x=Math.min(...list.map(o=>o.dx));row.y=Math.min(...list.map(o=>o.dy));row.w=Math.max(...list.map(o=>o.dx+o.w))-row.x;row.h=Math.max(...list.map(o=>o.dy+o.h))-row.y;}}
+    }else translate(layout,[c.groupId],c.dx,c.dy);
+    validate(layout,plan,settings,geometry);const now=score(layout),newHard=hardKeys(layout);
+    if([...newHard].every(key=>allowed.has(key))&&better(now,bestScore)){best=clone(layout);bestScore=now;}
+    if(attempts%8===0){onProgress(attempts,budget);await new Promise(resolve=>setTimeout(resolve,0));}
+   }
+   if(!best){restore(current);break;}restore(best);changes++;if(!layout.manualValidation.errors.some(spacing))break;
+  }
+  if(changes)layout.manualEdited=true;else restore(start);
+  validate(layout,plan,settings,geometry);return {changes,attempts,remaining:layout.manualValidation.errors.length};
+ }
  function session(layout){let undo=[],redo=[];return {checkpoint(){undo.push(clone(layout));if(undo.length>50)undo.shift();redo=[];},undo(){if(!undo.length)return false;redo.push(clone(layout));replace(undo.pop());return true;},redo(){if(!redo.length)return false;undo.push(clone(layout));replace(redo.pop());return true;},get canUndo(){return !!undo.length},get canRedo(){return !!redo.length}};function replace(v){for(const k of Object.keys(layout))delete layout[k];Object.assign(layout,v);}}
- scope.LogEnManualLayout=Object.freeze({split,translate,rotate,moveAssignment,duplicate,remove,snap,validate,session,origin,box,clone});
+ scope.LogEnManualLayout=Object.freeze({split,translate,rotate,moveAssignment,duplicate,remove,snap,validate,fixErrors,session,origin,box,clone});
 })(globalThis);
