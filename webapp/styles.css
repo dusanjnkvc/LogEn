@@ -153,3 +153,5 @@ main>.panel,main>.production-panel,main>.implementation-panel{max-width:100%}
 .viewer3d-forklift .viewer-speed{flex-direction:row;align-items:center;height:38px}.viewer3d-forklift .viewer-speed>span{white-space:nowrap}.viewer3d-forklift .viewer-speed input{height:38px;box-sizing:border-box;align-self:center}.rack-height-status{font-size:12px;line-height:1.6}
 
 .project-download-actions{margin-top:12px}.project-download-actions .btn{max-width:100%;white-space:normal;text-align:left}
+
+.layout-drawing-pane:fullscreen{box-sizing:border-box;width:100vw;height:100dvh;padding:20px;background:var(--bg,#191b1f);overflow:auto;display:flex;flex-direction:column;gap:12px}.layout-drawing-pane:fullscreen .layout-canvas-wrap{flex:1;min-height:45dvh}.layout-drawing-pane:fullscreen .layout-canvas{height:100%;min-height:45dvh}.layout-drawing-pane:fullscreen .layout-toolbar{flex-shrink:0}
