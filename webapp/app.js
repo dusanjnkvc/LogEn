@@ -586,6 +586,25 @@
       }
     }catch(error){console.error(error);toast(error.message||'The action could not be completed.',true);}
   });
+  const fullscreenButton = $('fullscreen-toggle');
+  function syncFullscreenButton() {
+    const active = Boolean(document.fullscreenElement);
+    fullscreenButton.textContent = active ? 'Exit full screen' : 'Full screen';
+    fullscreenButton.title = active ? 'Exit full screen (Esc)' : 'Enter full screen';
+    fullscreenButton.setAttribute('aria-pressed', String(active));
+  }
+  fullscreenButton.hidden = !document.documentElement.requestFullscreen;
+  fullscreenButton.addEventListener('click', async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch (error) {
+      toast('Full screen is unavailable in this browser. Try opening LogEn in Chrome or Edge.', true);
+    }
+    syncFullscreenButton();
+  });
+  document.addEventListener('fullscreenchange', syncFullscreenButton);
+  syncFullscreenButton();
   $('project-select').addEventListener('change',event=>{state.activeId=event.target.value;query='';invalidOnly=false;productionDrafts={};mismatchesOnly=false;save();go(view);});
   document.querySelector('.brand').addEventListener('click',event=>{event.preventDefault();go('dashboard');});
   $('new-project').addEventListener('click',newProject);
