@@ -207,10 +207,10 @@
     if(g.rotated){
       const y=frontageOnly?r.y:env.complex?r.y-width:z.minY,h=frontageOnly?r.h:env.complex?r.h+2*width:z.maxY-z.minY,left={x:r.x-width,y,w:width,h},right={x:r.x+r.w,y,w:width,h};
       if(g.groundLane)return [left,right,...(!g.skipStartAccess?[{x:r.x,y:r.y-width,w:r.w,h:width}]:[]),...(!g.skipEndAccess?[{x:r.x,y:r.y+r.h,w:r.w,h:width}]:[])];
-      return g.paired?[left,right]:[left];
+      return g.manualRow&&g.manualRowFace==='back'?[right]:g.paired?[left,right]:[left];
     }
     if(g.groundLane)return [{x:r.x,y:r.y-width,w:r.w,h:width},{x:r.x,y:r.y+r.h,w:r.w,h:width},...(!g.skipStartAccess?[{x:r.x-width,y:r.y,w:width,h:r.h}]:[]),...(!g.skipEndAccess?[{x:r.x+r.w,y:r.y,w:width,h:r.h}]:[])];
-    const bottom={x,y:r.y-width,w,h:width},top={x,y:r.y+r.h,w,h:width};return g.paired?[bottom,top]:[bottom];
+    const bottom={x,y:r.y-width,w,h:width},top={x,y:r.y+r.h,w,h:width};return g.manualRow&&g.manualRowFace==='back'?[top]:g.paired?[bottom,top]:[bottom];
   }
   function rowJoins(g,placed,clearance){
     const r=groupRect(g),vertical=!!g.rotated,along=vertical?'y':'x',cross=vertical?'x':'y',length=vertical?'h':'w',depth=vertical?'w':'h',joins={start:false,end:false};
@@ -243,7 +243,7 @@
   function cachedPlacement(g,env,width){let byGroup=placedGeometry.get(env);if(!byGroup){byGroup=new WeakMap();placedGeometry.set(env,byGroup);}const signature=[g.x,g.y,g.w,g.h,g.rotated,g.wallSide,g.kind,g.paired,g.groundLane,g.backY,g.skipStartAccess,g.skipEndAccess,width,env.inner?.minX,env.inner?.maxX,env.inner?.minY,env.inner?.maxY].join(':');let value=byGroup.get(g);if(!value||value.signature!==signature||value.objects!==g.objects){value={signature,objects:g.objects,r:groupRect(g),access:accessFor(g,env,width)};byGroup.set(g,value);}return value;}
   function placementError(g,placed,env,settings){
     const r=groupRect(g),joins=rowJoins(g,placed,settings.floorPalletClearance||0),continuation=joins.start||joins.end,access=placementAccess(g,placed,env,settings);
-    if(env.requireGroundPairs&&g.kind==='ground'&&!g.paired&&!continuation){const b=env.wallBox||env.box,c=(env.wallClearance||0)+(env.analysis?(env.optionsObstacleClearance||0):0),touch=g.wallSide==='left'?Math.abs(r.x-b.minX-c)<E:g.wallSide==='right'?Math.abs(r.x+r.w-b.maxX+c)<E:g.wallSide==='bottom'?Math.abs(r.y-b.minY-c)<E:g.wallSide==='top'?Math.abs(r.y+r.h-b.maxY+c)<E:false;if(!env.allowWallStorage||!touch)return 'Single ground rows must stay against an approved wall. Interior ground storage must stay back-to-back.';}
+    if(env.requireGroundPairs&&g.kind==='ground'&&!g.paired&&!g.manualRow&&!continuation){const b=env.wallBox||env.box,c=(env.wallClearance||0)+(env.analysis?(env.optionsObstacleClearance||0):0),touch=g.wallSide==='left'?Math.abs(r.x-b.minX-c)<E:g.wallSide==='right'?Math.abs(r.x+r.w-b.maxX+c)<E:g.wallSide==='bottom'?Math.abs(r.y-b.minY-c)<E:g.wallSide==='top'?Math.abs(r.y+r.h-b.maxY+c)<E:false;if(!env.allowWallStorage||!touch)return 'Single ground rows must stay against an approved wall. Interior ground storage must stay back-to-back.';}
     if(!fits(r,env.zone))return 'Storage crosses the storage zone, boundary or mandatory clearance.';
     if(collide(r,env.baseAccess)&&(!continuation||collide(r,env.existingAccess||[])||env.doors?.length))return 'Storage blocks a circulation route.';
     for(const a of access)if(!fits(a,env.boundary)||collide(a,env.blocked))return 'A full-width access gangway is obstructed or leaves the warehouse.';

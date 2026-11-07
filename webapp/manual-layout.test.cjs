@@ -64,3 +64,27 @@ test('Fix Errors can separate colliding rack bays without changing assigned part
  const p=D.calculateImplementation([{...parts[0],consumptionPerShift:80}],settings,{greenfield:true,improvementThreshold:100}),l=(await O.optimize(p,settings,geometry,options)).layout,g=l.groups.find(g=>g.kind==='rack'&&g.objects.length>1);assert(g);const id=M.split(l,g.objects[0].id),a=l.groups.find(g=>g.id===id),b=l.groups.find(g=>g.id!==id&&g.kind==='rack'),pos=L.placedObjects(a)[0].center,target=L.placedObjects(b)[0].center;M.translate(l,[id],target[0]-pos[0],target[1]-pos[1]);const assignments=JSON.stringify(l.groups.flatMap(g=>g.objects).map(o=>[o.id,o.allocations]).sort());
  assert(M.validate(l,p,settings,geometry).errors.some(e=>e.code==='storage-overlap'));const result=await M.fixErrors(l,p,settings,geometry);assert(result.changes>0);assert(!l.manualValidation.errors.some(e=>e.code==='storage-overlap'));assert.equal(JSON.stringify(l.groups.flatMap(g=>g.objects).map(o=>[o.id,o.allocations]).sort()),assignments);
 });
+test('Selecting a ground row moves only that row, preserving spacing, assignments and Undo',async()=>{
+ for(const rotated of [false,true])for(const angle of [0,Math.PI/6]){
+  const {l,g}=await damagedGround();g.rotated=rotated;g.frame={angle,sx:1,sy:1};const chosen=g.groundRows[0],ids=new Set(chosen.objectIds),before=new Map(L.cadObjects(l).map(o=>[o.id,o])),snapshot=M.clone(l),h=M.session(l);h.checkpoint();
+  const id=M.split(l,chosen.objectIds[0]),row=l.groups.find(v=>v.id===id);assert(row.manualRow);assert.deepEqual(new Set(row.objects.map(o=>o.id)),ids);assert(row.objects.length<g.objects.length);
+  for(const o of L.cadObjects(l)){const p=before.get(o.id);o.points.forEach((v,i)=>{assert(Math.abs(v[0]-p.points[i][0])<.001);assert(Math.abs(v[1]-p.points[i][1])<.001);});}
+  M.translate(l,[id],321,456);
+  for(const o of L.cadObjects(l)){const p=before.get(o.id),dx=ids.has(o.id)?321:0,dy=ids.has(o.id)?456:0;assert(Math.abs(o.center[0]-p.center[0]-dx)<.2);assert(Math.abs(o.center[1]-p.center[1]-dy)<.2);assert.equal(o.quantity,p.quantity);assert.equal(o.w,p.w);assert.equal(o.h,p.h);}
+  const moved=M.clone(l);assert(h.undo());assert.deepEqual(l,snapshot);assert(h.redo());assert.deepEqual(l,moved);assert.deepEqual(L.cadObjects(JSON.parse(JSON.stringify(l))),L.cadObjects(l));
+ }
+});
+test('Isolated ground rows retain their original access side without an artificial block overlap',async()=>{
+ const {l,p,s,g}=await damagedGround();const a=g.groundRows[0];M.split(l,a.objectIds[0]);const result=M.validate(l,p,s,geometry);assert(!result.errors.some(e=>e.message.includes('Single ground rows must')));assert(!result.errors.some(e=>e.message.includes('required accessible face')));
+});
+test('Pointer drag moves one ground row instead of the complete block',async()=>{
+ const {JSDOM}=require('../.tooling/qa/node_modules/jsdom'),fs=require('fs'),f=await damagedGround(),before=new Map(L.cadObjects(f.l).map(o=>[o.id,o])),row=f.g.groundRows[0],ids=new Set(row.objectIds),dom=new JSDOM('<!doctype html><body></body>',{runScripts:'outside-only',url:'https://example.test'}),w=dom.window;
+ w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.dispatchEvent(new w.Event('close'))};w.SVGSVGElement.prototype.createSVGPoint=function(){return {x:0,y:0,matrixTransform(){return {x:this.x,y:this.y}}}};w.SVGSVGElement.prototype.getScreenCTM=function(){return {inverse(){return {}}}};w.SVGSVGElement.prototype.setPointerCapture=function(){};w.SVGSVGElement.prototype.hasPointerCapture=function(){return false};
+ for(const file of ['vendor/clipper.js','domain.js','layout.js','warehouse-geometry.js','layout-optimizer.js','existing-layout.js','manual-layout.js','layout-ui.js'])w.eval(fs.readFileSync(__dirname+'/'+file,'utf8'));
+ let saved;const d=w.LogEnLayoutUI.open({plan:f.p,settings:f.s,geometry:M.clone(geometry),options:{...options,storageMode:'ground'},saved:f.l,name:'Row drag',onSave:async v=>{saved=v}}),svg=d.querySelector('.layout-canvas');d.querySelector('[data-manual="snap"]').click();
+ d.querySelector('[data-object="'+row.objectIds[0]+'"]').dispatchEvent(new w.MouseEvent('pointerdown',{bubbles:true,button:0,clientX:1000,clientY:1000}));
+ svg.dispatchEvent(new w.MouseEvent('pointermove',{bubbles:true,clientX:1321,clientY:544}));svg.dispatchEvent(new w.MouseEvent('pointerup',{bubbles:true,clientX:1321,clientY:544}));
+ d.querySelector('[data-layout-save]').click();await new Promise(r=>setTimeout(r,5));assert(saved?.layout);
+ for(const o of L.cadObjects(saved.layout)){const original=before.get(o.id);assert(Math.abs(o.center[0]-original.center[0]-(ids.has(o.id)?321:0))<.2);assert(Math.abs(o.center[1]-original.center[1]-(ids.has(o.id)?456:0))<.2);}
+ d.close();dom.window.close();
+});

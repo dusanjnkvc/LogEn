@@ -4,10 +4,23 @@
  const L=scope.LogEnLayout,O=()=>scope.LogEnOptimizer,clone=v=>JSON.parse(JSON.stringify(v));
  const origin=g=>g.frame?O().toWorld([g.x,g.y],g.frame):[g.x,g.y];
  const box=g=>L.bounds(L.placedObjects(g).flatMap(o=>o.points||L.corners(o)));
+ function splitGroundRow(layout,g,objectId){
+  if(g.manualRow)return g.id;
+  let rows=g.groundRows?.map(row=>({...row,objectIds:row.objectIds||g.objects.filter(o=>o.groundRowId===row.id).map(o=>o.id)}));
+  if(!rows?.length){const groups=new Map();for(const o of g.objects){const key=o.groundRowId||`${o.groundFace||'front'}:${o.dx}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(o);}rows=[...groups].map(([id,list])=>{const x=Math.min(...list.map(o=>o.dx)),y=Math.min(...list.map(o=>o.dy));return {id,x,y,w:Math.max(...list.map(o=>o.dx+o.w))-x,h:Math.max(...list.map(o=>o.dy+o.h))-y,side:list[0].groundFace||'front',objectIds:list.map(o=>o.id)};});}
+  if(rows.length<2)return g.id;
+  const coverage=rows.flatMap(row=>row.objectIds);if(new Set(coverage).size!==g.objects.length||coverage.length!==g.objects.length)return g.id;
+  const parts=rows.map(row=>{const n=clone(g);n.id=g.id+':row:'+row.id;n.manualRow=true;n.manualRowFace=row.side;n.groundLane=false;n.paired=false;n.reservedBackRow=false;n.rows=1;
+   n.x=g.x+(g.rotated?g.h-row.y-row.h:row.x);n.y=g.y+(g.rotated?row.x:row.y);n.w=row.w;n.h=row.h;
+   n.objects=g.objects.filter(o=>row.objectIds.includes(o.id)).map(o=>({...clone(o),dx:o.dx-row.x,dy:o.dy-row.y}));n.groundRows=[{...clone(row),x:0,y:0}];delete n.centerLine;delete n.backY;
+   return n;});
+  const index=layout.groups.indexOf(g);layout.groups.splice(index,1,...parts);layout.manualEdited=true;return parts.find(n=>n.objects.some(o=>o.id===objectId)).id;
+ }
  function split(layout,objectId){
   const g=layout.groups.find(g=>g.objects.some(o=>o.id===objectId));if(!g||g.existing)return g?.id;
-  // Ground spacing belongs to the complete generated row/block. Never detach a box.
-  if(g.kind==='ground'||g.objects.length===1)return g.id;
+  // Ground selection isolates one complete row, never an individual box.
+  if(g.kind==='ground')return splitGroundRow(layout,g,objectId);
+  if(g.objects.length===1)return g.id;
   const o=g.objects.find(o=>o.id===objectId),n=clone(g);n.id='manual:'+o.id;
   // Retain the physical footprint even when the parent was rotated.
   const dx=g.rotated?g.h-o.dy-o.h:o.dx,dy=g.rotated?o.dx:o.dy;
