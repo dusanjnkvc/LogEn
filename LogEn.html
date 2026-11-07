@@ -10142,15 +10142,28 @@ SOFTWARE.
   }
   function groupRect(g){return {x:g.x,y:g.y,w:g.rotated?g.h:g.w,h:g.rotated?g.w:g.h};}
   function localObjectRect(g,o){return {x:g.x+(g.rotated?g.h-o.dy-o.h:o.dx),y:g.y+(g.rotated?o.dx:o.dy),w:g.rotated?o.h:o.w,h:g.rotated?o.w:o.h};}
-  function accessFor(g,env,width){const r=groupRect(g),z=env.inner||env.box,x=env.complex?r.x-width:z.minX,w=env.complex?r.w+2*width:z.maxX-z.minX;
+  function accessFor(g,env,width,frontageOnly=false){const r=groupRect(g),z=env.inner||env.box,x=frontageOnly?r.x:env.complex?r.x-width:z.minX,w=frontageOnly?r.w:env.complex?r.w+2*width:z.maxX-z.minX;
     if(g.wallSide){const horizontal=g.wallSide==='bottom'||g.wallSide==='top',lo=horizontal?z.minX:z.minY,hi=horizontal?z.maxX:z.maxY;return (g.kind==='ground'&&g.groundRows?g.groundRows.map(o=>({...o,dx:o.x,dy:o.y})):g.objects).map(o=>{const v=localObjectRect(g,o),a=Math.max(horizontal?v.x:v.y,lo),b=Math.min(horizontal?v.x+v.w:v.y+v.h,hi);if(g.wallSide==='bottom')return {x:a,y:v.y+v.h,w:b-a,h:z.minY+width-v.y-v.h};if(g.wallSide==='top')return {x:a,y:z.maxY-width,w:b-a,h:v.y-z.maxY+width};if(g.wallSide==='left')return {x:v.x+v.w,y:a,w:z.minX+width-v.x-v.w,h:b-a};return {x:z.maxX-width,y:a,w:v.x-z.maxX+width,h:b-a};}).filter(v=>v.w>E&&v.h>E);}
     if(g.rotated){
-      const y=env.complex?r.y-width:z.minY,h=env.complex?r.h+2*width:z.maxY-z.minY,left={x:r.x-width,y,w:width,h},right={x:r.x+r.w,y,w:width,h};
+      const y=frontageOnly?r.y:env.complex?r.y-width:z.minY,h=frontageOnly?r.h:env.complex?r.h+2*width:z.maxY-z.minY,left={x:r.x-width,y,w:width,h},right={x:r.x+r.w,y,w:width,h};
       if(g.groundLane)return [left,right,...(!g.skipStartAccess?[{x:r.x,y:r.y-width,w:r.w,h:width}]:[]),...(!g.skipEndAccess?[{x:r.x,y:r.y+r.h,w:r.w,h:width}]:[])];
       return g.paired?[left,right]:[left];
     }
     if(g.groundLane)return [{x:r.x,y:r.y-width,w:r.w,h:width},{x:r.x,y:r.y+r.h,w:r.w,h:width},...(!g.skipStartAccess?[{x:r.x-width,y:r.y,w:width,h:r.h}]:[]),...(!g.skipEndAccess?[{x:r.x+r.w,y:r.y,w:width,h:r.h}]:[])];
     const bottom={x,y:r.y-width,w,h:width},top={x,y:r.y+r.h,w,h:width};return g.paired?[bottom,top]:[bottom];
+  }
+  function rowJoins(g,placed,clearance){
+    const r=groupRect(g),vertical=!!g.rotated,along=vertical?'y':'x',cross=vertical?'x':'y',length=vertical?'h':'w',depth=vertical?'w':'h',joins={start:false,end:false};
+    for(const other of placed){if(other.id===g.id||!!other.rotated!==vertical||g.kind===other.kind&&g.kind!=='ground')continue;const q=groupRect(other);
+      if(Math.min(r[cross]+r[depth],q[cross]+q[depth])-Math.max(r[cross],q[cross])<=E)continue;
+      const start=r[along]-q[along]-q[length],end=q[along]-r[along]-r[length];
+      if(start>=-E&&start<=clearance+E)joins.start=true;if(end>=-E&&end<=clearance+E)joins.end=true;
+    }return joins;
+  }
+  function placementAccess(g,placed,env,settings){
+    const list=accessFor(g,env,settings.gangwayWidth,true);if(!g.groundLane||g.wallSide)return list;
+    const r=groupRect(g),joins=rowJoins(g,placed,settings.floorPalletClearance||0);
+    return list.filter(a=>g.rotated?!(joins.start&&a.y+a.h<=r.y+E||joins.end&&a.y>=r.y+r.h-E):!(joins.start&&a.x+a.w<=r.x+E||joins.end&&a.x>=r.x+r.w-E));
   }
   function endGangways(layout){
     const z=layout.env.inner||layout.env.box,rects=layout.groups.filter(g=>!g.wallSide).map(groupRect),cuts=[...new Set(rects.flatMap(r=>[r.y,r.y+r.h]))].sort((a,b)=>a-b),out=[];
@@ -10169,13 +10182,13 @@ SOFTWARE.
   const placedGeometry=new WeakMap();
   function cachedPlacement(g,env,width){let byGroup=placedGeometry.get(env);if(!byGroup){byGroup=new WeakMap();placedGeometry.set(env,byGroup);}const signature=[g.x,g.y,g.w,g.h,g.rotated,g.wallSide,g.kind,g.paired,g.groundLane,g.backY,g.skipStartAccess,g.skipEndAccess,width,env.inner?.minX,env.inner?.maxX,env.inner?.minY,env.inner?.maxY].join(':');let value=byGroup.get(g);if(!value||value.signature!==signature||value.objects!==g.objects){value={signature,objects:g.objects,r:groupRect(g),access:accessFor(g,env,width)};byGroup.set(g,value);}return value;}
   function placementError(g,placed,env,settings){
-    const r=groupRect(g),access=accessFor(g,env,settings.gangwayWidth);
-    if(env.requireGroundPairs&&g.kind==='ground'&&!g.paired){const b=env.wallBox||env.box,c=(env.wallClearance||0)+(env.analysis?(env.optionsObstacleClearance||0):0),touch=g.wallSide==='left'?Math.abs(r.x-b.minX-c)<E:g.wallSide==='right'?Math.abs(r.x+r.w-b.maxX+c)<E:g.wallSide==='bottom'?Math.abs(r.y-b.minY-c)<E:g.wallSide==='top'?Math.abs(r.y+r.h-b.maxY+c)<E:false;if(!env.allowWallStorage||!touch)return 'Single ground rows must stay against an approved wall. Interior ground storage must stay back-to-back.';}
+    const r=groupRect(g),joins=rowJoins(g,placed,settings.floorPalletClearance||0),continuation=joins.start||joins.end,access=placementAccess(g,placed,env,settings);
+    if(env.requireGroundPairs&&g.kind==='ground'&&!g.paired&&!continuation){const b=env.wallBox||env.box,c=(env.wallClearance||0)+(env.analysis?(env.optionsObstacleClearance||0):0),touch=g.wallSide==='left'?Math.abs(r.x-b.minX-c)<E:g.wallSide==='right'?Math.abs(r.x+r.w-b.maxX+c)<E:g.wallSide==='bottom'?Math.abs(r.y-b.minY-c)<E:g.wallSide==='top'?Math.abs(r.y+r.h-b.maxY+c)<E:false;if(!env.allowWallStorage||!touch)return 'Single ground rows must stay against an approved wall. Interior ground storage must stay back-to-back.';}
     if(!fits(r,env.zone))return 'Storage crosses the storage zone, boundary or mandatory clearance.';
-    if(collide(r,env.baseAccess))return 'Storage blocks a circulation route.';
+    if(collide(r,env.baseAccess)&&(!continuation||collide(r,env.existingAccess||[])||env.doors?.length))return 'Storage blocks a circulation route.';
     for(const a of access)if(!fits(a,env.boundary)||collide(a,env.blocked))return 'A full-width access gangway is obstructed or leaves the warehouse.';
     for(const other of placed){if(other.id===g.id)continue;const fixed=cachedPlacement(other,env,settings.gangwayWidth),rr=fixed.r;// Ground may continue beside racks; actual storage/access collisions below decide validity.
-      if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||fixed.access.some(a=>core.overlaps(a,r))){const gapX=Math.max(r.x-rr.x-rr.w,rr.x-r.x-r.w),gapY=Math.max(r.y-rr.y-rr.h,rr.y-r.y-r.h),gap=Math.max(gapX,gapY);return 'Storage or its required accessible face overlaps another storage block.'+(gap>0?' Forklift clearance is '+Math.round(gap)+' mm; required '+settings.gangwayWidth+' mm at this accessible face.':'');}
+      if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||placementAccess(other,placed.concat(g),env,settings).some(a=>core.overlaps(a,r))){const gapX=Math.max(r.x-rr.x-rr.w,rr.x-r.x-r.w),gapY=Math.max(r.y-rr.y-rr.h,rr.y-r.y-r.h),gap=Math.max(gapX,gapY);return 'Storage or its required accessible face overlaps another storage block.'+(gap>0?' Forklift clearance is '+Math.round(gap)+' mm; required '+settings.gangwayWidth+' mm at this accessible face.':'');}
       if(g.kind==='ground'||other.kind==='ground'){for(const a of g.objects)for(const b of other.objects){const aa=localObjectRect(g,a),bb=localObjectRect(other,b);if(core.overlaps(aa,bb,settings.floorPalletClearance||0))return 'Ground storage clearance to '+b.id+' is below the required '+(settings.floorPalletClearance||0)+' mm.';}}}
     return null;
   }
@@ -10324,7 +10337,7 @@ SOFTWARE.
     return {partNumbers:rows.length,pallets:rows.reduce((n,r)=>n+(r.missingPallets||0),0),unknownQuantityPartNumbers:rows.filter(r=>r.missingPallets===null).length,areaWithoutGangways:rows.reduce((n,r)=>n+r.areaWithoutGangways,0),unknownAreaPartNumbers:rows.filter(r=>!r.areaKnown).length,rows};
   }
   function metrics(layout,settings){
-    const e=layout.env,rack=union(layout.groups.filter(g=>g.kind==='rack').flatMap(g=>g.objects.map(o=>rect(localObjectRect(g,o))))),ground=union(layout.groups.filter(g=>g.kind==='ground').map(g=>rect(groupRect(g)))),storage=union([...rack,...ground]),access=union([...e.baseAccess,...endGangways(layout),...layout.groups.flatMap(g=>accessFor(g,e,settings.gangwayWidth).map(rect))]);
+    const e=layout.env,rack=union(layout.groups.filter(g=>g.kind==='rack').flatMap(g=>g.objects.map(o=>rect(localObjectRect(g,o))))),ground=union(layout.groups.filter(g=>g.kind==='ground').map(g=>rect(groupRect(g)))),storage=union([...rack,...ground]),access=diff(union([...e.baseAccess,...endGangways(layout),...layout.groups.flatMap(g=>accessFor(g,e,settings.gangwayWidth).map(rect))]),storage);
     const safety=diff(union([...diff(e.blocked,e.physical),...e.wallSafety,...(e.storageBlocked||[]),...e.doorZones,...layout.groups.filter(g=>g.paired&&g.separation>0).map(g=>rect({x:g.x,y:g.y+g.backY,w:g.w,h:g.separation}))]),union([...access,...storage]));
     const free=diff(e.boundary,union([...storage,...access,...safety,...e.physical]));
     // Component areas use polygon clipping, including holes. Fit probes classify remaining components conservatively.
