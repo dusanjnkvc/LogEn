@@ -41,3 +41,12 @@ test('Ground boxes remain in one block with fixed clearances through move, snap,
   assert(h.undo());assert.deepEqual(l.groups[0],before);assert(h.redo());assert.deepEqual(l.groups[0].objects,before.objects);
  }
 });
+test('Ground continuation beside racks snaps with box clearance instead of touching',()=>{
+ const c=settings.floorPalletClearance,l={groups:[{id:'rack',kind:'rack',x:6000,y:6000,w:3000,h:1200,objects:[{id:'rack:1',kind:'rack',dx:0,dy:0,w:3000,h:1200,rotation:0}]},{id:'floor',kind:'ground',x:10000,y:6000,w:1000,h:1200,objects:[{id:'floor:1',kind:'ground',dx:0,dy:0,w:1000,h:1200,rotation:0,quantity:1}]}],env:{},options:{}};
+ l.aisles=[{points:[[9000,0],[9000,6000],[6000,6000],[6000,0]]}];
+ const p=M.snap(l,['floor'],-1000,0,settings,c+1,100);M.translate(l,['floor'],p.dx,p.dy);assert.equal(M.box(l.groups[1]).minX-M.box(l.groups[0]).maxX,c);
+ const n=M.clone(l.groups[1]);n.id='floor2';n.x+=1000+500;n.objects[0].id='floor:2';l.groups.push(n);const q=M.snap(l,['floor2'],-500,0,settings,c+1,100);M.translate(l,['floor2'],q.dx,q.dy);assert.equal(M.box(n).minX-M.box(l.groups[1]).maxX,c);
+});
+test('Rotated footprints with overlapping bounding boxes do not produce false overlap errors',()=>{
+ const l=M.clone(base),g=l.groups[0];g.frame={angle:Math.PI/4,sx:1,sy:1};g.x=10000;g.y=10000;g.objects=[{id:'ground:test1',kind:'ground',pn:'QA',dx:0,dy:0,w:1200,h:1000,quantity:1,height:1000,stacking:1,rotation:0},{id:'ground:test2',kind:'ground',pn:'QA',dx:1300,dy:0,w:1200,h:1000,quantity:1,height:1000,stacking:1,rotation:0}];g.kind='ground';g.w=2500;g.h=1000;l.groups=[g];const v=M.validate(l,plan,settings,geometry);assert(!v.errors.some(e=>e.message.startsWith('ground:test')||e.message.startsWith('Storage clearance between')));
+});

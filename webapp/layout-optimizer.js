@@ -204,6 +204,11 @@
   function localObjectRect(g,o){return {x:g.x+(g.rotated?g.h-o.dy-o.h:o.dx),y:g.y+(g.rotated?o.dx:o.dy),w:g.rotated?o.h:o.w,h:g.rotated?o.w:o.h};}
   function accessFor(g,env,width){const r=groupRect(g),z=env.inner||env.box,x=env.complex?r.x-width:z.minX,w=env.complex?r.w+2*width:z.maxX-z.minX;
     if(g.wallSide){const horizontal=g.wallSide==='bottom'||g.wallSide==='top',lo=horizontal?z.minX:z.minY,hi=horizontal?z.maxX:z.maxY;return (g.kind==='ground'&&g.groundRows?g.groundRows.map(o=>({...o,dx:o.x,dy:o.y})):g.objects).map(o=>{const v=localObjectRect(g,o),a=Math.max(horizontal?v.x:v.y,lo),b=Math.min(horizontal?v.x+v.w:v.y+v.h,hi);if(g.wallSide==='bottom')return {x:a,y:v.y+v.h,w:b-a,h:z.minY+width-v.y-v.h};if(g.wallSide==='top')return {x:a,y:z.maxY-width,w:b-a,h:v.y-z.maxY+width};if(g.wallSide==='left')return {x:v.x+v.w,y:a,w:z.minX+width-v.x-v.w,h:b-a};return {x:z.maxX-width,y:a,w:v.x-z.maxX+width,h:b-a};}).filter(v=>v.w>E&&v.h>E);}
+    if(g.rotated){
+      const y=env.complex?r.y-width:z.minY,h=env.complex?r.h+2*width:z.maxY-z.minY,left={x:r.x-width,y,w:width,h},right={x:r.x+r.w,y,w:width,h};
+      if(g.groundLane)return [left,right,...(!g.skipStartAccess?[{x:r.x,y:r.y-width,w:r.w,h:width}]:[]),...(!g.skipEndAccess?[{x:r.x,y:r.y+r.h,w:r.w,h:width}]:[])];
+      return g.paired?[left,right]:[left];
+    }
     if(g.groundLane)return [{x:r.x,y:r.y-width,w:r.w,h:width},{x:r.x,y:r.y+r.h,w:r.w,h:width},...(!g.skipStartAccess?[{x:r.x-width,y:r.y,w:width,h:r.h}]:[]),...(!g.skipEndAccess?[{x:r.x+r.w,y:r.y,w:width,h:r.h}]:[])];
     const bottom={x,y:r.y-width,w,h:width},top={x,y:r.y+r.h,w,h:width};return g.paired?[bottom,top]:[bottom];
   }
@@ -229,7 +234,9 @@
     if(!fits(r,env.zone))return 'Storage crosses the storage zone, boundary or mandatory clearance.';
     if(collide(r,env.baseAccess))return 'Storage blocks a circulation route.';
     for(const a of access)if(!fits(a,env.boundary)||collide(a,env.blocked))return 'A full-width access gangway is obstructed or leaves the warehouse.';
-    for(const other of placed){if(other.id===g.id)continue;const fixed=cachedPlacement(other,env,settings.gangwayWidth),rr=fixed.r;if(sharedRowError(g,other,settings.gangwayWidth))return 'Ground storage beside a rack must fit within its row depth. Start a separate row for deeper ground storage.';if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||fixed.access.some(a=>core.overlaps(a,r)))return 'Storage or its required accessible face overlaps another storage block.';}
+    for(const other of placed){if(other.id===g.id)continue;const fixed=cachedPlacement(other,env,settings.gangwayWidth),rr=fixed.r;// Ground may continue beside racks; actual storage/access collisions below decide validity.
+      if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||fixed.access.some(a=>core.overlaps(a,r))){const gapX=Math.max(r.x-rr.x-rr.w,rr.x-r.x-r.w),gapY=Math.max(r.y-rr.y-rr.h,rr.y-r.y-r.h),gap=Math.max(gapX,gapY);return 'Storage or its required accessible face overlaps another storage block.'+(gap>0?' Forklift clearance is '+Math.round(gap)+' mm; required '+settings.gangwayWidth+' mm at this accessible face.':'');}
+      if(g.kind==='ground'||other.kind==='ground'){for(const a of g.objects)for(const b of other.objects){const aa=localObjectRect(g,a),bb=localObjectRect(other,b);if(core.overlaps(aa,bb,settings.floorPalletClearance||0))return 'Ground storage clearance to '+b.id+' is below the required '+(settings.floorPalletClearance||0)+' mm.';}}}
     return null;
   }
   // Adjacent ground sections share one line, rather than reserving an aisle between them.

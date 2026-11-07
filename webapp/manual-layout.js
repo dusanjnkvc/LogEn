@@ -31,12 +31,19 @@
  function snap(layout,ids,dx,dy,settings,tolerance,grid=100){
   const moving=layout.groups.filter(g=>ids.includes(g.id));if(!moving.length)return {dx,dy,guides:[]};
   const b=box(moving[0]),xs=[],ys=[],g=settings.gangwayWidth;
-  for(const other of layout.groups.filter(g=>!ids.includes(g.id))){const a=box(other);xs.push(a.minX,a.maxX,a.minX-g,a.maxX+g);ys.push(a.minY,a.maxY,a.minY-g,a.maxY+g);}
-  for(const zone of [...(layout.clearances||[]),...(layout.aisles||[])]){const pts=zone.points;if(pts){const a=L.bounds(pts);xs.push(a.minX,a.maxX);ys.push(a.minY,a.maxY);}}
+  const edgeTargets={minX:[],maxX:[],minY:[],maxY:[]};
+  for(const other of layout.groups.filter(g=>!ids.includes(g.id))){const a=box(other),clearance=moving.some(v=>v.kind==='ground')||other.kind==='ground'?(settings.floorPalletClearance||0):0;
+   edgeTargets.minX.push(a.maxX+clearance);edgeTargets.maxX.push(a.minX-clearance);edgeTargets.minY.push(a.maxY+clearance);edgeTargets.maxY.push(a.minY-clearance);
+   xs.push(a.minX-g,a.maxX+g);ys.push(a.minY-g,a.maxY+g);
+   // Alignment along a shared row is independent of the required separation at its ends.
+   edgeTargets.minX.push(a.minX);edgeTargets.maxX.push(a.maxX);edgeTargets.minY.push(a.minY);edgeTargets.maxY.push(a.maxY);
+  }
+  for(const zone of (moving.some(v=>v.kind==='ground')?[]:[...(layout.clearances||[]),...(layout.aisles||[])])){const pts=zone.points;if(pts){const a=L.bounds(pts);xs.push(a.minX,a.maxX);ys.push(a.minY,a.maxY);}}
   const eb=layout.env.box,margin=layout.options.allowWallStorage?(layout.options.wallClearance||0):g;
   if(eb){const p=layout.env.frame?O().toWorld([eb.minX+margin,eb.minY+margin],layout.env.frame):[eb.minX+margin,eb.minY+margin],q=layout.env.frame?O().toWorld([eb.maxX-margin,eb.maxY-margin],layout.env.frame):[eb.maxX-margin,eb.maxY-margin];xs.push(p[0],q[0]);ys.push(p[1],q[1]);}
   const nearest=(targets,edges)=>{let best=null;for(const target of targets)for(const edge of edges){const delta=target-edge;if(Math.abs(delta)<=tolerance&&(!best||Math.abs(delta)<Math.abs(best.delta)))best={delta,target};}return best;};
-  const sx=nearest(xs,[b.minX+dx,b.maxX+dx]),sy=nearest(ys,[b.minY+dy,b.maxY+dy]),guides=[];
+  const choose=(a,b)=>!a?b:!b?a:Math.abs(a.delta)<Math.abs(b.delta)?a:b;
+  const sx=choose(nearest(xs,[b.minX+dx,b.maxX+dx]),choose(nearest(edgeTargets.minX,[b.minX+dx]),nearest(edgeTargets.maxX,[b.maxX+dx]))),sy=choose(nearest(ys,[b.minY+dy,b.maxY+dy]),choose(nearest(edgeTargets.minY,[b.minY+dy]),nearest(edgeTargets.maxY,[b.maxY+dy]))),guides=[];
   if(sx){dx+=sx.delta;guides.push({axis:'x',value:sx.target});}else dx=Math.round((b.minX+dx)/grid)*grid-b.minX;
   if(sy){dy+=sy.delta;guides.push({axis:'y',value:sy.target});}else dy=Math.round((b.minY+dy)/grid)*grid-b.minY;
   return {dx,dy,guides};
@@ -63,11 +70,17 @@
    if(o.kind==='ground'&&o.height*(o.stacking||1)>settings.maxFloorStackingHeight+.1)add(g.id,`${o.pn}: stack ${o.height*o.stacking} mm; maximum ${settings.maxFloorStackingHeight} mm.`);
    if(o.manualEmpty)warnings.push({groupId:g.id,message:`${o.id} is empty; no inventory was duplicated.`});
   }
-  for(let i=0;i<objects.length;i++)for(let j=0;j<i;j++){const a=objects[i],b=objects[j];if(a.g.id===b.g.id)continue;const x=Math.min(a.b.maxX,b.b.maxX)-Math.max(a.b.minX,b.b.minX),y=Math.min(a.b.maxY,b.b.maxY)-Math.max(a.b.minY,b.b.minY);if(x>.1&&y>.1){add(a.g.id,`${a.o.id} overlaps ${b.o.id}: ${Math.round(x)} × ${Math.round(y)} mm.`);add(b.g.id,`${b.o.id} overlaps ${a.o.id}.`);}
-   else {const horizontal=y>0,vertical=x>0,gap=horizontal?Math.max(a.b.minX-b.b.maxX,b.b.minX-a.b.maxX):vertical?Math.max(a.b.minY-b.b.maxY,b.b.minY-a.b.maxY):null;
-    // Existing access-face validation decides whether this gap must be an aisle.
-    if(gap>.1&&gap<settings.gangwayWidth&&layout.validationErrors.some(e=>e.pn.includes(a.o.typeName||a.o.pn)))add(a.g.id,`Clearance to ${b.o.id} is ${Math.round(gap)} mm; required forklift aisle ${settings.gangwayWidth} mm at accessible faces.`);
-   }
+  const segmentDistance=(p,a,b)=>{const x=b[0]-a[0],y=b[1]-a[1],t=Math.max(0,Math.min(1,((p[0]-a[0])*x+(p[1]-a[1])*y)/(x*x+y*y||1)));return Math.hypot(p[0]-a[0]-t*x,p[1]-a[1]-t*y);};
+  for(let i=0;i<objects.length;i++)for(let j=0;j<i;j++){
+   const a=objects[i],b=objects[j],pa=a.o.points||L.corners(a.o),pb=b.o.points||L.corners(b.o),G=O().geometry;
+   if(a.g.id===b.g.id&&a.o.kind!=='ground'&&b.o.kind!=='ground')continue;
+   const overlap=G.area(G.intersect([G.path(pa)],[G.path(pb)]));
+   if(overlap>.1){add(a.g.id,`${a.o.id} overlaps ${b.o.id}: ${Math.round(overlap)} mm².`);if(a.g.id!==b.g.id)add(b.g.id,`${b.o.id} overlaps ${a.o.id}.`);continue;}
+   if(a.o.kind!=='ground'&&b.o.kind!=='ground')continue;
+   const required=settings.floorPalletClearance||0;
+   if(a.b.minX>b.b.maxX+required||b.b.minX>a.b.maxX+required||a.b.minY>b.b.maxY+required||b.b.minY>a.b.maxY+required)continue;
+   let gap=Infinity;for(const [p,q] of [[pa,pb],[pb,pa]])for(const v of p)for(let k=0;k<q.length;k++)gap=Math.min(gap,segmentDistance(v,q[k],q[(k+1)%q.length]));
+   if(gap<required-.11){const text=`Storage clearance between ${a.o.id} and ${b.o.id} is ${Math.round(gap)} mm; required ${required} mm.`;add(a.g.id,text);if(a.g.id!==b.g.id)add(b.g.id,text);}
   }
   if(layout.version===3)for(const g of layout.groups.filter(g=>!g.existing)){try{const trial=clone(layout),p=origin(g);scope.LogEnExistingLayout.move(trial,g.id,p[0],p[1],!!g.rotated,plan,settings);}catch(error){add(g.id,error.message);}}
   for(const e of result.validationErrors||[]){const groups=layout.groups.filter(g=>g.objects.some(o=>e.pn?.includes(o.pn||o.typeName)));if(groups.length)groups.forEach(g=>add(g.id,e.message));else errors.push(e);}
