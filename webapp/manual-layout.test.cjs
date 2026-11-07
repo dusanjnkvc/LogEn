@@ -30,3 +30,14 @@ test('Manual toolbar saves invalid drafts and blocks final export in the live DO
 });
 test('Undersized aisle reports measured and required clearances',()=>{const l=M.clone(base),g=l.groups[0],n=M.clone(g);n.id+='adjacent';n.objects.forEach(o=>o.id+='adjacent');n.y=g.y+g.h+1000;l.groups.push(n);const v=M.validate(l,plan,settings,geometry);assert(v.errors.some(e=>e.message.includes('1000 mm')&&e.message.includes(String(settings.gangwayWidth))));});
 test('Pallet assignments can move within rack slots without changing inventory',()=>{const l=M.clone(base),g=l.groups[0],o=g.objects[0],a=o.allocations[0],before={...a};M.moveAssignment(l,o.id,0,100,0);assert.equal(a.pn,before.pn);assert.equal(o.allocations.length,base.groups[0].objects[0].allocations.length);assert(a.x!==before.x||a.y!==before.y);a.x=99999;assert(M.validate(l,plan,settings,geometry).errors.some(e=>e.message.includes('exceeds slot')));});
+test('Ground boxes remain in one block with fixed clearances through move, snap, rotate and undo',()=>{
+ for(const angle of [0,Math.PI/6])for(const rotated of [false,true]){
+  const g={id:'ground-block',kind:'ground',x:6000,y:7000,w:1000,h:2800,rotated,frame:{angle,sx:1,sy:1},groundLane:true,backY:1400,objects:[{id:'ground:A:1',kind:'ground',pn:'A',dx:50,dy:50,w:900,h:1200,quantity:1,stacking:1,rotation:0},{id:'ground:A:2',kind:'ground',pn:'A',dx:50,dy:1550,w:900,h:1200,quantity:1,stacking:1,rotation:0}]};
+  const l={groups:[g],unplaced:[],env:{box:{minX:0,minY:0,maxX:40000,maxY:40000}},options:{allowWallStorage:false}},before=M.clone(g),h=M.session(l),distance=()=>{const [a,b]=L.placedObjects(l.groups[0]);return Math.hypot(a.center[0]-b.center[0],a.center[1]-b.center[1]);},initialDistance=distance();
+  h.checkpoint();assert.equal(M.split(l,'ground:A:1'),'ground-block');assert.equal(l.groups.length,1);
+  const proposal=M.snap(l,[g.id],317,469,settings,50,100);M.translate(l,[g.id],proposal.dx,proposal.dy);
+  assert.deepEqual(g.objects,before.objects);assert.equal(g.backY,before.backY);assert.equal(g.w,before.w);assert.equal(g.h,before.h);assert(Math.abs(distance()-initialDistance)<.1);
+  M.rotate(l,[g.id]);assert(Math.abs(distance()-initialDistance)<.1);assert.deepEqual(g.objects,before.objects);
+  assert(h.undo());assert.deepEqual(l.groups[0],before);assert(h.redo());assert.deepEqual(l.groups[0].objects,before.objects);
+ }
+});

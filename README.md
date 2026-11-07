@@ -123,7 +123,7 @@ Warehouse Designer allocates PNs in ascending required pallet quantity (ties by 
 
 ## Manual layout editing
 
-Create Layout includes Select/Move, Rotate, Duplicate empty, Delete, Snap, Undo/Redo, Validate and Restore last valid. Click a bay or ground position to isolate it; Shift-click selects entire runs for group movement. Arrow keys nudge 10 mm (Shift: 100 mm; Alt: 1 mm). Alt-drag temporarily disables snapping. The grid is editable in millimetres. Rack contents shows assigned pallet footprints for the chosen shelf level and permits adjustment within the bay.
+Create Layout includes Select/Move, Rotate, Duplicate empty, Delete, Snap, Undo/Redo, Validate and Restore last valid. Click a rack bay to isolate it. Clicking any ground box selects its complete ground-storage block, preserving all internal box clearances. Shift-click selects multiple blocks or runs for group movement. Arrow keys nudge 10 mm (Shift: 100 mm; Alt: 1 mm). Alt-drag temporarily disables snapping. The grid is editable in millimetres. Rack contents shows assigned pallet footprints for the chosen shelf level and permits adjustment within the bay.
 
 Invalid positions remain editable drafts, with red footprints and mandatory errors separated from warnings. Save layout preserves drafts; mandatory errors block final output. Duplicated storage is empty, and deleting occupied storage retains its assignments under unplaced storage. Existing CAD infrastructure stays fixed. Regeneration explicitly confirms replacement of manual changes. Saved edits use the same model consumed by CAD output and the 3D viewer.
 

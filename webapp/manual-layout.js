@@ -6,7 +6,8 @@
  const box=g=>L.bounds(L.placedObjects(g).flatMap(o=>o.points||L.corners(o)));
  function split(layout,objectId){
   const g=layout.groups.find(g=>g.objects.some(o=>o.id===objectId));if(!g||g.existing)return g?.id;
-  if(g.objects.length===1)return g.id;
+  // Ground spacing belongs to the complete generated row/block. Never detach a box.
+  if(g.kind==='ground'||g.objects.length===1)return g.id;
   const o=g.objects.find(o=>o.id===objectId),n=clone(g);n.id='manual:'+o.id;
   // Retain the physical footprint even when the parent was rotated.
   const dx=g.rotated?g.h-o.dy-o.h:o.dx,dy=g.rotated?o.dx:o.dy;
