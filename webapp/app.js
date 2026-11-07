@@ -343,6 +343,7 @@
     const layoutPNs=new Set(plan.rows.map(r=>r.input.partNumber));
     const current=D.calculateImplementation(p.parts.filter(part=>layoutPNs.has(part.partNumber)),p.settings,{...p.implementation,storageMode:p.implementation?.storageMode||'auto',improvementThreshold:p.improvementThreshold},null);
     if(LogEnLayout.sourceKey(current,p.settings,p.implementation,p.implementation?.dwg?.uploadedAt)!==sourceKey)throw new Error('The Parts List, settings or DWG changed. Regenerate the layout before downloading output.');
+    if(layout.manualValidation?.errors?.length)throw new Error('Resolve mandatory manual placement errors before final export. Save the layout as a draft to retain positions.');
     const checked=LogEnLayout.validate(layout,plan,settings);
     if(checked.validationErrors.length)throw new Error('Resolve invalid drawing geometry before export: '+checked.validationErrors.map(v=>v.message).join(' '));
     const key=layoutKey(layout),cached=await drawingStore('readonly',s=>s.get(p.id+':layout-output'));

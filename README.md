@@ -119,3 +119,12 @@ Greenfeild shows a saved wall-storage permission. Existing warehouses can select
 DWG and generated PDF are stored per project in IndexedDB. Download the embedded helper ZIP from Implementation and run its VBS launcher on Windows with licensed AutoCAD/Core Console. The helper binds only to 127.0.0.1:8765, uses a temporary DWG copy, plots model-space extents to A3 landscape PDF, and deletes temporary files. The original drawing is unchanged. It does not insert the LogEn storage plan into the DWG. Chrome may ask permission to access the local helper. The only CSP connection exception is that loopback endpoint; calculations remain offline and need no helper. Drawing attachments are not part of JSON backups.
 
 Warehouse Designer allocates PNs in ascending required pallet quantity (ties by PN). Each PN is placed transactionally across the existing rack bays: either all pallets fit in racks, or all are assigned to ground. Failed partial placements are rolled back before considering the next PN. Inventory may share rack shelves and span multiple bays, but never splits between rack and ground storage.
+
+
+## Manual layout editing
+
+Create Layout includes Select/Move, Rotate, Duplicate empty, Delete, Snap, Undo/Redo, Validate and Restore last valid. Click a bay or ground position to isolate it; Shift-click selects entire runs for group movement. Arrow keys nudge 10 mm (Shift: 100 mm; Alt: 1 mm). Alt-drag temporarily disables snapping. The grid is editable in millimetres. Rack contents shows assigned pallet footprints for the chosen shelf level and permits adjustment within the bay.
+
+Invalid positions remain editable drafts, with red footprints and mandatory errors separated from warnings. Save layout preserves drafts; mandatory errors block final output. Duplicated storage is empty, and deleting occupied storage retains its assignments under unplaced storage. Existing CAD infrastructure stays fixed. Regeneration explicitly confirms replacement of manual changes. Saved edits use the same model consumed by CAD output and the 3D viewer.
+
+Manual validation reuses the current geometry, allocation and access validators. Bounding overlap measurements are labelled as such; they are not penetration depths. Automatic placement and access remain conservative planning heuristics. Run `node --test webapp/manual-layout.test.cjs` for model and DOM integration tests (DOM checks use `.tooling/qa/node_modules/jsdom`). Native DWG/PDF generation requires the local AutoCAD helper.
