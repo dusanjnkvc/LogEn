@@ -1,6 +1,7 @@
 const {chromium}=require('../.tooling/qa/node_modules/playwright'),path=require('path'),fs=require('fs'),assert=require('assert/strict');
+let browser;
 (async()=>{
- const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+ browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
  fs.mkdirSync('.tooling/responsive',{recursive:true});
  for(const [width,height] of [[390,844],[768,1024],[1024,768],[1440,1000]]){
   const context=await browser.newContext({viewport:{width,height},hasTouch:width<=1024,deviceScaleFactor:1});const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -15,6 +16,12 @@ const {chromium}=require('../.tooling/qa/node_modules/playwright'),path=require(
   });
   if(width<=1024){assert(await page.locator('.layout-setup').isHidden(),'setup collapses on smaller screens');await page.locator('.layout-setup-toggle').click();assert(await page.locator('.layout-setup').isVisible());await page.locator('.layout-setup-toggle').click();}
   await page.locator('.layout-canvas').scrollIntoViewIfNeeded();const canvas=page.locator('.layout-canvas'),bounds=await canvas.boundingBox();assert(bounds.width>250&&bounds.height>180,`${width}: usable canvas area`);
+  assert.equal(await page.locator('[data-layout-zoom]').count(),0,'Mouse-wheel zoom replaces plus/minus buttons');
+  const wheelPoint={x:Math.round(bounds.x+bounds.width*.67),y:Math.round(bounds.y+bounds.height*.42)};
+  const beforeWheel=await canvas.getAttribute('viewBox'),stockBeforeWheel=await page.evaluate(()=>JSON.stringify(LogEnLayout.cadObjects(qaFixture.layout))),anchorBefore=await canvas.evaluate((el,p)=>{const q=el.createSVGPoint();q.x=p.x;q.y=p.y;const v=q.matrixTransform(el.getScreenCTM().inverse());return [v.x,v.y];},wheelPoint),scrollBefore=await page.locator('.physical-layout-body').evaluate(el=>el.scrollTop);
+  await page.mouse.move(wheelPoint.x,wheelPoint.y);await page.mouse.wheel(0,-120);await page.waitForFunction(before=>document.querySelector('.layout-canvas').getAttribute('viewBox')!==before,beforeWheel);const afterWheel=await canvas.getAttribute('viewBox');assert(Number(afterWheel.split(' ')[2])<Number(beforeWheel.split(' ')[2]),'Wheel up zooms in');
+  const anchorAfter=await canvas.evaluate((el,p)=>{const q=el.createSVGPoint();q.x=p.x;q.y=p.y;const v=q.matrixTransform(el.getScreenCTM().inverse());return [v.x,v.y];},wheelPoint);assert(Math.hypot(anchorBefore[0]-anchorAfter[0],anchorBefore[1]-anchorAfter[1])<.1,'Zoom stays anchored under cursor');assert.equal(await page.locator('.physical-layout-body').evaluate(el=>el.scrollTop),scrollBefore,'Canvas wheel does not scroll the dialog');
+  await page.mouse.wheel(0,120);await page.waitForFunction(before=>Number(document.querySelector('.layout-canvas').getAttribute('viewBox').split(' ')[2])>Number(before.split(' ')[2]),afterWheel);assert.equal(await page.evaluate(()=>JSON.stringify(LogEnLayout.cadObjects(qaFixture.layout))),stockBeforeWheel,'Wheel zoom does not move inventory');
   await page.screenshot({path:`.tooling/responsive/${width}-designer.png`,fullPage:true});
   if(width<=1024){
    const before=await canvas.getAttribute('viewBox'),stock=await page.evaluate(()=>JSON.stringify(LogEnLayout.cadObjects(qaFixture.layout))),cdp=await context.newCDPSession(page),x=Math.round(bounds.x+bounds.width*.5),y=Math.round(bounds.y+bounds.height*.5);
@@ -30,4 +37,4 @@ const {chromium}=require('../.tooling/qa/node_modules/playwright'),path=require(
   assert.deepEqual(errors,[],`Browser errors at ${width}`);console.log(`${width}×${height}: pages, settings, designer, fullscreen, 3D${width<=1024?', pinch/pan, one-finger row drag and preserved inventory':''} passed`);await context.close();
  }
  await browser.close();
-})().catch(e=>{console.error(e);process.exitCode=1});
+})().catch(async e=>{console.error(e);process.exitCode=1;if(browser)await browser.close();});

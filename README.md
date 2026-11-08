@@ -144,3 +144,5 @@ The workspace reflows for portrait and landscape screens. Navigation, inventory 
 ## Place parts that did not fit
 
 Warehouse Designer → Add unplaced parts lists each Part Number and the pallet quantity not yet drawn. Choose Racks or Ground storage, then Add to layout. The new storage is a movable draft in the current canvas view. Existing positions and assignments stay in place. Storage dimensions, stacking and rack fit use the warehouse settings. Save layout retains the additions and their storage choices for reopening, 3D and layout exports; Undo removes the addition. Parts already drawn but invalid must be corrected rather than added again. Unknown quantities require input review.
+
+In the layout drawing, scroll the mouse wheel up to zoom in and down to zoom out around the cursor. The wheel operates on the drawing without scrolling the dialog. Touch pinch zoom remains available; Fit returns to the full drawing.
