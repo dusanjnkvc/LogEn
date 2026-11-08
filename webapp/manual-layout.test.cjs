@@ -81,10 +81,19 @@ test('Pointer drag moves one ground row instead of the complete block',async()=>
  const {JSDOM}=require('../.tooling/qa/node_modules/jsdom'),fs=require('fs'),f=await damagedGround(),before=new Map(L.cadObjects(f.l).map(o=>[o.id,o])),row=f.g.groundRows[0],ids=new Set(row.objectIds),dom=new JSDOM('<!doctype html><body></body>',{runScripts:'outside-only',url:'https://example.test'}),w=dom.window;
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.dispatchEvent(new w.Event('close'))};w.SVGSVGElement.prototype.createSVGPoint=function(){return {x:0,y:0,matrixTransform(){return {x:this.x,y:this.y}}}};w.SVGSVGElement.prototype.getScreenCTM=function(){return {inverse(){return {}}}};w.SVGSVGElement.prototype.setPointerCapture=function(){};w.SVGSVGElement.prototype.hasPointerCapture=function(){return false};
  for(const file of ['vendor/clipper.js','domain.js','layout.js','warehouse-geometry.js','layout-optimizer.js','existing-layout.js','manual-layout.js','layout-ui.js'])w.eval(fs.readFileSync(__dirname+'/'+file,'utf8'));
- let saved;const d=w.LogEnLayoutUI.open({plan:f.p,settings:f.s,geometry:M.clone(geometry),options:{...options,storageMode:'ground'},saved:f.l,name:'Row drag',onSave:async v=>{saved=v}}),svg=d.querySelector('.layout-canvas');d.querySelector('[data-manual="snap"]').click();
+ let saved;const d=w.LogEnLayoutUI.open({plan:f.p,settings:f.s,geometry:M.clone(geometry),options:{...options,storageMode:'ground'},saved:f.l,name:'Row drag',onSave:async v=>{saved=v}}),svg=d.querySelector('.layout-canvas');const rowButton=d.querySelector('[data-manual="move-row"]');assert(rowButton);rowButton.click();d.querySelector('[data-manual="snap"]').click();
  d.querySelector('[data-object="'+row.objectIds[0]+'"]').dispatchEvent(new w.MouseEvent('pointerdown',{bubbles:true,button:0,clientX:1000,clientY:1000}));
  svg.dispatchEvent(new w.MouseEvent('pointermove',{bubbles:true,clientX:1321,clientY:544}));svg.dispatchEvent(new w.MouseEvent('pointerup',{bubbles:true,clientX:1321,clientY:544}));
  d.querySelector('[data-layout-save]').click();await new Promise(r=>setTimeout(r,5));assert(saved?.layout);
  for(const o of L.cadObjects(saved.layout)){const original=before.get(o.id);assert(Math.abs(o.center[0]-original.center[0]-(ids.has(o.id)?321:0))<.2);assert(Math.abs(o.center[1]-original.center[1]-(ids.has(o.id)?456:0))<.2);}
  d.close();dom.window.close();
+});
+test('Older saved 3-by-7 grids select only the clicked three-box line',()=>{
+ for(const rotated of [false,true]){
+  const g={id:'saved-grid',kind:'ground',manualRow:true,x:6000,y:7000,w:7000,h:3900,rotated,frame:{angle:Math.PI/6,sx:1,sy:1},objects:[]};
+  for(let col=0;col<7;col++)for(let row=0;row<3;row++)g.objects.push({id:`box:${col}:${row}`,kind:'ground',pn:'PN-'+row,dx:col*1000+50,dy:row*1300+50,w:900,h:1200,quantity:1,stacking:1,rotation:0});
+  g.groundRows=[{id:'old-grid-row',x:0,y:0,w:7000,h:3900,side:'front',objectIds:g.objects.map(o=>o.id)}];
+  const l={groups:[g],unplaced:[]},before=new Map(L.cadObjects(l).map(o=>[o.id,o])),id=M.split(l,'box:0:1'),selected=l.groups.find(g=>g.id===id);assert.equal(selected.objects.length,3);assert(selected.objects.every(o=>o.id.startsWith('box:0:')));M.translate(l,[id],-1500,0);
+  for(const o of L.cadObjects(l)){const p=before.get(o.id);assert(Math.abs(o.center[0]-p.center[0]-(o.id.startsWith('box:0:')?-1500:0))<.2);assert(Math.abs(o.center[1]-p.center[1])<.2);assert.equal(o.quantity,p.quantity);}
+ }
 });

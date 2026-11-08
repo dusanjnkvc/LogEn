@@ -5,11 +5,15 @@
  const origin=g=>g.frame?O().toWorld([g.x,g.y],g.frame):[g.x,g.y];
  const box=g=>L.bounds(L.placedObjects(g).flatMap(o=>o.points||L.corners(o)));
  function splitGroundRow(layout,g,objectId){
-  if(g.manualRow)return g.id;
   let rows=g.groundRows?.map(row=>({...row,objectIds:row.objectIds||g.objects.filter(o=>o.groundRowId===row.id).map(o=>o.id)}));
   if(!rows?.length){const groups=new Map();for(const o of g.objects){const key=o.groundRowId||`${o.groundFace||'front'}:${o.dx}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(o);}rows=[...groups].map(([id,list])=>{const x=Math.min(...list.map(o=>o.dx)),y=Math.min(...list.map(o=>o.dy));return {id,x,y,w:Math.max(...list.map(o=>o.dx+o.w))-x,h:Math.max(...list.map(o=>o.dy+o.h))-y,side:list[0].groundFace||'front',objectIds:list.map(o=>o.id)};});}
+  // Older saved layouts may label an entire PN grid as one row. Partition it
+  // by physical frontage position so a row always means one line of boxes.
+  const columns=list=>{const buckets=[];for(const o of [...list].sort((a,b)=>a.dx-b.dx||a.dy-b.dy)){let b=buckets.find(b=>Math.abs(b[0].dx-o.dx)<=.11);if(!b){b=[];buckets.push(b);}b.push(o);}return buckets;};
+  let coverage=rows.flatMap(row=>row.objectIds);
+  if(new Set(coverage).size!==g.objects.length||coverage.length!==g.objects.length){rows=[];const faces=new Map();for(const o of g.objects){const face=o.groundFace||'front';if(!faces.has(face))faces.set(face,[]);faces.get(face).push(o);}for(const [side,list]of faces)for(const items of columns(list)){const x=Math.min(...items.map(o=>o.dx)),y=Math.min(...items.map(o=>o.dy));rows.push({id:'line:'+items[0].id,x,y,w:Math.max(...items.map(o=>o.dx+o.w))-x,h:Math.max(...items.map(o=>o.dy+o.h))-y,side,objectIds:items.map(o=>o.id)});}}
+  rows=rows.flatMap(row=>{const items=g.objects.filter(o=>row.objectIds.includes(o.id)),parts=columns(items);if(parts.length<2)return [row];const margin=Math.max(0,Math.min(...items.map(o=>o.dx))-row.x);return parts.map(list=>{const x=Math.min(...list.map(o=>o.dx))-margin,y=Math.min(...list.map(o=>o.dy))-margin;return {...row,id:row.id+':line:'+list[0].id,x,y,w:Math.max(...list.map(o=>o.dx+o.w))-x+margin,h:Math.max(...list.map(o=>o.dy+o.h))-y+margin,objectIds:list.map(o=>o.id)};});});
   if(rows.length<2)return g.id;
-  const coverage=rows.flatMap(row=>row.objectIds);if(new Set(coverage).size!==g.objects.length||coverage.length!==g.objects.length)return g.id;
   const parts=rows.map(row=>{const n=clone(g);n.id=g.id+':row:'+row.id;n.manualRow=true;n.manualRowFace=row.side;n.groundLane=false;n.paired=false;n.reservedBackRow=false;n.rows=1;
    n.x=g.x+(g.rotated?g.h-row.y-row.h:row.x);n.y=g.y+(g.rotated?row.x:row.y);n.w=row.w;n.h=row.h;
    n.objects=g.objects.filter(o=>row.objectIds.includes(o.id)).map(o=>({...clone(o),dx:o.dx-row.x,dy:o.dy-row.y}));n.groundRows=[{...clone(row),x:0,y:0}];delete n.centerLine;delete n.backY;
