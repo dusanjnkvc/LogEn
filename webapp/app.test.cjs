@@ -731,3 +731,16 @@ test('restored backups cannot select a deleted project as the active workspace',
   assert.deepEqual(ui.errors,[]);
 });
 
+
+test('Create Layout prompts for a missing DWG and Upload opens the drawing picker',async t=>{
+ const ui=boot(t);let picks=0;ui.$('#dwg-input').click=()=>{picks++;};ui.click('[data-view="implementation"]');ui.click('[data-action="create-physical-layout"]');await until(()=>ui.w.document.querySelector('dialog [data-confirm]'),'drawing upload prompt');assert.match(ui.$('dialog').textContent,/Please upload a DWG or DXF file/);assert.equal(ui.$('dialog [data-confirm]').textContent,'Upload DWG / DXF');assert(!ui.w.document.querySelector('.busy-indicator'));ui.click('dialog [data-confirm]');await until(()=>picks===1,'drawing picker');assert.deepEqual(ui.errors,[]);
+});
+test('Create Layout upload prompt can be cancelled without opening the picker or changing data',async t=>{
+ const ui=boot(t),before=ui.state();let picks=0;ui.$('#dwg-input').click=()=>{picks++;};ui.click('[data-view="implementation"]');ui.click('[data-action="create-physical-layout"]');await until(()=>ui.w.document.querySelector('dialog [data-cancel]'),'cancel upload prompt');ui.click('dialog [data-cancel]');await new Promise(r=>setTimeout(r,5));assert.equal(picks,0);assert.deepEqual(ui.state(),before);assert.deepEqual(ui.errors,[]);
+});
+test('Create Layout prompts when a saved DWG reference has no file on this device',async t=>{
+ const data=workspace();data.projects[0].implementation={greenfield:true,dwg:{name:'restored.dwg',uploadedAt:'2026-11-08'}};const ui=boot(t,data);projectDrawingStore(ui.w,new Map(),[]);ui.click('[data-view="implementation"]');ui.click('[data-action="create-physical-layout"]');await until(()=>ui.w.document.querySelector('dialog [data-confirm]'),'missing restored drawing prompt');assert.match(ui.$('dialog').textContent,/Please upload a DWG or DXF/);ui.click('dialog [data-cancel]');assert.deepEqual(ui.errors,[]);
+});
+test('Create Layout continues directly when its DWG is already uploaded',async t=>{
+ const data=workspace(),p=data.projects[0],stamp='2026-11-08';p.implementation={greenfield:true,dwg:{name:'warehouse.dwg',uploadedAt:stamp}};const ui=boot(t,data),values=new Map([[p.id,{name:'warehouse.dwg'}],[p.id+':geometry',{stamp,readerVersion:3,mode:'geometry',value:{entities:[]}}]]);projectDrawingStore(ui.w,values,[]);ui.w.structuredClone=structuredClone;let opened=0;ui.w.LogEnWarehouseGeometry={prepare:g=>g};ui.w.LogEnLayout={sourceKey:()=> 'qa-source'};ui.w.LogEnLayoutUI={open:()=>{opened++;}};ui.click('[data-view="implementation"]');ui.click('[data-action="create-physical-layout"]');await until(()=>opened===1,'existing drawing layout');assert(!ui.w.document.querySelector('dialog'));assert.deepEqual(ui.errors,[]);
+});

@@ -308,11 +308,14 @@
   function drawingBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error('Could not read the original DWG.'));reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(file);});}
   async function createPhysicalLayout(preferHelper=false){
     const p=project();
+    const askForDrawing=async()=>{if(await modal({title:'Upload a warehouse drawing',body:'<p>Please upload a DWG or DXF file before creating a layout.</p>',confirm:'Upload DWG / DXF',cancel:'Cancel'}))$('dwg-input').click();};
+    if(!p.implementation?.dwg?.uploadedAt){await askForDrawing();return;}
+    const file=await drawingStore('readonly',s=>s.get(p.id));
+    if(!file){await askForDrawing();return;}
 
     await work('Reading warehouse geometry locally…',async()=>{
       const plan=implementationPlan(),settings=structuredClone(p.settings),stamp=p.implementation?.dwg?.uploadedAt;
       if(!plan.available)throw new Error(plan.errors.join(' '));
-      const file=await drawingStore('readonly',s=>s.get(p.id));if(!file||!stamp)throw new Error('Upload the warehouse DWG on this device first.');
       const cached=await drawingStore('readonly',s=>s.get(p.id+':geometry'));
       const geometryMode=p.implementation.greenfield?'geometry':'geometry-existing';
       let geometry;if(preferHelper)geometry=await cadRequest(geometryMode,file,'application/octet-stream');else if(cached?.stamp===stamp&&cached.readerVersion===3&&(cached.mode||'geometry')===geometryMode)geometry=cached.value;else{try{geometry=await LogEnCADReader.read(file);}catch(error){if(!await modal({title:'Browser CAD reader could not read this drawing',body:'<p>'+escape(error.message)+'</p><p>Try the optional local AutoCAD fallback on Windows?</p>',confirm:'Use Windows fallback',cancel:'Close'}))return;geometry=await cadRequest(geometryMode,file,'application/octet-stream');}}
