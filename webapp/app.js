@@ -1,6 +1,7 @@
 /* LogEn — local-only application controller. CAD jobs use the loopback helper. */
-(() => {
+(async () => {
   'use strict';
+  if(globalThis.LogEnAccess)await globalThis.LogEnAccess.ready;
   const D = globalThis.LogEnDomain;
   const W = new globalThis.LogEnWorkbook();
   const E = globalThis.LogEnEditors;

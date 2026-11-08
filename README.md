@@ -146,3 +146,9 @@ The workspace reflows for portrait and landscape screens. Navigation, inventory 
 Warehouse Designer → Add unplaced parts lists each Part Number and the pallet quantity not yet drawn. Choose Racks or Ground storage, then Add to layout. The new storage is a movable draft in the current canvas view. Existing positions and assignments stay in place. Storage dimensions, stacking and rack fit use the warehouse settings. Save layout retains the additions and their storage choices for reopening, 3D and layout exports; Undo removes the addition. Parts already drawn but invalid must be corrected rather than added again. Unknown quantities require input review.
 
 In the layout drawing, scroll the mouse wheel up to zoom in and down to zoom out around the cursor. The wheel operates on the drawing without scrolling the dialog. Touch pinch zoom remains available; Fit returns to the full drawing.
+
+## Local login screen
+
+LogEn opens with a username/password screen. The question-mark button displays the configured hint on hover, keyboard focus or tap. Log out locks the page again without deleting saved warehouse projects. The workspace initializes only after successful sign-in; passwords are verified with a salted PBKDF2 verifier and are not saved in browser storage.
+
+This is a client-side access gate for the static/offline application, not server-backed authentication or encryption of warehouse data. A person who controls the downloaded page can bypass it. Real account protection requires an authentication backend or access-controlled hosting. Keep the password private; do not add it to the repository. Browser checks accept the credential through the temporary LOGEN_LOGIN_PASSWORD environment variable.

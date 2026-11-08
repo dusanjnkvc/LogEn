@@ -5,7 +5,7 @@ let browser;
  fs.mkdirSync('.tooling/responsive',{recursive:true});
  for(const [width,height] of [[390,844],[768,1024],[1024,768],[1440,1000]]){
   const context=await browser.newContext({viewport:{width,height},hasTouch:width<=1024,deviceScaleFactor:1});const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto('file:///'+path.resolve('LogEn.html').replaceAll('\\','/'));await page.waitForSelector('#main h1');
+  await page.goto('file:///'+path.resolve('LogEn.html').replaceAll('\\','/'));if(await page.locator('#login-screen').count()){assert(process.env.LOGEN_LOGIN_PASSWORD,'Set LOGEN_LOGIN_PASSWORD for the login-protected app.');await page.locator('[name=username]').fill('DusanJankovic');await page.locator('[name=password]').fill(process.env.LOGEN_LOGIN_PASSWORD);await page.locator('.login-submit').click();}await page.waitForSelector('#main h1');
   async function check(label){const size=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));assert(size.scroll<=size.width+1,`${width} ${label}: page overflow ${size.scroll}`);}
   await check('overview');await page.screenshot({path:`.tooling/responsive/${width}-overview.png`,fullPage:true});
   for(const view of ['parts','implementation','projects']){await page.locator(`[data-view="${view}"]`).click();await check(view);}
