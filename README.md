@@ -4,11 +4,15 @@ An offline yellow-and-black warehouse calculator with the supplied warehouse log
 
 ## Open the app
 
-Use the [hosted calculator](https://dusanjnkvc.github.io/LogEn/) in Chrome, or open **LogEn.html** directly for fully offline use. After an update, refresh the open tab. The HTML file embeds its code, logo and Excel library; no launcher, server, installation or account is required for local use.
+Use the [online app](https://dusanjnkvc.github.io/LogEn/) to sign in with your email and access private projects across devices. Supabase Auth verifies accounts; database and private-file policies isolate each authenticated user. The public repository contains application code and synthetic examples, never account passwords or warehouse data.
 
-The public GitHub repository contains the application and synthetic examples. Imported workbooks and saved warehouse projects remain in your browser. The hosted address and local HTML use separate browser storage; use **Projects → Download backup** and **Restore backup** to transfer your projects between them. To reopen without internet, keep the downloaded **LogEn.html** file.
+**LogEn.html** is the separate offline edition. Its existing local username gate does not provide server security. Its projects stay in that browser profile and do not automatically sync. The cloud edition requires an internet connection and a private account; it never accepts the offline password verifier.
 
-GitHub Pages serves the generated `docs/index.html` from the `main` branch. Run `python tools/build_pages.py` after rebuilding the offline file to refresh the published copy.
+Online saves retain a per-account browser cache and unsynced recovery copy. Conflicting edits from another device stop cloud saving rather than overwrite that device. Download a workspace backup when a save warning appears. Unsynced work blocks reopening until you save its recovery download and explicitly choose the cloud copy.
+
+The original owner sees **Import projects from this device** when that browser origin contains legacy data. It downloads a ZIP containing workspace JSON, all matching drawing snapshots, original files and metadata before asking to import. Existing device data remains unchanged. Import is limited to an empty/example cloud account. A different account never inherits the legacy workspace. Other browser origins/profiles and the offline HTML have separate storage; a workspace JSON export alone does not include drawings.
+
+Build the offline edition with `python tools/build_offline.py`, then run `node tools/build_cloud.cjs` (or `python tools/build_pages.py`) to generate the separate authenticated `docs/index.html` for GitHub Pages. Do not copy the offline file over the online build.
 
 ## Eight-column input template
 
@@ -51,7 +55,7 @@ The Chrome/offline implementation is the delivered app. Flutter source under lib
 
 ## Saved data and project management
 
-Chrome stores projects for this file in the current browser profile. Keep the HTML at the same location. Use **Projects → Download backup** before moving the file, changing devices or clearing browser data. JSON backups include active and deleted projects. A save warning means the current changes exist only in memory.
+The offline edition stores projects in the current browser profile; the online edition synchronizes them to the signed-in account. Keep the HTML at the same location. Use **Projects → Download backup** before moving the file, changing devices or clearing browser data. JSON backups include active and deleted projects. A save warning means the current changes exist only in memory.
 
 **Projects → Delete project** asks for confirmation. Deleted projects keep their inventory and settings in **Deleted projects**, where **Restore project** recovers them. Deleting the final active project leaves an empty warehouse ready for use.
 

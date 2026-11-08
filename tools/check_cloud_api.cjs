@@ -1,0 +1,14 @@
+const apiFetch=(url,options={})=>fetch(url,{...options,signal:AbortSignal.timeout(15000)});
+const assert=require('node:assert/strict');const url='https://butukbeoxxgyoaluctdi.supabase.co',apikey='sb_publishable_AZkbG4MT5-T_lEiSSPCv-A_b3aheVvl';
+(async()=>{const auth=await apiFetch(url+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey,'Content-Type':'application/json'},body:JSON.stringify({email:process.env.LOGEN_CLOUD_EMAIL,password:process.env.LOGEN_LOGIN_PASSWORD})});assert(auth.ok,'Cloud authentication failed');const session=await auth.json(),headers={apikey,Authorization:'Bearer '+session.access_token},key='integration-'+Date.now(),filePath=session.user.id+'/'+key,recordKey=key;
+ try{
+  console.log('Checking private file upload…');
+  let r=await apiFetch(url+'/storage/v1/object/logen-private/'+filePath,{method:'POST',headers:{...headers,'Content-Type':'application/octet-stream','x-upsert':'true'},body:'private drawing'});assert(r.ok,await r.text());
+  r=await apiFetch(url+'/storage/v1/object/authenticated/logen-private/'+filePath,{headers});assert(r.ok);assert.equal(await r.text(),'private drawing');
+  r=await apiFetch(url+'/storage/v1/object/logen-private/'+filePath,{method:'POST',headers:{...headers,'Content-Type':'application/octet-stream','x-upsert':'true'},body:'updated drawing'});assert(r.ok,await r.text());
+  r=await apiFetch(url+'/storage/v1/object/authenticated/logen-private/'+filePath,{headers:{apikey}});assert(!r.ok,'Anonymous drawing download accepted');
+  r=await apiFetch(url+'/storage/v1/object/logen-private/00000000-0000-0000-0000-000000000000/'+key,{method:'POST',headers:{...headers,'Content-Type':'application/octet-stream'},body:'forged'});assert(!r.ok,'Cross-account file upload accepted');
+  console.log('Private file operations passed; checking record conflicts…');
+  const save=revision=>apiFetch(url+'/rest/v1/rpc/save_logen_record',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({p_key:recordKey,p_payload:{test:true},p_revision:revision})});r=await save(0);assert(r.ok,await r.text());r=await save(0);assert.equal((await r.json()).code,'PT409');console.log('Live API: private upload/download/upsert, anonymous denial, forged-owner denial and revision conflict passed');
+ }finally{const f=await apiFetch(url+'/storage/v1/object/logen-private',{method:'DELETE',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({prefixes:[filePath]})});assert(f.ok,'Test file cleanup failed');const r=await apiFetch(url+'/rest/v1/logen_records?record_key=eq.'+encodeURIComponent(recordKey),{method:'DELETE',headers});assert(r.ok,'Test record cleanup failed');await apiFetch(url+'/auth/v1/logout',{method:'POST',headers});}
+})().catch(e=>{console.error(e.message);process.exitCode=1});
