@@ -134,3 +134,9 @@ Ground continuation beside racks uses the configured Floor pallet clearance betw
 Fix Errors, available in the validation panel and manual toolbar, attempts bounded local spacing repairs. It can move blocks or restore clearances between ground boxes inside a block. Object sizes, quantities and assignments are retained, and existing infrastructure stays fixed. Each accepted candidate must improve the validation result without adding a new mandatory violation. The complete operation is one Undo step. Unresolved errors remain visible, and the corrected layout is saved only with Save layout.
 
 Use Move row and drag any ground box to move the single line running through it. Older saved grids that labelled multiple side-by-side columns as one row are separated by their physical frontage position when selected. Box offsets, dimensions and assignments are preserved; adjacent lines stay in place.
+
+## Phone and tablet use
+
+The workspace reflows for portrait and landscape screens. Navigation, inventory tables and the manual-edit toolbar scroll horizontally within their own areas. Touch controls use larger tap targets and form text. Drawing setup is collapsed initially on phones/tablets; use Drawing setup to open it. In the designer, drag a row with one finger, drag empty space (or use Pan) to pan, and use two fingers to zoom and pan without moving storage. Full screen includes a viewport-filling fallback where native fullscreen is unavailable. Save layout retains edits as usual.
+
+`node tools/check_responsive.cjs` verifies representative phone, tablet and desktop viewports with an isolated headless Edge session, including pinch gestures, fallback fullscreen, forms, tables and 3D. Development dependencies are Playwright and jsdom under `.tooling/qa`; no runtime dependency is added.
