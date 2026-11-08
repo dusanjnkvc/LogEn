@@ -140,3 +140,7 @@ Use Move row and drag any ground box to move the single line running through it.
 The workspace reflows for portrait and landscape screens. Navigation, inventory tables and the manual-edit toolbar scroll horizontally within their own areas. Touch controls use larger tap targets and form text. Drawing setup is collapsed initially on phones/tablets; use Drawing setup to open it. In the designer, drag a row with one finger, drag empty space (or use Pan) to pan, and use two fingers to zoom and pan without moving storage. Full screen includes a viewport-filling fallback where native fullscreen is unavailable. Save layout retains edits as usual.
 
 `node tools/check_responsive.cjs` verifies representative phone, tablet and desktop viewports with an isolated headless Edge session, including pinch gestures, fallback fullscreen, forms, tables and 3D. Development dependencies are Playwright and jsdom under `.tooling/qa`; no runtime dependency is added.
+
+## Place parts that did not fit
+
+Warehouse Designer → Add unplaced parts lists each Part Number and the pallet quantity not yet drawn. Choose Racks or Ground storage, then Add to layout. The new storage is a movable draft in the current canvas view. Existing positions and assignments stay in place. Storage dimensions, stacking and rack fit use the warehouse settings. Save layout retains the additions and their storage choices for reopening, 3D and layout exports; Undo removes the addition. Parts already drawn but invalid must be corrected rather than added again. Unknown quantities require input review.

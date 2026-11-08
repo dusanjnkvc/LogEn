@@ -103,6 +103,30 @@
   for(const e of result.validationErrors||[]){const groups=layout.groups.filter(g=>g.objects.some(o=>e.pn?.includes(o.pn||o.typeName)));if(groups.length)groups.forEach(g=>add(g.id,e.message));else errors.push(e);}
   layout.manualValidation={errors,warnings};layout.validationErrors=errors;layout.accessValid=errors.length===0;layout.complete=layout.complete&&layout.accessValid;return layout.manualValidation;
  }
+ function placedQuantities(layout){const counts=new Map();for(const g of layout.groups)for(const o of g.objects){if(o.kind==='rack')for(const a of o.allocations||[]){const n=counts.get(a.pn)||{rack:0,ground:0};n.rack+=a.quantity||1;counts.set(a.pn,n);}else if(!o.manualEmpty){const n=counts.get(o.pn)||{rack:0,ground:0};n.ground+=o.quantity||0;counts.set(o.pn,n);}}return counts;}
+ function missingParts(layout,plan){const counts=placedQuantities(layout);return plan.rows.map(r=>{const n=counts.get(r.input.partNumber)||{rack:0,ground:0},placed=n.rack+n.ground;return {pn:r.input.partNumber,required:r.required,placed,missing:Number.isSafeInteger(r.required)?Math.max(0,r.required-placed):null};}).filter(r=>r.missing===null||r.missing>0);}
+ function placementPlan(layout,plan,settings){if(!layout.manualStorageTransfers||plan._manualStorageAdjusted)return plan;return {...plan,_manualStorageAdjusted:true,rows:plan.rows.map(r=>{const t=layout.manualStorageTransfers[r.input.partNumber];if(!t)return r;const groundPallets=(r.groundPallets||0)+t.ground,rackPallets=(r.rackPallets||0)+t.rack,check=scope.LogEnDomain.calculatePart(r.input,settings,r.required);return {...r,rackPallets,groundPallets,ground:groundPallets?scope.LogEnDomain.calculatePart(r.input,settings,groundPallets).floor:null,errors:check.isPlanningValid?[]:r.errors};})};}
+ function addMissing(layout,plan,settings,pn,storage,point){
+  if(!['rack','ground'].includes(storage))throw new Error('Choose Racks or Ground storage.');
+  const row=plan.rows.find(r=>r.input.partNumber===pn),missing=missingParts(layout,plan).find(r=>r.pn===pn);if(!row||!missing?.missing)throw new Error('No additional known pallet quantity is available for this part. Correct its inputs or existing layout errors first.');
+  const quantity=missing.missing,D=scope.LogEnDomain,synthetic={...row.input,qtyBox:1,qtyOnPallet:1,consumptionPerShift:quantity,doh:1},localSettings={...settings,shiftsPerDay:1,coverageMode:'custom',customCoverageDays:1},residual=D.calculateImplementation([synthetic],localSettings,{greenfield:true,storageMode:storage});
+  if(!residual.available||residual.rows[0]?.errors.length||(storage==='rack'?residual.rows[0]?.rackPallets:residual.rows[0]?.groundPallets)!==quantity)throw new Error(residual.errors?.join(' ')||residual.rows[0]?.errors.join(' ')||'This part cannot use the chosen storage with the current dimensions and settings.');
+  const source=L.makeObjects(residual,settings);if(source.issues.length||!source.groups.length)throw new Error(source.issues.map(i=>i.message).join(' ')||'No storage geometry can be created.');
+  const represented=source.groups.flatMap(g=>g.objects).reduce((n,o)=>n+(o.kind==='rack'?o.allocations.length:o.quantity),0);if(represented!==quantity)throw new Error('The required pallet quantity could not be fully allocated.');
+  if(layout.groups.flatMap(g=>g.objects).length+source.groups.flatMap(g=>g.objects).length>10000)throw new Error('The layout would exceed 10,000 storage objects.');
+  const current=placementPlan(layout,plan,settings),expected=current.rows.find(r=>r.input.partNumber===pn),placed=placedQuantities(layout).get(pn)||{rack:0,ground:0},fromRack=Math.min(quantity,Math.max(0,expected.rackPallets-placed.rack)),fromGround=quantity-fromRack;
+  const transfer=layout.manualStorageTransfers?.[pn]||{rack:0,ground:0},frame=layout.env.frame||layout.groups.find(g=>g.frame)?.frame||{angle:0,sx:1,sy:1},anchor=O().toLocal(point,frame),serial=(layout.manualAdditionSerial||0)+1,groups=[];let offset=0;
+  for(const [index,original]of source.groups.entries()){const g=clone(original);g.id=`added:${serial}:${index}`;g.frame=clone(frame);g.x=anchor[0]+offset;g.y=anchor[1];g.paired=false;g.manualRow=storage==='ground';
+   for(const o of g.objects){o.id=`added:${serial}:${o.id}`;o.groundRowId=g.id;}
+   if(storage==='ground'){const c=settings.floorPalletClearance||0;g.h=Math.max(...g.objects.map(o=>o.dy+o.h))+c/2;g.groundRows=[{id:g.id,x:0,y:0,w:g.w,h:g.h,side:'front',objectIds:g.objects.map(o=>o.id)}];}
+   groups.push(g);offset+=g.w+(settings.floorPalletClearance||0);
+  }
+  // Commit only after the complete residual demand and geometry are known.
+  layout.manualStorageTransfers={...layout.manualStorageTransfers,[pn]:{rack:transfer.rack+(storage==='rack'?quantity:0)-fromRack,ground:transfer.ground+(storage==='ground'?quantity:0)-fromGround}};
+  layout.manualAdditionSerial=serial;layout.manualAddedIds=[...(layout.manualAddedIds||[]),...groups.flatMap(g=>g.objects.map(o=>o.id))];
+  layout.unplaced=layout.unplaced.map(g=>({...g,objects:g.objects.flatMap(o=>{if(o.kind!=='rack')return o.pn===pn?[]:[o];if(!o.allocations.some(a=>a.pn===pn))return [o];const allocations=o.allocations.filter(a=>a.pn!==pn);return allocations.length?[{...o,allocations,pallets:allocations.length}]:[];})})).filter(g=>g.objects.length);
+  layout.groups.push(...groups);layout.issues=layout.issues.filter(i=>i.pn!==pn);layout.manualEdited=true;const effective=placementPlan(layout,plan,settings);layout.rackRequired=effective.rows.reduce((n,r)=>n+(r.rackPallets||0),0);layout.groundRequired=effective.rows.reduce((n,r)=>n+(layout.manualStorageTransfers[r.input.partNumber]?layout.groups.flatMap(g=>g.objects).filter(o=>o.kind==='ground'&&o.pn===r.input.partNumber&&!o.manualEmpty).length:(r.ground?.positions||0)),0);return {groupIds:groups.map(g=>g.id),quantity,pn,storage};
+ }
  // Explicit repair is bounded, transactional, and validated against all current constraints.
  async function fixErrors(layout,plan,settings,geometry,onProgress=()=>{},budget=240){
   const start=clone(layout);validate(layout,plan,settings,geometry);
@@ -146,5 +170,5 @@
   validate(layout,plan,settings,geometry);return {changes,attempts,remaining:layout.manualValidation.errors.length};
  }
  function session(layout){let undo=[],redo=[];return {checkpoint(){undo.push(clone(layout));if(undo.length>50)undo.shift();redo=[];},undo(){if(!undo.length)return false;redo.push(clone(layout));replace(undo.pop());return true;},redo(){if(!redo.length)return false;undo.push(clone(layout));replace(redo.pop());return true;},get canUndo(){return !!undo.length},get canRedo(){return !!redo.length}};function replace(v){for(const k of Object.keys(layout))delete layout[k];Object.assign(layout,v);}}
- scope.LogEnManualLayout=Object.freeze({split,translate,rotate,moveAssignment,duplicate,remove,snap,validate,fixErrors,session,origin,box,clone});
+ scope.LogEnManualLayout=Object.freeze({split,translate,rotate,moveAssignment,duplicate,remove,snap,validate,placedQuantities,missingParts,placementPlan,addMissing,fixErrors,session,origin,box,clone});
 })(globalThis);

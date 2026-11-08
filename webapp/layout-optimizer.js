@@ -383,6 +383,7 @@
     return result;
   }
   function shortage(layout,plan,settings,validGroups=null,source=null){
+    plan=scope.LogEnManualLayout?.placementPlan(layout,plan,settings)||plan;
     if(layout.version===3)return scope.LogEnExistingLayout.summary(layout,plan,settings).shortage;
     const valid=validGroups||layout.groups.filter(g=>layout.version!==2||!placementError(g,layout.groups,layout.env,settings)),placed=new Set(),quantities=new Map(),areas=new Map(),represented=new Map();
     for(const g of valid)for(const o of g.objects){placed.add(o.id);if(o.kind==='rack')for(const a of o.allocations)quantities.set(a.pn,(quantities.get(a.pn)||0)+1);else quantities.set(o.pn,(quantities.get(o.pn)||0)+o.quantity);}
@@ -413,6 +414,7 @@
   }
   function validate(layout,plan,settings,source=null){
     const errors=[...layout.issues],valid=[],ids=new Set(),objectIds=new Set(),expected=new Set((source||L.makeObjects(plan,settings)).groups.flatMap(g=>g.objects.map(o=>o.id)));
+    for(const id of layout.manualAddedIds||[])expected.add(id);plan=scope.LogEnManualLayout?.placementPlan(layout,plan,settings)||plan;
     for(const g of layout.groups){let error=placementError(g,layout.groups,layout.env,settings);for(const o of g.objects){if(objectIds.has(o.id)||(!expected.has(o.id)&&!o.manualEmpty))error='Duplicate or unknown storage object.';objectIds.add(o.id);}if(ids.has(g.id)||error)errors.push({pn:g.objects.map(o=>o.pn||o.typeName).join(', '),message:error||'Duplicate block identity.'});else valid.push(g);ids.add(g.id);}
     const rack=new Map(),ground=new Map();let generatedRack=0,generatedGround=0,groundPallets=0;
     for(const g of valid)for(const o of g.objects){if(o.kind==='rack')for(const a of o.allocations){generatedRack++;rack.set(a.pn,(rack.get(a.pn)||0)+1);}else if(!o.manualEmpty){generatedGround++;groundPallets+=o.quantity;ground.set(o.pn,(ground.get(o.pn)||0)+o.quantity);}}

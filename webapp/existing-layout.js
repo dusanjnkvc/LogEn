@@ -51,6 +51,7 @@
     }));
   }
   function summary(layout,plan,settings){
+    plan=scope.LogEnManualLayout?.placementPlan(layout,plan,settings)||plan;
     const slots=layout.infrastructure.filter(v=>v.kind==='existing-rack').flatMap(v=>v.slots),ground=layout.groups.filter(g=>g.kind==='ground'),existingGround=ground.filter(g=>g.existing),newGroups=layout.groups.filter(g=>!g.existing),assigned=new Map();
     for(const g of layout.groups)for(const o of g.objects){if(o.kind==='rack')for(const a of o.allocations)assigned.set(a.pn,(assigned.get(a.pn)||0)+(a.quantity||1));else assigned.set(o.pn,(assigned.get(o.pn)||0)+o.quantity);}
     const rows=plan.rows.map(r=>{const placed=assigned.get(r.input.partNumber)||0,missing=r.required===null?null:Math.max(0,r.required-placed),target=layout.targets[r.input.partNumber]||'ground',floor=D.calculatePart(r.input,settings,missing||0).floor,rack=D.calculatePart(r.input,settings,missing||0).rack;return {pn:r.input.partNumber,required:r.required,placed,missingPallets:missing,storage:target,areaWithoutGangways:missing?(target==='rack'?rack?.withoutGangways:floor?.withoutGangways)||0:0,areaKnown:missing!==null&&(!missing||!!(target==='rack'?rack:floor)),reason:r.required===null?r.errors.join(' '):missing?'Existing storage capacity is insufficient. Additional storage positions are required.':''};});

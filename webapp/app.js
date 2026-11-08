@@ -358,6 +358,7 @@
     await drawingStore('readwrite',s=>s.put(output,p.id+':layout-output'));return output;
   }
   async function downloadLayoutBundle(p,plan,layout,output){
+    plan=LogEnManualLayout.placementPlan(layout,plan,p.settings);
     const excel=await W.layoutBytes(p,plan,layout),zip=await LogEnOutputZIP.pack([{name:output.filename+'.dwg',data:output.dwg},{name:output.filename+'_Parts.xlsx',data:excel}]);
     download(zip,output.filename+'_Output.zip','application/zip');
   }
@@ -384,7 +385,7 @@
       const file=await drawingStore('readonly',s=>s.get(p.id)),output=await layoutOutput(p,plan,settings,file,stored.sourceKey,layout,true);
       if(!output.pdf)throw new Error(output.pdfError||'The layout PDF could not be created. Try the project download again after checking the CAD connection.');
       const name=safeName(p.name),layoutName=name+(layout.complete?'_Layout':'_Partial_Layout');
-      const [list,results]=await Promise.all([W.layoutBytes(p,plan,layout),W.exportBytes(p,D.calculateProject(p.parts,settings,null))]);
+      const [list,results]=await Promise.all([W.layoutBytes(p,LogEnManualLayout.placementPlan(layout,plan,settings),layout),W.exportBytes(p,D.calculateProject(p.parts,settings,null))]);
       const zip=await LogEnOutputZIP.pack([{name:layoutName+'.dwg',data:output.dwg},{name:layoutName+'.pdf',data:output.pdf},{name:name+'_Layout_List.xlsx',data:list},{name:name+'_LogEn_Results.xlsx',data:results}]);
       download(zip,name+'_Project_Files.zip','application/zip');toast('Project files downloaded: layout DWG, layout PDF, layout list and Export Results.');
     });
