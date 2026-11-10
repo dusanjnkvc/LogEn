@@ -744,3 +744,27 @@ test('Create Layout prompts when a saved DWG reference has no file on this devic
 test('Create Layout continues directly when its DWG is already uploaded',async t=>{
  const data=workspace(),p=data.projects[0],stamp='2026-11-08';p.implementation={greenfield:true,dwg:{name:'warehouse.dwg',uploadedAt:stamp}};const ui=boot(t,data),values=new Map([[p.id,{name:'warehouse.dwg'}],[p.id+':geometry',{stamp,readerVersion:3,mode:'geometry',value:{entities:[]}}]]);projectDrawingStore(ui.w,values,[]);ui.w.structuredClone=structuredClone;let opened=0;ui.w.LogEnWarehouseGeometry={prepare:g=>g};ui.w.LogEnLayout={sourceKey:()=> 'qa-source'};ui.w.LogEnLayoutUI={open:()=>{opened++;}};ui.click('[data-view="implementation"]');ui.click('[data-action="create-physical-layout"]');await until(()=>opened===1,'existing drawing layout');assert(!ui.w.document.querySelector('dialog'));assert.deepEqual(ui.errors,[]);
 });
+
+test('Layer Rules guide opens beside Create Layout without changing project or generating layout',async t=>{
+ const ui=boot(t),before=ui.state();ui.click('[data-view="implementation"]');
+ const create=ui.$('[data-action="create-physical-layout"]'),rules=ui.$('[data-action="layer-rules"]');
+ assert.equal(create.nextElementSibling,rules);
+ let generated=0;ui.w.LogEnLayoutUI={open(){generated++;}};
+ let copied='';Object.defineProperty(ui.w.navigator,'clipboard',{configurable:true,value:{writeText:async text=>{copied=text;}}});
+ rules.focus();rules.click();const dialog=ui.$('.layer-rules-dialog');
+ assert(dialog.open);assert.equal(dialog.querySelectorAll('tbody tr').length,11);
+ assert.deepEqual([...dialog.querySelectorAll('tbody tr')].map(r=>Number(r.children[1].textContent)),[1,1,2,3,4,5,6,7,7,8,30]);
+ assert.equal(dialog.querySelectorAll('.layer-color-swatch').length,11);
+ for(const title of ['Existing Rack Detection','Existing Ground Storage Detection','What does AutoCAD Layer 0 mean?','Warehouse Safety Rules'])assert(dialog.textContent.includes(title));
+ assert.match(dialog.textContent,/Illustrative example — not a detected result/);assert.match(dialog.textContent,/does not enforce an unconfirmed-capacity state/);assert.match(dialog.textContent,/Layer 0 geometry defaults to usable area/);
+ ui.click('[data-layer-copy]');await until(()=>ui.$('[data-layer-copy-status]').textContent.includes('copied'),'clipboard');
+ assert.match(copied,/Blue \| 5 \| EXISTING_RACKS/);assert.match(copied,/Current detection and export behavior/);assert.match(copied,/Warehouse Safety Rules/);
+ ui.click('[data-layer-close]');assert.equal(ui.w.document.querySelector('.layer-rules-dialog'),null);assert.equal(ui.w.document.activeElement,rules);
+ rules.click();ui.click('.layer-rules-dialog .dialog-actions [data-layer-close]');assert.equal(ui.w.document.querySelector('.layer-rules-dialog'),null);
+ rules.click();ui.$('.layer-rules-dialog').dispatchEvent(new ui.w.Event('cancel',{cancelable:true}));assert.equal(ui.w.document.querySelector('.layer-rules-dialog'),null);
+ rules.click();const backdrop=ui.$('.layer-rules-dialog');backdrop.getBoundingClientRect=()=>({left:20,right:500,top:20,bottom:500});backdrop.dispatchEvent(new ui.w.MouseEvent('click',{clientX:100,clientY:100}));assert(backdrop.isConnected);backdrop.dispatchEvent(new ui.w.MouseEvent('click',{clientX:10,clientY:10}));assert(!backdrop.isConnected);
+ rules.click();Object.defineProperty(ui.w.navigator,'clipboard',{value:undefined,configurable:true});
+ ui.w.document.execCommand=command=>{assert.equal(command,'copy');assert.match(ui.w.document.querySelector('.layer-rules-dialog textarea').value,/WAREHOUSE_BOUNDARY/);return true;};
+ ui.click('[data-layer-copy]');await until(()=>ui.$('[data-layer-copy-status]').textContent.includes('copied'),'fallback clipboard');assert.equal(ui.w.document.querySelector('.layer-rules-dialog textarea'),null);
+ assert.equal(generated,0);assert.deepEqual(ui.state(),before);assert.deepEqual(ui.errors,[]);
+});
