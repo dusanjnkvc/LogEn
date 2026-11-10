@@ -9,9 +9,9 @@
  document.querySelector('#login-screen .muted').textContent='Sign in to your private account. Your projects and drawings follow you across devices.';
  document.getElementById('password-hint-button').remove();document.getElementById('password-hint').remove();
  document.querySelector('.offline-badge').textContent='Private cloud account';
- const recovery=document.createElement('button');recovery.type='button';recovery.className='btn btn-secondary';recovery.textContent='Download unsynced recovery copy';recovery.hidden=true;form.append(recovery);
+ const recovery=document.createElement('button');recovery.type='button';recovery.className='btn btn-secondary';recovery.textContent='Download unsynced recovery copy';recovery.hidden=true;recovery.style.display='none';form.append(recovery);
  let workspace;
- recovery.onclick=()=>{if(!workspace)return;const raw=localStorage.getItem(workspace.key+'.pending');if(!raw)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([raw],{type:'application/json'}));a.download='LogEn_Unsynced_Recovery.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);if(confirm('After saving the recovery download, continue with the latest cloud projects? A second recovery copy will stay on this device.')){localStorage.setItem(workspace.key+'.recovery.'+Date.now(),raw);localStorage.removeItem(workspace.key+'.pending');error.textContent='Recovery copy retained. Enter your password to reopen the cloud projects.';recovery.hidden=true;}};
+ recovery.onclick=()=>{if(!workspace)return;const raw=localStorage.getItem(workspace.key+'.pending');if(!raw)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([raw],{type:'application/json'}));a.download='LogEn_Unsynced_Recovery.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);if(confirm('After saving the recovery download, continue with the latest cloud projects? A second recovery copy will stay on this device.')){localStorage.setItem(workspace.key+'.recovery.'+Date.now(),raw);localStorage.removeItem(workspace.key+'.pending');error.textContent='Recovery copy retained. Enter your password to reopen the cloud projects.';recovery.hidden=true;recovery.style.display='none';}};
  form.addEventListener('submit',async event=>{
   event.preventDefault();if(button.disabled)return;button.disabled=true;error.textContent='';button.textContent='Signing in…';
   try{
@@ -41,7 +41,7 @@
      finally{importButton.disabled=false;}
     };
    }
-  }catch(e){error.textContent=e.message;form.elements.password.value='';recovery.hidden=!workspace?.error;}
+  }catch(e){error.textContent=e.message;form.elements.password.value='';recovery.hidden=!workspace?.error;recovery.style.display=recovery.hidden?'none':'';}
   finally{button.disabled=false;button.textContent='Log in';}
  });
  document.getElementById('logout-button').addEventListener('click',async()=>{
