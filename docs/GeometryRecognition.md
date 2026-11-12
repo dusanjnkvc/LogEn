@@ -105,3 +105,8 @@ When a long rack run does not fit, the search tries smaller bays and back-to-bac
 Storage-region edges are no longer presumed to be physical building walls. An explicit building boundary, or supported outer wall contours containing the usable regions, defines the building. In 3D, usable-region boundaries remain floor geometry. Under the user's drawing convention, the unqualified layer `Gangway` / `Gangways` defaults to pedestrian floor space; explicitly named forklift routes and saved manual classifications still use their selected roles. Approved crossing review remains separate.
 
 Validation for this correction passed the 29 geometry checks, 14 targeted layout/viewer/upload/routing regression scripts and the new `webapp/storage-clearance.test.cjs` checks (independent buffers, UI persistence, lower-region rack recovery, pillar breaks and no pedestrian divider wall). The current customer workspace was checked locally without changing its saved projects or publishing its inventory/drawing. Demand and footprint calculation files remain unchanged. Regenerate an old layout to apply the new geometry rules and clearances.
+
+
+## Larger browser CAD drawings
+
+The local browser reader supports up to 100,000 interpreted CAD objects and 2,000,000 geometry points, with a 120-second worker timeout. These limits include expanded block contents. Exceeding a limit rejects the entire import; it never silently returns a truncated drawing. Supported DWG and DXF files continue to be read locally without the AutoCAD helper. Detailed curves and blocks can use more memory than plain lines. This increase does not add support for unsupported CAD entity types. Geometry caches from reader version 3 are refreshed on the next import/preview.

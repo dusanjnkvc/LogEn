@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const esbuild=require('../experiments/browser-cad/node_modules/esbuild');
+esbuild.buildSync({entryPoints:[path.join(__dirname,'cad-reader.entry.mjs')],nodePaths:[path.resolve('experiments/browser-cad/node_modules')],bundle:true,platform:'node',format:'cjs',outfile:'.tooling/cad-reader-large-test.cjs',logLevel:'silent'});
+const {readGeometry,CAD_READER_LIMITS}=require('../.tooling/cad-reader-large-test.cjs');
+const header='0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1032\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n';
+function drawing(n,nested=false,circles=false){const shapes=Array.from({length:n},(_,i)=>circles?'0\nCIRCLE\n5\n'+(i+256).toString(16)+'\n8\nPillars\n10\n'+i*3000000+'\n20\n0\n40\n1000000\n':'0\nLINE\n5\n'+(i+256).toString(16)+'\n8\nReference\n10\n'+i*3+'\n20\n0\n11\n'+(i*3+1)+'\n21\n1\n').join('');return Buffer.from(header+(nested?'0\nSECTION\n2\nBLOCKS\n0\nBLOCK\n5\n10\n2\nLARGE\n70\n0\n10\n0\n20\n0\n30\n0\n'+shapes+'0\nENDBLK\n5\n11\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nINSERT\n5\n30\n8\nReference\n2\nLARGE\n10\n0\n20\n0\n41\n1\n42\n1\n':('0\nSECTION\n2\nENTITIES\n'+shapes))+'0\nENDSEC\n0\nEOF\n');}
+const read=b=>readGeometry(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength),'large.dxf');
+const start=Date.now(),large=read(drawing(25001));assert.equal(large.entities.length,25001);assert.equal(large.unreadableEntities,0);assert.equal(large.version,4);
+const full=read(drawing(CAD_READER_LIMITS.maxEntities));assert.equal(full.entities.length,100000);assert.deepEqual(full.entities.at(-1).points,[[299997,0],[299998,1]]);
+assert.throws(()=>read(drawing(100001)),/100,000 interpreted CAD objects/);
+assert.throws(()=>read(drawing(100001,true)),/100,000 interpreted CAD objects/,'Nested block limits must fail the whole import, never return truncated geometry');
+assert.throws(()=>read(drawing(700,false,true)),/2,000,000 interpreted geometry points/);
+require('./layout');assert.deepEqual(LogEnLayout.bounds(Array.from({length:250000},(_,i)=>[i,-i])),{minX:0,minY:-249999,maxX:249999,maxY:-0});
+// Exercise the shipped browser worker bridge without a browser or network.
+const {Worker:Thread}=require('node:worker_threads');let workerSource,timerMs;
+class BrowserWorker{constructor(){this.thread=new Thread('const {parentPort}=require("node:worker_threads");global.self={postMessage:v=>parentPort.postMessage(v)};'+workerSource+';parentPort.on("message",data=>self.onmessage({data}));',{eval:true});this.thread.on('message',data=>this.onmessage?.({data}));this.thread.on('error',error=>this.onerror?.(error));}postMessage(v,transfer){this.thread.postMessage(v,transfer);}terminate(){this.thread.terminate();}}
+const context={Blob:class{constructor(chunks){workerSource=chunks.join('');}},URL:{createObjectURL:()=> 'blob:local-test',revokeObjectURL:()=>{}},Worker:BrowserWorker,setTimeout:(fn,ms)=>{timerMs=ms;return setTimeout(fn,ms);},clearTimeout};context.globalThis=context;vm.runInNewContext(fs.readFileSync('webapp/vendor/cad-reader.min.js','utf8'),context);
+(async()=>{const bytes=drawing(25001),geometry=await context.LogEnCADReader.read({name:'large.dxf',size:bytes.length,arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)});assert.equal(geometry.entities.length,25001);assert.equal(timerMs,120000);console.log('8 large-CAD checks passed: >20k import, 100k boundary, direct and nested over-limit failures, point budget, large bounds, real shipped worker and 120-second timeout ('+((Date.now()-start)/1000).toFixed(2)+'s).');})().catch(e=>{console.error(e);process.exitCode=1;});

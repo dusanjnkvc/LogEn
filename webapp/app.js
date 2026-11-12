@@ -320,11 +320,11 @@
       if(!plan.available)throw new Error(plan.errors.join(' '));
       const cached=await drawingStore('readonly',s=>s.get(p.id+':geometry'));
       const geometryMode=p.implementation.greenfield?'geometry':'geometry-existing';
-      let geometry;if(preferHelper)geometry=await cadRequest(geometryMode,file,'application/octet-stream');else if(cached?.stamp===stamp&&cached.readerVersion===3&&(cached.mode||'geometry')===geometryMode)geometry=cached.value;else{try{geometry=await LogEnCADReader.read(file);}catch(error){if(!await modal({title:'Browser CAD reader could not read this drawing',body:'<p>'+escape(error.message)+'</p><p>Try the optional local AutoCAD fallback on Windows?</p>',confirm:'Use Windows fallback',cancel:'Close'}))return;geometry=await cadRequest(geometryMode,file,'application/octet-stream');}}
+      let geometry;if(preferHelper)geometry=await cadRequest(geometryMode,file,'application/octet-stream');else if(cached?.stamp===stamp&&cached.readerVersion===4&&(cached.mode||'geometry')===geometryMode)geometry=cached.value;else{try{geometry=await LogEnCADReader.read(file);}catch(error){if(!await modal({title:'Browser CAD reader could not read this drawing',body:'<p>'+escape(error.message)+'</p><p>Try the optional local AutoCAD fallback on Windows?</p>',confirm:'Use Windows fallback',cancel:'Close'}))return;geometry=await cadRequest(geometryMode,file,'application/octet-stream');}}
       geometry=LogEnWarehouseGeometry.prepare(geometry);
       if(!Array.isArray(geometry.entities))throw new Error('The helper did not return drawing geometry. Update and restart the AutoCAD helper.');
       if(p.implementation?.dwg?.uploadedAt!==stamp)throw new Error('The DWG changed. Open Create Layout again.');
-      await drawingStore('readwrite',s=>s.put({stamp,readerVersion:3,mode:geometryMode,value:geometry},p.id+':geometry'));
+      await drawingStore('readwrite',s=>s.put({stamp,readerVersion:4,mode:geometryMode,value:geometry},p.id+':geometry'));
       const sourceKey=LogEnLayout.sourceKey(plan,settings,p.implementation,stamp),stored=await drawingStore('readonly',s=>s.get(physicalLayoutStorageKey(p)));
       const saved=stored?.sourceKey===sourceKey?stored.layout:null;
       if(stored?.layout&&!saved)toast('Inventory, settings or the DWG changed. Generate an updated layout from the Parts List.');
@@ -408,7 +408,7 @@
       const p=project();if(globalThis.LogEnCloud){await drawingStore('readonly',store=>store.get(p.id));await drawingStore('readonly',store=>store.get(p.id+':geometry'));}await drawingStore('readwrite',store=>store.put(file,p.id));
       const implementation={...p.implementation,allowNewStorageConstruction:false,pdf:null,layoutOptions:null,greenfieldLayoutOptions:null,existingLayoutOptions:null,dwg:{name:file.name,size:file.size,uploadedAt:new Date().toISOString()}};
       p.implementation=implementation;p.updatedAt=new Date().toISOString();save();
-      try{const raw=await LogEnCADReader.read(file),geometry=LogEnWarehouseGeometry.prepare(raw),mode=p.implementation.greenfield?'geometry':'geometry-existing';await drawingStore('readwrite',s=>s.put({stamp:implementation.dwg.uploadedAt,readerVersion:3,mode,value:geometry},p.id+':geometry'));parsed=true;}catch(error){toast('Original drawing saved. Browser analysis needs review: '+error.message,true);}
+      try{const raw=await LogEnCADReader.read(file),geometry=LogEnWarehouseGeometry.prepare(raw),mode=p.implementation.greenfield?'geometry':'geometry-existing';await drawingStore('readwrite',s=>s.put({stamp:implementation.dwg.uploadedAt,readerVersion:4,mode,value:geometry},p.id+':geometry'));parsed=true;}catch(error){toast('Original drawing saved. Browser analysis needs review: '+error.message,true);}
       render();if(parsed)toast('Drawing analyzed locally. Review detected regions, objects and access roles.');
     });if(parsed&&implementationPlan().available)await createPhysicalLayout();
   }

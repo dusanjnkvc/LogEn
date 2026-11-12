@@ -11,7 +11,7 @@ async function upload(name,fail=false){
  const input=w.document.getElementById('dwg-input'),file={name,size:40,slice:()=>({text:async()=>name.endsWith('.dwg')?'AC1032':'0\nSECT'})};Object.defineProperty(input,'files',{value:[file]});input.dispatchEvent(new w.Event('change'));
  const end=Date.now()+5000;while(!values.get('qa')||reads===0||(!fail&&!opened)){if(Date.now()>end)throw Error('Upload/automatic preview timed out');await new Promise(r=>setTimeout(r,20));}
  await new Promise(r=>setTimeout(r,100));assert.equal(values.get('qa'),file);assert.equal(reads,1,'Cached geometry should be reused by the automatic preview');const state=JSON.parse(w.localStorage.getItem('logen.offline.workspace.v1'));assert.equal(state.projects[0].implementation.allowNewStorageConstruction,false);assert.equal(state.projects[0].parts[0].partNumber,part.partNumber);
- if(fail){assert.equal(opened,null);assert.equal(values.has('qa:geometry'),false);}else{assert(opened.geometry.entities.some(e=>e.id==='detected:regions'));assert.equal(values.get('qa:geometry').readerVersion,3);}
+ if(fail){assert.equal(opened,null);assert.equal(values.has('qa:geometry'),false);}else{assert(opened.geometry.entities.some(e=>e.id==='detected:regions'));assert.equal(values.get('qa:geometry').readerVersion,4);}
  dom.window.close();
 }
 (async()=>{await upload('warehouse.dwg');await upload('warehouse.dxf');await upload('unsupported.dwg',true);console.log('3 upload integration checks passed: DWG, DXF, failed analysis retains original; automatic preview/cache and construction reset verified.');})().catch(e=>{console.error(e);process.exitCode=1;});
