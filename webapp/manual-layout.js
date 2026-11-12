@@ -35,7 +35,7 @@
   const oldHeight=g.h;g.x+=g.rotated?oldHeight-maxY:minX;g.y+=g.rotated?minX:minY;g.w=maxX-minX;g.h=maxY-minY;for(const remaining of g.objects){remaining.dx-=minX;remaining.dy-=minY;}delete g.groundRows;
   layout.groups.push(n);return n.id;
  }
- function translate(layout,ids,dx,dy){for(const g of layout.groups.filter(g=>ids.includes(g.id)&&!g.existing)){const p=origin(g),v=g.frame?O().toLocal([p[0]+dx,p[1]+dy],g.frame):[p[0]+dx,p[1]+dy];g.x=v[0];g.y=v[1];}layout.manualEdited=true;}
+ function translate(layout,ids,dx,dy){for(const g of layout.groups.filter(g=>ids.includes(g.id)&&!g.existing)){const p=origin(g),v=g.frame?O().toLocal([p[0]+dx,p[1]+dy],g.frame):[p[0]+dx,p[1]+dy];if(g.wallSide&&Math.abs((g.wallSide==='left'||g.wallSide==='right')?v[0]-g.x:v[1]-g.y)>.11)g.wallSide=null;g.x=v[0];g.y=v[1];}layout.manualEdited=true;}
  function rotate(layout,ids){for(const g of layout.groups.filter(g=>ids.includes(g.id)&&!g.existing)){
   g.rotated=!g.rotated;g.wallSide=null;
  }layout.manualEdited=true;}
@@ -56,7 +56,7 @@
    edgeTargets.minX.push(a.minX);edgeTargets.maxX.push(a.maxX);edgeTargets.minY.push(a.minY);edgeTargets.maxY.push(a.maxY);
   }
   for(const zone of (moving.some(v=>v.kind==='ground')?[]:[...(layout.clearances||[]),...(layout.aisles||[])])){const pts=zone.points;if(pts){const a=L.bounds(pts);xs.push(a.minX,a.maxX);ys.push(a.minY,a.maxY);}}
-  const eb=layout.env.box,margin=layout.options.allowWallStorage?(layout.options.wallClearance||0):g;
+  const eb=layout.env.box,margin=layout.options.allowWallStorage&&moving.every(v=>v.wallSide)?(layout.options.wallClearance||0):Math.max(g,layout.options.wallClearance||0);
   if(eb){const p=layout.env.frame?O().toWorld([eb.minX+margin,eb.minY+margin],layout.env.frame):[eb.minX+margin,eb.minY+margin],q=layout.env.frame?O().toWorld([eb.maxX-margin,eb.maxY-margin],layout.env.frame):[eb.maxX-margin,eb.maxY-margin];xs.push(p[0],q[0]);ys.push(p[1],q[1]);}
   const nearest=(targets,edges)=>{let best=null;for(const target of targets)for(const edge of edges){const delta=target-edge;if(Math.abs(delta)<=tolerance&&(!best||Math.abs(delta)<Math.abs(best.delta)))best={delta,target};}return best;};
   const choose=(a,b)=>!a?b:!b?a:Math.abs(a.delta)<Math.abs(b.delta)?a:b;
@@ -66,6 +66,11 @@
   return {dx,dy,guides};
  }
  function validate(layout,plan,settings,geometry){
+  // Re-check saved wall attachments too: older manual moves retained wallSide after leaving the wall.
+  for(const g of layout.groups.filter(g=>g.kind==='ground'&&g.manualRow&&g.wallSide&&!g.existing)){
+   const e=layout.env,b=e.wallBox||e.box;if(!b)continue;const r={x:g.x,y:g.y,w:g.rotated?g.h:g.w,h:g.rotated?g.w:g.h},c=layout.options.wallClearance||0,max=c+(e.analysis?(e.optionsObstacleClearance||0):0),distance=g.wallSide==='left'?r.x-b.minX:g.wallSide==='right'?b.maxX-r.x-r.w:g.wallSide==='bottom'?r.y-b.minY:b.maxY-r.y-r.h;
+   if(!layout.options.allowWallStorage||distance<c-.11||distance>max+.11){g.wallSide=null;layout.manualEdited=true;}
+  }
   const result=L.validate(layout,plan,settings);Object.assign(layout,result);
   const errors=[],warnings=[],add=(groupId,message,details={})=>errors.push({groupId,pn:groupId,message,...details});
   const objects=layout.groups.flatMap(g=>L.placedObjects(g).map(o=>({g,o,b:L.bounds(o.points||L.corners(o))})));

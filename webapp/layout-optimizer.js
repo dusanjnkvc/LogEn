@@ -220,8 +220,13 @@
       if(start>=-E&&start<=clearance+E)joins.start=true;if(end>=-E&&end<=clearance+E)joins.end=true;
     }return joins;
   }
+  function rowEndAccess(g,width){const r=groupRect(g);return g.rotated?[{end:'start',x:r.x,y:r.y-width,w:r.w,h:width},{end:'end',x:r.x,y:r.y+r.h,w:r.w,h:width}]:[{end:'start',x:r.x-width,y:r.y,w:width,h:r.h},{end:'end',x:r.x+r.w,y:r.y,w:width,h:r.h}];}
+  function terminalAccess(g,placed,env,settings){
+    if(g.kind!=='ground'||!g.manualRow||g.wallSide)return [];
+    const joins=rowJoins(g,placed,settings.floorPalletClearance||0);return rowEndAccess(g,settings.gangwayWidth).filter(a=>!joins[a.end]);
+  }
   function placementAccess(g,placed,env,settings){
-    const list=accessFor(g,env,settings.gangwayWidth,true);if(!g.groundLane||g.wallSide)return list;
+    const list=[...accessFor(g,env,settings.gangwayWidth,true),...terminalAccess(g,placed,env,settings)];if(!g.groundLane||g.wallSide)return list;
     const r=groupRect(g),joins=rowJoins(g,placed,settings.floorPalletClearance||0);
     return list.filter(a=>g.rotated?!(joins.start&&a.y+a.h<=r.y+E||joins.end&&a.y>=r.y+r.h-E):!(joins.start&&a.x+a.w<=r.x+E||joins.end&&a.x>=r.x+r.w-E));
   }
@@ -245,6 +250,10 @@
     const r=groupRect(g),joins=rowJoins(g,placed,settings.floorPalletClearance||0),continuation=joins.start||joins.end,access=placementAccess(g,placed,env,settings);
     if(env.requireGroundPairs&&g.kind==='ground'&&!g.paired&&!g.manualRow&&!continuation){const b=env.wallBox||env.box,c=(env.wallClearance||0)+(env.analysis?(env.optionsObstacleClearance||0):0),touch=g.wallSide==='left'?Math.abs(r.x-b.minX-c)<E:g.wallSide==='right'?Math.abs(r.x+r.w-b.maxX+c)<E:g.wallSide==='bottom'?Math.abs(r.y-b.minY-c)<E:g.wallSide==='top'?Math.abs(r.y+r.h-b.maxY+c)<E:false;if(!env.allowWallStorage||!touch)return 'Single ground rows must stay against an approved wall. Interior ground storage must stay back-to-back.';}
     if(!fits(r,env.zone))return 'Storage crosses the storage zone, boundary or mandatory clearance.';
+    for(const a of terminalAccess(g,placed,env,settings))if(!fits(a,env.boundary)){
+      let low=0,high=settings.gangwayWidth;for(let i=0;i<20;i++){const width=(low+high)/2,strip=rowEndAccess(g,width).find(v=>v.end===a.end);if(fits(strip,env.boundary))low=width;else high=width;}
+      return 'Forklift clearance to the warehouse wall at the ground row end is '+Math.floor(low)+' mm; required '+settings.gangwayWidth+' mm. Move the row inward or join it to a compatible storage row.';
+    }
     if(collide(r,env.baseAccess)&&(!continuation||collide(r,env.existingAccess||[])||env.doors?.length))return 'Storage blocks a circulation route.';
     for(const a of access)if(!fits(a,env.boundary)||collide(a,env.blocked))return 'A full-width access gangway is obstructed or leaves the warehouse.';
     for(const other of placed){if(other.id===g.id)continue;const fixed=cachedPlacement(other,env,settings.gangwayWidth),rr=fixed.r;// Ground may continue beside racks; actual storage/access collisions below decide validity.
