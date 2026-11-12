@@ -1,4 +1,4 @@
-"""Build the authenticated online edition for GitHub Pages."""
+"""Build the local-only edition for GitHub Pages."""
 from pathlib import Path
 import subprocess
 root = Path(__file__).resolve().parent.parent

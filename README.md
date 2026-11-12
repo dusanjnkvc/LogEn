@@ -55,7 +55,7 @@ The Chrome/offline implementation is the delivered app. Flutter source under lib
 
 ## Saved data and project management
 
-The offline edition stores projects in the current browser profile; the online edition synchronizes them to the signed-in account. Keep the HTML at the same location. Use **Projects → Download backup** before moving the file, changing devices or clearing browser data. JSON backups include active and deleted projects. A save warning means the current changes exist only in memory.
+Both the GitHub Pages and offline editions store projects in the current browser profile. They open directly without login and make no Supabase requests. Keep the HTML at the same location. Use **Projects → Download backup** before moving the file, changing devices or clearing browser data. JSON backups include active and deleted projects. A save warning means the current changes exist only in memory.
 
 **Projects → Delete project** asks for confirmation. Deleted projects keep their inventory and settings in **Deleted projects**, where **Restore project** recovers them. Deleting the final active project leaves an empty warehouse ready for use.
 
@@ -151,8 +151,8 @@ Warehouse Designer → Add unplaced parts lists each Part Number and the pallet 
 
 In the layout drawing, scroll the mouse wheel up to zoom in and down to zoom out around the cursor. The wheel operates on the drawing without scrolling the dialog. Touch pinch zoom remains available; Fit returns to the full drawing.
 
-## Local login screen
+## Direct access and local storage
 
-LogEn opens with a username/password screen. The question-mark button displays the configured hint on hover, keyboard focus or tap. Log out locks the page again without deleting saved warehouse projects. The workspace initializes only after successful sign-in; passwords are verified with a salted PBKDF2 verifier and are not saved in browser storage.
+LogEn opens directly, without a login page. The GitHub Pages build is the same self-contained local app as LogEn.html. Inventory/settings use localStorage; drawings and layouts use IndexedDB on this browser. Download backups and project files before clearing browser data or switching devices. No Supabase service or account is required.
 
-This is a client-side access gate for the static/offline application, not server-backed authentication or encryption of warehouse data. A person who controls the downloaded page can bypass it. Real account protection requires an authentication backend or access-controlled hosting. Keep the password private; do not add it to the repository. Browser checks accept the credential through the temporary LOGEN_LOGIN_PASSWORD environment variable.
+Projects can recover this owner’s previous account workspace cache, if present on the device, without a network connection. This recovers inventory/settings only; source drawings must be re-uploaded. Existing local projects are not overwritten automatically. Cached-account copies receive separate local IDs so old drawing attachments cannot be mistaken for newer cloud versions.

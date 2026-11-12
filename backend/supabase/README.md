@@ -1,3 +1,7 @@
+# Retired Supabase integration
+
+The current LogEn application opens directly and stores data locally. These files document the previous account-based edition for reference and data recovery; they are not loaded by the deployed app.
+
 # LogEn private accounts
 
 Project: butukbeoxxgyoaluctdi (LogEn, eu-west-1). Migrations 001_private_records.sql and 002_http_conflict_response.sql were applied through the Supabase migration tool on 2026-11-08. The confirmed owner account is provisioned; no credentials are stored in the repository.

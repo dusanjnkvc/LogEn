@@ -1,11 +1,10 @@
 /* LogEn — local-only application controller. CAD jobs use the loopback helper. */
 (async () => {
   'use strict';
-  if(globalThis.LogEnAccess)await globalThis.LogEnAccess.ready;
   const D = globalThis.LogEnDomain;
   const W = new globalThis.LogEnWorkbook();
   const E = globalThis.LogEnEditors;
-  const KEY = globalThis.LogEnCloud?.key || 'logen.offline.workspace.v1';
+  const KEY = 'logen.offline.workspace.v1';
   const BACKUP = `${KEY}.previous`;
   const $ = id => document.getElementById(id);
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -79,7 +78,6 @@
       localStorage.setItem(KEY, serialized);
       saveError = false;
       $('save-status').textContent = 'Saved locally';
-      if(globalThis.LogEnCloud)globalThis.LogEnCloud.save(serialized);
     } catch (error) {
       saveError = true;
       $('save-status').textContent = 'Unsaved changes';
@@ -396,7 +394,6 @@
     });
   }
   function drawingStore(mode,action){
-    if(globalThis.LogEnCloud)return globalThis.LogEnCloud.drawingStore(mode,action);
     return new Promise((resolve,reject)=>{const request=indexedDB.open('logen.project.drawings',1);request.onupgradeneeded=()=>request.result.createObjectStore('drawings');request.onerror=()=>reject(new Error('Drawing storage is unavailable.'));request.onsuccess=()=>{const db=request.result;let result;const tx=db.transaction('drawings',mode);const task=action(tx.objectStore('drawings'));task.onsuccess=()=>{result=task.result;};tx.oncomplete=()=>{db.close();resolve(result);};tx.onerror=()=>{db.close();reject(new Error('Could not save or read the drawing. Browser storage may be full.'));};tx.onabort=tx.onerror;};});
   }
   async function uploadDrawing(file){
@@ -405,7 +402,7 @@
       if(!/\.(dwg|dxf)$/i.test(file.name))throw new Error('Choose an AutoCAD .dwg or .dxf file.');
       if(file.size>100*1024*1024)throw new Error('The local AutoCAD helper supports DWG files up to 100 MB.');
       const signature=await file.slice(0,6).text();if(/\.dwg$/i.test(file.name)&&!/^AC\d{4}$/.test(signature))throw new Error('This file does not have a recognized AutoCAD DWG header. Choose the original .dwg file.');
-      const p=project();if(globalThis.LogEnCloud){await drawingStore('readonly',store=>store.get(p.id));await drawingStore('readonly',store=>store.get(p.id+':geometry'));}await drawingStore('readwrite',store=>store.put(file,p.id));
+      const p=project();await drawingStore('readwrite',store=>store.put(file,p.id));
       const implementation={...p.implementation,allowNewStorageConstruction:false,pdf:null,layoutOptions:null,greenfieldLayoutOptions:null,existingLayoutOptions:null,dwg:{name:file.name,size:file.size,uploadedAt:new Date().toISOString()}};
       p.implementation=implementation;p.updatedAt=new Date().toISOString();save();
       try{const raw=await LogEnCADReader.read(file),geometry=LogEnWarehouseGeometry.prepare(raw),mode=p.implementation.greenfield?'geometry':'geometry-existing';await drawingStore('readwrite',s=>s.put({stamp:implementation.dwg.uploadedAt,readerVersion:4,mode,value:geometry},p.id+':geometry'));parsed=true;}catch(error){toast('Original drawing saved. Browser analysis needs review: '+error.message,true);}
@@ -414,12 +411,19 @@
   }
   async function downloadDrawing(){await work('Preparing edited layout DWG…',async()=>{const output=await editedDrawingOutput();download(output.dwg,output.filename+'.dwg','application/acad');});}
 
+  function cachedAccountWorkspace(){
+    // Recover only this owner's previous account cache. Do not inspect other
+    // account caches on a shared browser, overwrite them, or contact a service.
+    const key='logen.cloud.workspace.v1.6a615985-a901-45af-b473-d5ebd501c056';
+    for(const candidate of [key+'.pending',key]){try{const raw=localStorage.getItem(candidate);if(!raw)continue;const recovered=validateWorkspace(decode(raw));const ids=new Map([...recovered.projects,...recovered.deletedProjects].map(p=>[p.id,'recovered-account-'+p.id]));for(const p of [...recovered.projects,...recovered.deletedProjects])p.id=ids.get(p.id);recovered.activeId=ids.get(recovered.activeId);return recovered;}catch{}}
+    return null;
+  }
   function renderProjects() {
-    const deleted=state.deletedProjects||[];
+    const deleted=state.deletedProjects||[],accountCache=cachedAccountWorkspace();
     $('main').innerHTML = heading('YOUR LOCAL WORKSPACE', 'Warehouse projects', 'Each project keeps its own inventory and warehouse settings on this device.', `<button class="btn btn-secondary danger-text" data-delete-project="${escape(state.activeId)}">${icon('trash')}Delete current project</button><button class="btn btn-primary" data-action="new-project">${icon('plus')}New warehouse project</button>`) +
       `<div class="project-grid">${state.projects.map(p=>`<article class="panel project-card"><div class="project-card-heading">${icon('folder')}${p.id===state.activeId ? '<span class="badge good">ACTIVE</span>' : ''}</div><h2>${escape(p.name)}</h2><p>${count(p.parts.length)} part numbers · ${'Per-shift planning'}</p><p>Updated ${escape(new Date(p.updatedAt).toLocaleDateString('en-GB'))}</p><div class="actions"><button class="btn btn-secondary small" data-open-project="${escape(p.id)}">Open project ${icon('arrow')}</button><button class="icon-btn" data-rename-project="${escape(p.id)}" title="Rename project" aria-label="Rename ${escape(p.name)}">${icon('edit')}</button><button class="btn btn-ghost small danger-text" data-delete-project="${escape(p.id)}" aria-label="Delete ${escape(p.name)}">${icon('trash')}Delete project</button></div><div class="project-download-actions"><button class="btn btn-secondary small" data-download-project-files="${escape(p.id)}" aria-label="Download Project Files for ${escape(p.name)}">${icon('download')}Download Project Files</button></div></article>`).join('')}</div>`+
       (deleted.length?`<section class="deleted-projects"><div class="deleted-head"><div><h2>Deleted projects</h2><p>Restore a project with its inventory and warehouse settings.</p></div><span class="badge">${deleted.length} recoverable</span></div><div class="project-grid">${deleted.map(p=>`<article class="panel project-card deleted-project">${icon('trash')}<h2>${escape(p.name)}</h2><p>${count(p.parts.length)} part numbers · Deleted ${escape(new Date(p.deletedAt||p.updatedAt).toLocaleDateString('en-GB'))}</p><div class="actions"><button class="btn btn-secondary small" data-restore-project="${escape(p.id)}" aria-label="Restore ${escape(p.name)}">Restore project ${icon('arrow')}</button></div></article>`).join('')}</div></section>`:'')+
-      `<section class="panel backup-panel"><div><h2>Take your workspace with you</h2><p>Back up every active and deleted project, including its settings, to a JSON file.</p></div><div class="actions"><button class="btn btn-secondary" data-action="backup">${icon('download')}Download backup</button><button class="btn btn-secondary" data-action="restore">${icon('upload')}Restore backup</button></div></section><div class="allocation-note">${icon('info')}<span>Projects are stored in this Chrome profile for this HTML file. Keep the file in the same location, and download a backup before clearing browser data, moving the file, or switching computers. Excel exports also include inputs and settings.</span></div>`;
+      (accountCache?`<section class="panel backup-panel"><div><h2>Recover previous account projects</h2><p>A copy of ${count(accountCache.projects.length)} account projects is saved on this browser. Recover their inventory and settings, then re-upload the original drawings. Your current workspace will be downloaded as a backup first.</p></div><button class="btn btn-secondary" data-action="recover-account">Recover cached projects</button></section>`:'')+`<section class="panel backup-panel"><div><h2>Take your workspace with you</h2><p>Back up every active and deleted project, including its settings, to a JSON file.</p></div><div class="actions"><button class="btn btn-secondary" data-action="backup">${icon('download')}Download backup</button><button class="btn btn-secondary" data-action="restore">${icon('upload')}Restore backup</button></div></section><div class="allocation-note">${icon('info')}<span>Projects are stored in this Chrome profile for this HTML file. Keep the file in the same location, and download a backup before clearing browser data, moving the file, or switching computers. Excel exports also include inputs and settings.</span></div>`;
   }
   const viewerStorageKey=p=>p.id+(!p.implementation?.greenfield?':viewer:existing':':viewer:greenfield');
   async function render3D(){
@@ -645,6 +649,7 @@
         case 'invalid':invalidOnly=true;query='';go('parts');break;
         case 'add':await editPart();break;
         case 'new-project':await newProject();break;
+        case 'recover-account':{const recovered=cachedAccountWorkspace();if(!recovered)throw Error('No previous account workspace is cached on this browser.');backup();await restore(new File([encode(recovered)],'LogEn_Previous_Account_Workspace.json',{type:'application/json'}));break;}
         case 'backup':backup();break;
         case 'restore':$('backup-input').click();break;
         case 'recover':{const raw=localStorage.getItem(BACKUP);if(!raw)throw new Error('No previous save is available. Restore a downloaded JSON backup.');const restored=validateWorkspace(decode(raw));state=restored;loadError=null;productionDrafts={};mismatchesOnly=false;query='';save();render();toast('Previous local save recovered.');break;}
@@ -681,7 +686,7 @@
   $('backup-input').addEventListener('change',async event=>{const file=event.target.files[0];event.target.value='';await restore(file);});
   window.addEventListener('unhandledrejection',event=>{console.error(event.reason);toast(event.reason?.message||'An unexpected error occurred. Your last saved workspace is retained.',true);});
   try {
-    const stored=localStorage.getItem(KEY);
+    let stored=localStorage.getItem(KEY);if(!stored){const recovered=cachedAccountWorkspace();if(recovered){stored=encode(recovered);localStorage.setItem(KEY,stored);}}
     if(stored){const decoded=decode(stored);const migrate=decoded.version!==3||[...(decoded.projects||[]),...(decoded.deletedProjects||[])].some(p=>p.settings&&!Object.prototype.hasOwnProperty.call(p.settings,'stackabilityEnabled'));state=validateWorkspace(decoded);if(migrate)save();}
     else{const p=exampleProject();state={version:3,projects:[p],activeId:p.id};save();}
   }catch(error){

@@ -10,8 +10,8 @@
   <link rel="icon" href="__LOGO__">
   <style>__STYLES__</style>
 </head>
-<body data-locked>
-  <section id="login-screen" class="login-screen" aria-labelledby="login-title"><div class="login-card"><img class="login-logo" src="__LOGO__" alt="LogEn warehouse logo"><div class="eyebrow">WAREHOUSE INTELLIGENCE</div><h1 id="login-title">Welcome to LogEn</h1><p class="muted">Log in to open your warehouse workspace.</p><form id="login-form"><label class="field"><span>Username</span><input name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required></label><div class="login-password"><label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required aria-describedby="login-error"></label><button id="password-hint-button" class="login-hint-button" type="button" aria-label="Forgot password? Show password hint" aria-expanded="false" aria-controls="password-hint" title="Place where you live">?</button><span id="password-hint" class="login-hint" role="note" hidden>Place where you live</span></div><p id="login-error" class="login-error" role="alert" aria-live="polite"></p><button class="btn btn-primary login-submit" type="submit">Log in</button></form></div></section><noscript>Enable JavaScript to log in to LogEn.</noscript>
+<body>
+  <noscript>Enable JavaScript to use LogEn.</noscript>
   <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
     <symbol id="i-designer" viewBox="0 0 24 24"><path d="M3 21V8l9-5 9 5v13H3Z M7 21V11h10v10 M7 15h10 M12 11v10"/></symbol>
     <symbol id="i-view3d" viewBox="0 0 24 24"><path d="m12 6 6 3.5v7L12 20l-6-3.5v-7L12 6Z M6 9.5l6 3.5 6-3.5 M12 13v7 M3 7V3h4 M17 3h4v4 M21 17v4h-4 M7 21H3v-4"/></symbol>
@@ -52,7 +52,7 @@
     <div class="sidebar-version">LogEn <span>v3.0</span></div>
   </aside>
   <div class="workspace">
-    <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong id="breadcrumb-project">Warehouse planning</strong></div><div class="topbar-right"><button id="logout-button" type="button" class="btn btn-secondary">Log out</button><button id="fullscreen-toggle" type="button" class="btn btn-secondary" aria-pressed="false" title="Enter full screen">Full screen</button><span class="offline-badge"><i></i> Offline ready</span><span class="topbar-separator"></span><span id="save-status" class="save-status">Saved locally</span></div></header>
+    <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong id="breadcrumb-project">Warehouse planning</strong></div><div class="topbar-right"><button id="fullscreen-toggle" type="button" class="btn btn-secondary" aria-pressed="false" title="Enter full screen">Full screen</button><span class="offline-badge"><i></i> Offline ready</span><span class="topbar-separator"></span><span id="save-status" class="save-status">Saved locally</span></div></header>
     <main id="main" tabindex="-1"></main>
     <footer class="page-footer"><span>LogEn · Warehouse Footprint Calculator</span><span>Allocated planning estimates · Dedicated floor rows · Shared rack bays</span></footer>
   </div>

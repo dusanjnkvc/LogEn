@@ -1,12 +1,6 @@
-/* Build the online account edition from the verified self-contained offline bundle. */
-const fs=require('node:fs'),path=require('node:path');const root=path.resolve(__dirname,'..');
-const read=p=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
-const offline=read('LogEn.html'),match=offline.match(/<script>([\s\S]*?)<\/script>/);if(!match)throw Error('Missing offline scripts');
-let scripts=match[1];const login=read('webapp/login.js');if(!scripts.includes(login))throw Error('Offline login source differs; rebuild the offline bundle first.');
-scripts=scripts.replace(login,['webapp/cloud-store.js','webapp/cloud-workspace.js','webapp/cloud-login.js'].map(read).join('\n;\n'));
-if(!scripts.includes(read('webapp/app.js')))throw Error('Controller differs; rebuild offline bundle first.');
-let html=offline.replace(match[1],()=>scripts.replace(/<\/script/gi,'<\\/script'));
-html=html.replace('Offline by design','Private account').replace('Your data stays on this device.','Your projects are private to your account.');
-html=html.replace('connect-src http://127.0.0.1:8765;', 'connect-src http://127.0.0.1:8765 https://butukbeoxxgyoaluctdi.supabase.co;');
-if(html.includes('3d0cbaba1ab89153da65b20daadf45ff005879c50afb40b78649284340ce08ab'))throw Error('Local verifier leaked into online build');
-fs.writeFileSync(path.join(root,'docs/index.html'),html.replace(/\n/g,'\r\n'));console.log('Built online account edition: docs/index.html');
+/* Compatibility entry point: GitHub Pages now uses the local-only static app. */
+const fs=require('node:fs'),path=require('node:path'),root=path.resolve(__dirname,'..');
+const html=fs.readFileSync(path.join(root,'LogEn.html'),'utf8');
+if(/id="login-form"|sb_publishable_|supabase\.co|new LogEnCloudStore/.test(html))throw Error('Rebuild the local-only app before publishing.');
+fs.writeFileSync(path.join(root,'docs/index.html'),html);
+console.log('Built GitHub Pages edition: no login, local browser storage.');

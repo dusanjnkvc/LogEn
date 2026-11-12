@@ -30,9 +30,10 @@ class OfflineCheck(HTMLParser):
 
 check = OfflineCheck()
 check.feed(html)
-# Both the login screen and application header embed the logo.
 # Every image is checked for an inline data URL above.
 assert check.scripts == 1 and check.images >= 1
+assert 'supabase.co' not in html and 'sb_publishable_' not in html
+assert 'id="login-form"' not in html and 'data-locked' not in html
 assert "connect-src http://127.0.0.1:8765;" in check.csp
 assert not re.search(r'__(LOGO|STYLES|SCRIPTS|AUTOCAD_HELPER)__', html)
 style = re.search(r'<style>(.*?)</style>', html, re.S).group(1)
