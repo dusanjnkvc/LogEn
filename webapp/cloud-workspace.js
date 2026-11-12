@@ -35,34 +35,55 @@
   }
   async flush(){if(this.running)await this.running;if(this.error)throw this.error;}
   async pack(value){
-   if(value instanceof Blob){const bytes=await value.arrayBuffer(),digest=await crypto.subtle.digest('SHA-256',bytes),key='blob:'+Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');await this.store.putFile(key,value);return {type:'blob',key,mime:value.type,name:value.name||null,lastModified:value.lastModified||0};}
-   if(value===undefined)return {type:'undefined'};
-   if(typeof value==='number'&&!Number.isFinite(value))return {type:'number',value:String(value)};
-   if(value instanceof Date)return {type:'date',value:value.toISOString()};
-   if(ArrayBuffer.isView(value)||value instanceof ArrayBuffer){const bytes=value instanceof ArrayBuffer?value:value.buffer.slice(value.byteOffset,value.byteOffset+value.byteLength);return {type:'binary',kind:value instanceof ArrayBuffer?'ArrayBuffer':value.constructor.name,blob:await this.pack(new Blob([bytes]))};}
-   if(Array.isArray(value))return {type:'array',value:await Promise.all(value.map(v=>this.pack(v)))};
-   if(value&&typeof value==='object')return {type:'object',value:await Promise.all(Object.entries(value).map(async([k,v])=>[k,await this.pack(v)]))};
-   return {type:'value',value};
+   const jobs=[],blobs=new WeakMap(),ancestors=new WeakSet();
+   const encode=v=>{
+    if(v instanceof Blob){if(blobs.has(v))return blobs.get(v);const node={type:'blob',key:null,mime:v.type,name:v.name||null,lastModified:v.lastModified||0};blobs.set(v,node);jobs.push({blob:v,node});return node;}
+    if(v===undefined)return {type:'undefined'};
+    if(typeof v==='number'&&!Number.isFinite(v))return {type:'number',value:String(v)};
+    if(v instanceof Date)return {type:'date',value:v.toISOString()};
+    if(ArrayBuffer.isView(v)||v instanceof ArrayBuffer){const bytes=v instanceof ArrayBuffer?v:v.buffer.slice(v.byteOffset,v.byteOffset+v.byteLength);return {type:'binary',kind:v instanceof ArrayBuffer?'ArrayBuffer':v.constructor.name,blob:encode(new Blob([bytes]))};}
+    if(v&&typeof v==='object'){if(ancestors.has(v))throw Error('Drawing snapshot contains a circular reference.');ancestors.add(v);try{return Array.isArray(v)?{type:'array',value:v.map(encode)}:{type:'object',value:Object.entries(v).map(([k,item])=>[k,encode(item)])};}finally{ancestors.delete(v);}}
+    return {type:'value',value:v};
+   };
+   // Traverse ordinary geometry synchronously. Do not create a Promise for
+   // every coordinate; upload the much smaller set of actual files in order.
+   const result=encode(value);
+   for(const {blob,node}of jobs){this.check();const digest=await crypto.subtle.digest('SHA-256',await blob.arrayBuffer());node.key='blob:'+Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');await this.store.putFile(node.key,blob);this.check();}
+   return result;
   }
   async unpack(node){
-   if(!node||typeof node.type!=='string')throw Error('Invalid drawing snapshot.');
-   switch(node.type){
-    case 'blob':{const blob=await this.store.getFile(node.key);if(!blob)throw Error('A private drawing attachment is missing.');return node.name?new File([blob],node.name,{type:node.mime,lastModified:node.lastModified}):new Blob([blob],{type:node.mime});}
-    case 'binary':{const bytes=await (await this.unpack(node.blob)).arrayBuffer();if(node.kind==='ArrayBuffer')return bytes;const constructors={Uint8Array,Uint8ClampedArray,Int8Array,Uint16Array,Int16Array,Uint32Array,Int32Array,Float32Array,Float64Array,DataView};if(!constructors[node.kind])throw Error('Unsupported binary format.');return new constructors[node.kind](bytes);}
-    case 'undefined':return undefined;
-    case 'number':return Number(node.value);
-    case 'date':return new Date(node.value);
-    case 'array':return Promise.all(node.value.map(v=>this.unpack(v)));
-    case 'object':return Object.fromEntries(await Promise.all(node.value.map(async([k,v])=>[k,await this.unpack(v)])));
-    case 'value':return node.value;
-    default:throw Error('Unsupported drawing snapshot.');
+   if(node?.type==='snapshot'){
+    if(node.version!==1||!['gzip','json'].includes(node.encoding))throw Error('Unsupported drawing snapshot format.');
+    const blob=await this.unpack(node.blob);let json;
+    if(node.encoding==='gzip'){if(typeof DecompressionStream!=='function')throw Error('Update your browser to open this compressed drawing.');json=await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text();}else json=await blob.text();
+    return this.unpack(JSON.parse(json));
    }
+   const jobs=new Map();
+   const collect=(n,binary=false)=>{if(!n||typeof n.type!=='string')throw Error('Invalid drawing snapshot.');if(n.type==='blob'){const job=jobs.get(n.key)||{node:n,binary:false};job.binary||=binary;jobs.set(n.key,job);}else if(n.type==='binary')collect(n.blob,true);else if(n.type==='array')n.value.forEach(v=>collect(v));else if(n.type==='object')n.value.forEach(([,v])=>collect(v));};collect(node);
+   for(const [key,job]of jobs){this.check();job.blob=await this.store.getFile(key);this.check();if(!job.blob)throw Error('A private drawing attachment is missing.');if(job.binary)job.bytes=await job.blob.arrayBuffer();}
+   const decode=n=>{switch(n.type){
+    case 'blob':{const blob=jobs.get(n.key).blob;return n.name?new File([blob],n.name,{type:n.mime,lastModified:n.lastModified}):new Blob([blob],{type:n.mime});}
+    case 'binary':{const bytes=jobs.get(n.blob.key).bytes.slice(0);if(n.kind==='ArrayBuffer')return bytes;const constructors={Uint8Array,Uint8ClampedArray,Int8Array,Uint16Array,Int16Array,Uint32Array,Int32Array,Float32Array,Float64Array,DataView};if(!constructors[n.kind])throw Error('Unsupported binary format.');return new constructors[n.kind](bytes);}
+    case 'undefined':return undefined;
+    case 'number':return Number(n.value);
+    case 'date':return new Date(n.value);
+    case 'array':return n.value.map(decode);
+    case 'object':return Object.fromEntries(n.value.map(([k,v])=>[k,decode(v)]));
+    case 'value':return n.value;
+    default:throw Error('Unsupported drawing snapshot.');
+   }};return decode(node);
+  }
+  async drawingPayload(value){
+   const inline=await this.pack(value),json=new Blob([JSON.stringify(inline)],{type:'application/json'});
+   if(json.size<=128*1024)return inline;
+   let blob=json,encoding='json';if(typeof CompressionStream==='function'){blob=await new Response(json.stream().pipeThrough(new CompressionStream('gzip'))).blob();encoding='gzip';}
+   return {type:'snapshot',version:1,encoding,blob:await this.pack(blob)};
   }
   async getDrawing(key){this.check();const r=await this.store.getRecord('drawing:'+key);this.check();this.drawings.set(key,r?.revision||0);return r?this.unpack(r.payload):undefined;}
   async putDrawing(value,key){
    const previous=this.locks.get(key)||Promise.resolve();
    const task=previous.then(async()=>{this.check();if(!this.drawings.has(key)){const r=await this.store.getRecord('drawing:'+key);if(r)throw Error('This drawing already exists in your account. Reload it before replacing it.');this.drawings.set(key,0);}
-    const payload=await this.pack(value);this.check();const r=await this.store.saveRecord('drawing:'+key,payload,this.drawings.get(key));this.check();this.drawings.set(key,r.revision);return key;});
+    const payload=await this.drawingPayload(value);this.check();const r=await this.store.saveRecord('drawing:'+key,payload,this.drawings.get(key));this.check();this.drawings.set(key,r.revision);return key;});
    this.locks.set(key,task.catch(()=>{}));return task;
   }
   async drawingStore(mode,action){

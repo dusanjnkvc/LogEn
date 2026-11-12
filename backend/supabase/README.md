@@ -11,3 +11,10 @@ Migration of legacy browser data is explicit and owner-only. The owner must save
 Limitations: the offline edition remains device-only. Cloud accounts currently must be provisioned/confirmed through Supabase Auth; there is no public sign-up/admin screen. Configure the Supabase Auth site URL and allowed redirect URLs before enabling email recovery or invitations that return to the hosted app. Cloud attachment limits also depend on the project's provider/plan settings. Simultaneous edits are detected; automatic merging is not implemented. Shared-device caches are browser data, so use separate browser/OS profiles when local device access must also be private.
 
 Build: python tools/build_offline.py followed by node tools/build_cloud.cjs. Only docs/index.html is the cloud edition. Never embed privileged keys or restore the offline verifier in that build.
+
+
+## Large drawings and connection failures
+
+Large drawing/layout snapshots are gzip-compressed into the existing private attachment bucket. The database stores a versioned snapshot reference once the encoded record exceeds 128 KiB. Previous inline records remain readable and are not migrated or replaced on read. Geometry traversal no longer creates a promise for every coordinate; actual file transfers are serialized. Revision conflicts continue to protect previous records.
+
+Ordinary cloud requests have a 30-second deadline; attachment transfers allow 120 seconds. Network failures, server 5xx responses and timeouts are reported distinctly. Failed sign-in never unlocks cached account data, and workspace pending recovery copies are retained. This handling does not restore an unhealthy Supabase instance; inspect provider health/logs when auth endpoints return 522 or database saves time out.
