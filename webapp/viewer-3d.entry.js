@@ -68,9 +68,9 @@ function open(host,model){
   const fleet=[],F=globalThis.LogEnForklift;
   const roadNodes=forkliftRoute.nodes||[],roadIds=forkliftRoute.components?.[0]||[];
   function chooseTarget(t){const leg=F.nextLeg(forkliftRoute,t.node,t.previous,t.pose);t.leg=leg;t.target=leg?.target;}
-  function addTruck(){if(!roadIds.length)return false;const start=Math.floor(Math.random()*roadIds.length);for(let k=0;k<roadIds.length;k++){const id=roadIds[(start+k)%roadIds.length],n=roadNodes[id],dest=roadNodes[n.links[0]];if(!dest)continue;const pose={x:n.x,z:n.z,yaw:Math.atan2(dest.x-n.x,dest.z-n.z)};if(!F.fits(forkliftRoute,pose)||fleet.some(t=>Math.hypot(t.pose.x-pose.x,t.pose.z-pose.z)<5||F.overlaps(forkliftRoute,pose,t.pose)))continue;const mesh=fleet.length?forklift.clone(true):forklift;if(fleet.length)scene.add(mesh);mesh.position.set(pose.x,0,pose.z);mesh.rotation.y=pose.yaw;const t={mesh,node:id,previous:-1,pose,blocked:0};chooseTarget(t);fleet.push(t);q('[data-fleet-count]').textContent=fleet.length+' forklifts';return true;}return false;}
+  function addTruck(){if(!roadIds.length)return false;const start=Math.floor(Math.random()*roadIds.length);for(let k=0;k<roadIds.length;k++){const id=roadIds[(start+k)%roadIds.length],n=roadNodes[id],dest=roadNodes[n.links[0]];if(!dest)continue;const pose=F.spawnPose(forkliftRoute,id);if(!F.fits(forkliftRoute,pose)||fleet.some(t=>Math.hypot(t.pose.x-pose.x,t.pose.z-pose.z)<5||F.overlaps(forkliftRoute,pose,t.pose)))continue;const mesh=fleet.length?forklift.clone(true):forklift;if(fleet.length)scene.add(mesh);mesh.position.set(pose.x,0,pose.z);mesh.rotation.y=pose.yaw;const t={mesh,node:id,previous:-1,pose,blocked:0};chooseTarget(t);fleet.push(t);q('[data-fleet-count]').textContent=fleet.length+' forklifts';return true;}return false;}
   if(forkliftRoute.length)addTruck();q('[data-forklift-add]').disabled=!forkliftRoute.length;
-  q('[data-forklift-status]').textContent=forkliftRoute.reason||'Independent random drives · two-way gangways · collision avoidance';
+  q('[data-forklift-status]').textContent=forkliftRoute.reason||'Illustrative movement · connected aisles · two-way passing where clearance permits · yields to other vehicles · not a traffic or travel-time simulation';
   q('[data-forklift-toggle]').textContent=forkliftRunning?'Pause all forklifts':'Start all forklifts';
   function tickForklift(dt){if(!forkliftRoute.length)return;
     if(forkliftRunning&&document.visibilityState==='visible')for(const t of fleet){
@@ -78,7 +78,7 @@ function open(host,model){
       if(!t.target)chooseTarget(t);if(!t.target)continue;
       const next=F.steer(forkliftRoute,t.pose,t.target,dt,THREE.MathUtils.clamp(Number(q('[data-forklift-speed]').value)||1.2,.2,3),fleet.filter(other=>other!==t).map(other=>other.pose));
       if(next){const moved=Math.hypot(next.x-t.pose.x,next.z-t.pose.z);t.blocked=moved>.0001?0:t.blocked+dt;t.pose=next;t.mesh.position.set(next.x,0,next.z);t.mesh.rotation.y=next.yaw;}else t.blocked+=dt;
-      if(t.blocked>4){const nearest=roadIds.reduce((best,id)=>Math.hypot(roadNodes[id].x-t.pose.x,roadNodes[id].z-t.pose.z)<Math.hypot(roadNodes[best].x-t.pose.x,roadNodes[best].z-t.pose.z)?id:best,t.node);t.node=nearest;t.previous=t.leg?.end??-1;chooseTarget(t);t.blocked=0;}
+      if(t.blocked>6){const nearest=roadIds.reduce((best,id)=>Math.hypot(roadNodes[id].x-t.pose.x,roadNodes[id].z-t.pose.z)<Math.hypot(roadNodes[best].x-t.pose.x,roadNodes[best].z-t.pose.z)?id:best,t.node);t.node=nearest;t.previous=t.leg?.end??-1;chooseTarget(t);t.blocked=0;}
     }
     const pose=fleet[0]?.pose;if(pose&&q('[data-forklift-follow]').checked){const target=new THREE.Vector3(pose.x,.85,pose.z),behind=new THREE.Vector3(Math.sin(pose.yaw)*-5,3.8,Math.cos(pose.yaw)*-5).add(target);camera.position.lerp(behind,1-Math.exp(-3*dt));controls.target.lerp(target,1-Math.exp(-4*dt));}
   }

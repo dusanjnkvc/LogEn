@@ -427,13 +427,13 @@
   }
   const rank=l=>[l.accessValid?1:0,l.accommodatedPallets,l.complete?1:0,l.options.racksAroundWalls?l.metrics.wallRackBays:0,-l.metrics.unusableArea,-l.metrics.gangwayArea,-l.groups.length];
   function better(a,b){if(!b)return true;const x=rank(a),y=rank(b);for(let i=0;i<x.length;i++){if(Math.abs(x[i]-y[i])>1e-5)return x[i]>y[i];}return false;}
-  async function optimize(plan,settings,geometry,rawOptions,onProgress=()=>{}){
+  async function optimize(plan,settings,geometry,rawOptions,onProgress=()=>{},onBest=()=>{}){
     if(!plan.available)throw new Error(plan.errors.join(' '));if(!(settings.gangwayWidth>0))throw new Error('Enter a positive gangway width.');
     if(rawOptions.existingMode)return scope.LogEnExistingLayout.generate(plan,settings,geometry,rawOptions,onProgress);
     const options=normalizedOptions(rawOptions),source=L.makeObjects(plan,settings);if(source.groups.reduce((n,g)=>n+g.objects.length,0)>10000)throw new Error('Select a category to keep the drawing within 10,000 objects.');
     const alternatives={};let n=0;const hasRacks=source.groups.some(g=>g.kind==='rack'),fractions=hasRacks?[1,0.5]:[1],shifts=options.racksAroundWalls?[0]:[0,settings.gangwayWidth/2],jobs=[];
     for(const orientation of ['horizontal','vertical']){let best=null;const side=options.allowWallStorage&&options.wallRackMode!=='all'?options.wallRackMode:null,starts=[[1,1],[-1,1],[1,-1],[-1,-1]].filter(([sx,sy])=>!side||(orientation==='horizontal'?(side==='left'?sx===1:side==='right'?sx===-1:side==='top'?sy===-1:sy===1):(side==='left'?sy===-1:side==='right'?sy===1:side==='top'?sx===-1:sx===1)));for(const [sx,sy]of starts)for(const fraction of fractions)for(const shift of side?[0]:shifts)jobs.push({orientation,sx,sy,fraction,shift});}
-    for(const job of jobs){onProgress(++n,jobs.length,job);await tick();const {orientation,sx,sy,fraction,shift}=job,candidate=await pack(plan,settings,geometry,options,orientation,sx,sy,fraction,shift,source);if(better(candidate,alternatives[orientation]))alternatives[orientation]=candidate;}
+    for(const job of jobs){onProgress(++n,jobs.length,job);await tick();const {orientation,sx,sy,fraction,shift}=job,candidate=await pack(plan,settings,geometry,options,orientation,sx,sy,fraction,shift,source);if(better(candidate,alternatives[orientation])){alternatives[orientation]=candidate;const preferred=options.warehouseOrientation==='horizontal'?'horizontal':options.warehouseOrientation==='vertical'?'vertical':recommend(alternatives)||orientation;const best=alternatives[preferred];onBest({n,total:jobs.length,job:{...job,complete:true},best:best?{alternatives:{...alternatives},winner:preferred,layout:best}:null});}}
     const recommended=recommend(alternatives);
     const winner=options.warehouseOrientation==='horizontal'?'horizontal':options.warehouseOrientation==='vertical'?'vertical':recommended||'horizontal';
     return {alternatives,winner,layout:alternatives[winner]};

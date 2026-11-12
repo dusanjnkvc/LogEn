@@ -169,6 +169,11 @@
   if(changes)layout.manualEdited=true;else restore(start);
   validate(layout,plan,settings,geometry);return {changes,attempts,remaining:layout.manualValidation.errors.length};
  }
+ function align(layout,ids,edge){
+  const groups=ids.map(id=>layout.groups.find(g=>g.id===id&&!g.existing)).filter(Boolean);if(groups.length<2)throw Error('Shift-select at least two movable rows or bays to align.');
+  const horizontal=['left','right','center-x'].includes(edge),value=b=>edge==='left'?b.minX:edge==='right'?b.maxX:edge==='bottom'?b.minY:edge==='top'?b.maxY:horizontal?(b.minX+b.maxX)/2:(b.minY+b.maxY)/2;
+  const target=value(box(groups[0]));for(const g of groups.slice(1)){const d=target-value(box(g));translate(layout,[g.id],horizontal?d:0,horizontal?0:d);}
+ }
  function session(layout){let undo=[],redo=[];return {checkpoint(){undo.push(clone(layout));if(undo.length>50)undo.shift();redo=[];},undo(){if(!undo.length)return false;redo.push(clone(layout));replace(undo.pop());return true;},redo(){if(!redo.length)return false;undo.push(clone(layout));replace(redo.pop());return true;},get canUndo(){return !!undo.length},get canRedo(){return !!redo.length}};function replace(v){for(const k of Object.keys(layout))delete layout[k];Object.assign(layout,v);}}
- scope.LogEnManualLayout=Object.freeze({split,translate,rotate,moveAssignment,duplicate,remove,snap,validate,placedQuantities,missingParts,placementPlan,addMissing,fixErrors,session,origin,box,clone});
+ scope.LogEnManualLayout=Object.freeze({split,translate,rotate,moveAssignment,duplicate,remove,snap,validate,placedQuantities,missingParts,placementPlan,addMissing,fixErrors,align,session,origin,box,clone});
 })(globalThis);

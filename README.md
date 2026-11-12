@@ -4,15 +4,17 @@ An offline yellow-and-black warehouse calculator with the supplied warehouse log
 
 ## Open the app
 
-Use the [online app](https://dusanjnkvc.github.io/LogEn/) to sign in with your email and access private projects across devices. Supabase Auth verifies accounts; database and private-file policies isolate each authenticated user. The public repository contains application code and synthetic examples, never account passwords or warehouse data.
+Open the [online app](https://dusanjnkvc.github.io/LogEn/) directly without signing in. The GitHub Pages app and **LogEn.html** are identical local-only editions. Inventory and settings stay in browser localStorage; original drawings, geometry, editable layouts and cached CAD exports stay in IndexedDB. No Supabase connection is bundled.
 
-**LogEn.html** is the separate offline edition. Its existing local username gate does not provide server security. Its projects stay in that browser profile and do not automatically sync. The cloud edition requires an internet connection and a private account; it never accepts the offline password verifier.
+Build with `python tools/build_offline.py`, then `node tools/build_cloud.cjs` to copy the same app to Pages. The build embeds the layout worker and all its dependencies, so background generation works offline without a server.
 
-Online saves retain a per-account browser cache and unsynced recovery copy. Conflicting edits from another device stop cloud saving rather than overwrite that device. Download a workspace backup when a save warning appears. Unsynced work blocks reopening until you save its recovery download and explicitly choose the cloud copy.
+Projects → **Complete project backup** downloads a ZIP with inventory, settings, binary drawings, editable layouts, cached DWG/PDF exports and available Excel reports. **Restore complete backup** verifies SHA-256 checksums and adds projects as new copies, preserving current projects. Native DWG/PDF files appear only when previously generated and cached. The inventory-only JSON remains available, and excludes drawings. Keep backups private.
 
-The original owner sees **Import projects from this device** when that browser origin contains legacy data. It downloads a ZIP containing workspace JSON, all matching drawing snapshots, original files and metadata before asking to import. Existing device data remains unchanged. Import is limited to an empty/example cloud account. A different account never inherits the legacy workspace. Other browser origins/profiles and the offline HTML have separate storage; a workspace JSON export alone does not include drawings.
+The six-step planning bar links Import, Settings, Storage assignment, Generate, Review and Export. Generation runs in a dedicated worker, shows elapsed time and best placed quantity, and supports Cancel or Use best so far. Cancellation leaves the previous layout intact. Automatic orientation still compares both axes; early stopping does not imply an optimal result. The layout summary uses actual generated footprints and aisle polygons, separately from dashboard planning estimates. Click empty space to inspect its classification; unused free space is not declared impossible to fill.
 
-Build the offline edition with `python tools/build_offline.py`, then run `node tools/build_cloud.cjs` (or `python tools/build_pages.py`) to generate the separate authenticated `docs/index.html` for GitHub Pages. Do not copy the offline file over the online build.
+Manual editing retains snapping, Undo/Redo and live placement validation, and adds alignment of Shift-selected movable rows/bays. The 3D forklift preview follows connected aisle geometry, merges from right-side travel lanes before turning, and checks vehicle envelopes against aisles and other vehicles. It is illustrative, not a traffic-capacity or travel-time simulation.
+
+Focused checks: `node tools/check_improvements.cjs`, `node tools/check_local_only.cjs`, `node webapp/layout-insights.test.cjs`, `node webapp/viewer-forklift.test.cjs`, and `node --test webapp/manual-layout.test.cjs`. Historical domain/workbook tests still contain older rounding and template expectations; the calculation engine and workbook formulas were not changed by this release.
 
 ## Eight-column input template
 

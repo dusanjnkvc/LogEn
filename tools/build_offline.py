@@ -4,12 +4,16 @@ import base64
 import re
 import io
 import zipfile
+import json
 
 ROOT = Path(__file__).resolve().parent.parent
 source = ROOT / 'webapp'
 logo = 'data:image/png;base64,' + base64.b64encode((ROOT / 'assets/logen_logo.png').read_bytes()).decode('ascii')
-scripts = []
-for path in [source / 'vendor/exceljs.min.js', source / 'vendor/clipper.js', source / 'domain.js', source / 'workbook.js', source / 'editors.js', source / 'layout.js', source / 'warehouse-geometry.js', source / 'vendor/cad-reader.min.js', source / 'layout-optimizer.js', source / 'existing-layout.js', source / 'manual-layout.js', source / 'layout-ui.js', source / 'viewer-model.js', source / 'viewer-forklift.js', source / 'vendor/viewer-3d.min.js', source / 'output-zip.js', source / 'app.js']:
+worker_paths = ['vendor/clipper.js', 'domain.js', 'layout.js', 'warehouse-geometry.js', 'layout-optimizer.js', 'existing-layout.js', 'manual-layout.js']
+worker_source = '\n;\n'.join((source / p).read_text(encoding='utf-8') for p in worker_paths)
+worker_source += "\nonmessage=async({data:d})=>{try{const value=await LogEnOptimizer.optimize(d.plan,d.settings,d.geometry,d.options,(n,total,job)=>postMessage({type:'progress',n,total,job}),best=>postMessage({type:'progress',...best}));postMessage({type:'result',value});}catch(e){postMessage({type:'error',message:e.message});}};"
+scripts = ['globalThis.LogEnLayoutWorkerSource=' + json.dumps(worker_source) + ';']
+for path in [source / 'vendor/exceljs.min.js', source / 'vendor/clipper.js', source / 'domain.js', source / 'workbook.js', source / 'editors.js', source / 'layout.js', source / 'warehouse-geometry.js', source / 'vendor/cad-reader.min.js', source / 'layout-optimizer.js', source / 'existing-layout.js', source / 'manual-layout.js', source / 'layout-worker.js', source / 'layout-insights.js', source / 'layout-ui.js', source / 'viewer-model.js', source / 'viewer-forklift.js', source / 'vendor/viewer-3d.min.js', source / 'output-zip.js', source / 'project-backup.js', source / 'app.js']:
     script = path.read_text(encoding='utf-8')
     script = re.sub(r'(?m)^//# sourceMappingURL=.*$', '', script)
     scripts.append(script.replace('</script', '<\\/script'))

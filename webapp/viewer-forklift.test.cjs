@@ -16,3 +16,10 @@ for(const start of route.components[0].filter((_,i)=>i%17===0).slice(0,12)){
  assert(distance>25,`Vehicle must drive through gangways, not spin: ${distance.toFixed(2)} m from node ${start}`);assert(longest<5,`Vehicle rotates without driving for ${longest}s`);
 }
 console.log('Long-leg forklift driving checked from 12 aisle locations: forward progress, bounded turning and clearance throughout.');
+
+// Opposing vehicles use two separate lanes and never overlap in a 4.5 m aisle.
+const straight=F.plan({...model,boundary:rect(0,0,40,25),surfaces:[{kind:'aisle',points:rect(0,0,40,4.5)}]});
+let east={x:10,z:1.45,yaw:Math.PI/2},west={x:25,z:3.05,yaw:-Math.PI/2};
+for(let i=0;i<300;i++){const a=F.steer(straight,east,{x:35,z:2.25,laneYaw:Math.PI/2},1/30,1.2,[west]);if(a)east=a;const b=F.steer(straight,west,{x:5,z:2.25,laneYaw:-Math.PI/2},1/30,1.2,[east]);if(b)west=b;assert(!F.overlaps(straight,east,west));assert(F.fits(straight,east)&&F.fits(straight,west));}
+assert(east.x>west.x,'Opposing vehicles must pass, not stop nose to nose.');
+console.log('Two-way 4.5 m gangway passing checked with no overlaps or aisle departures.');
