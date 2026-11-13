@@ -69,6 +69,8 @@
    const env=layout.env,G=O().geometry,toDelta=(x,y)=>env.frame?O().toWorld([x,y],env.frame):[x,y];
    const trial=original=>{const p=origin(original),v=original.frame?O().toLocal([p[0]+dx,p[1]+dy],original.frame):[p[0]+dx,p[1]+dy],n={...original,x:v[0],y:v[1]};if(n.wallSide&&Math.abs((n.wallSide==='left'||n.wallSide==='right')?n.x-original.x:n.y-original.y)>.11)n.wallSide=null;return n;};
    const inside=strip=>{let p=G.path(strip.points.map(p=>env.frame?O().toLocal(p,env.frame):p));if(!scope.ClipperLib.Clipper.Orientation(p))p.reverse();return G.area(G.diff([p],env.boundary))<.11;};
+   // Aisle dimensions use reserved rows, including the half-clearance at each edge.
+   if(O().aisleSnap)for(let pass=0;pass<4;pass++){let changed=false;const temporary={...layout,groups:layout.groups.map(v=>ids.includes(v.id)?trial(v):v)};for(const original of moving){const correction=O().aisleSnap(temporary,trial(original),settings);if(correction){const world=toDelta(...correction);dx+=world[0];dy+=world[1];changed=true;guides.length=0;break;}}if(!changed)break;}
    const originalDelta={dx,dy};let corrected=false;
    for(let pass=0;pass<2;pass++)for(const original of moving){let n=trial(original);for(const strip of O().gangwayPreview(layout,n,settings)){
     if(inside(strip))continue;const axis=strip.side==='left'?[1,0]:strip.side==='right'?[-1,0]:strip.side==='bottom'?[0,1]:[0,-1],direction=toDelta(...axis),base={dx,dy};

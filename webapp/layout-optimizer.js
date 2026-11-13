@@ -226,6 +226,15 @@
     const sides=[{side:'left',x:r.x-w,y:r.y,w,h:r.h},{side:'right',x:r.x+r.w,y:r.y,w,h:r.h},{side:'bottom',x:r.x,y:r.y-w,w:r.w,h:w},{side:'top',x:r.x,y:r.y+r.h,w:r.w,h:w}];
     return sides.filter(a=>g.wallSide!==a.side&&!placed.some(other=>{if(other.id===g.id)return false;const b=groupRect(other),vertical=a.side==='left'||a.side==='right',gap=a.side==='left'?r.x-b.x-b.w:a.side==='right'?b.x-r.x-r.w:a.side==='bottom'?r.y-b.y-b.h:b.y-r.y-r.h;return gap>=-E&&gap<=c+E&&(vertical?b.y<=r.y+E&&b.y+b.h>=r.y+r.h-E:b.x<=r.x+E&&b.x+b.w>=r.x+r.w-E);}));
   }
+  function aisleSnap(layout,g,settings){
+    const r=groupRect(g),access=placementAccess(g,layout.groups,layout.env,settings),suggestions=[];
+    for(const other of layout.groups){if(other.id===g.id)continue;const b=groupRect(other);if(core.overlaps(r,b)||!access.some(a=>core.overlaps(a,b)))continue;
+      const overlapX=Math.min(r.x+r.w,b.x+b.w)-Math.max(r.x,b.x),overlapY=Math.min(r.y+r.h,b.y+b.h)-Math.max(r.y,b.y),width=settings.gangwayWidth;
+      if(overlapX>E){if(r.y>=b.y+b.h-E)suggestions.push([0,b.y+b.h+width-r.y]);else if(b.y>=r.y+r.h-E)suggestions.push([0,b.y-width-r.y-r.h]);}
+      if(overlapY>E){if(r.x>=b.x+b.w-E)suggestions.push([b.x+b.w+width-r.x,0]);else if(b.x>=r.x+r.w-E)suggestions.push([b.x-width-r.x-r.w,0]);}
+    }
+    return suggestions.filter(([x,y])=>Math.hypot(x,y)>E).sort((a,b)=>Math.hypot(...a)-Math.hypot(...b))[0]||null;
+  }
   function gangwayPreview(layout,g,settings){
     const env=layout.env;if(layout.version!==2||!env?.boundary)return [];
     return manualWallAccess(g,layout.groups,env,settings).map(a=>({side:a.side,points:cornersForPreview(a,g.frame||env.frame),valid:fits(a,env.boundary)&&!collide(a,env.blocked),width:settings.gangwayWidth}));
@@ -463,5 +472,5 @@
     if(rotated!==!!group.rotated)throw new Error('Use the other orientation candidate to rotate rack blocks while preserving their accessible faces.');
     const [lx,ly]=toLocal([x,y],group.frame),trial={...group,x:lx,y:ly},error=placementError(trial,layout.groups,layout.env,settings);if(error)throw new Error(error);Object.assign(group,trial);if(!layout.groups.includes(group)){layout.groups.push(group);layout.unplaced=layout.unplaced.filter(g=>g.id!==id);}Object.assign(layout,validate(layout,plan,settings));return layout;
   }
-  scope.LogEnOptimizer=Object.freeze({optimize,recommend,validate,move,compactGround,placedObjects,gangwayPreview,groundMarkings,shortage,toWorld,toLocal,geometry:Object.freeze({path,points,area,union,diff,intersect,offset,fits}),buildingAngle});
+  scope.LogEnOptimizer=Object.freeze({optimize,recommend,validate,move,compactGround,placedObjects,gangwayPreview,aisleSnap,groundMarkings,shortage,toWorld,toLocal,geometry:Object.freeze({path,points,area,union,diff,intersect,offset,fits}),buildingAngle});
 })(globalThis);
