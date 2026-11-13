@@ -63,6 +63,20 @@
   const sx=choose(nearest(xs,[b.minX+dx,b.maxX+dx]),choose(nearest(edgeTargets.minX,[b.minX+dx]),nearest(edgeTargets.maxX,[b.maxX+dx]))),sy=choose(nearest(ys,[b.minY+dy,b.maxY+dy]),choose(nearest(edgeTargets.minY,[b.minY+dy]),nearest(edgeTargets.maxY,[b.maxY+dy]))),guides=[];
   if(sx){dx+=sx.delta;guides.push({axis:'x',value:sx.target});}else dx=Math.round((b.minX+dx)/grid)*grid-b.minX;
   if(sy){dy+=sy.delta;guides.push({axis:'y',value:sy.target});}else dy=Math.round((b.minY+dy)/grid)*grid-b.minY;
+  // Snap an exposed gangway back inside the actual usable boundary, even when
+  // the pointer is farther from the guide than the usual magnetic tolerance.
+  if(layout.version===2&&layout.env.boundary&&O().gangwayPreview){
+   const env=layout.env,G=O().geometry,toDelta=(x,y)=>env.frame?O().toWorld([x,y],env.frame):[x,y];
+   const trial=original=>{const p=origin(original),v=original.frame?O().toLocal([p[0]+dx,p[1]+dy],original.frame):[p[0]+dx,p[1]+dy],n={...original,x:v[0],y:v[1]};if(n.wallSide&&Math.abs((n.wallSide==='left'||n.wallSide==='right')?n.x-original.x:n.y-original.y)>.11)n.wallSide=null;return n;};
+   const inside=strip=>{let p=G.path(strip.points.map(p=>env.frame?O().toLocal(p,env.frame):p));if(!scope.ClipperLib.Clipper.Orientation(p))p.reverse();return G.area(G.diff([p],env.boundary))<.11;};
+   const originalDelta={dx,dy};let corrected=false;
+   for(let pass=0;pass<2;pass++)for(const original of moving){let n=trial(original);for(const strip of O().gangwayPreview(layout,n,settings)){
+    if(inside(strip))continue;const axis=strip.side==='left'?[1,0]:strip.side==='right'?[-1,0]:strip.side==='bottom'?[0,1]:[0,-1],direction=toDelta(...axis),base={dx,dy};
+    const fitsAt=d=>{dx=base.dx+direction[0]*d;dy=base.dy+direction[1]*d;const candidate=O().gangwayPreview(layout,trial(original),settings).find(a=>a.side===strip.side);return !candidate||inside(candidate);};
+    if(!fitsAt(g)){dx=base.dx;dy=base.dy;continue;}let lo=0,hi=g;for(let k=0;k<20;k++){const mid=(lo+hi)/2;if(fitsAt(mid))hi=mid;else lo=mid;}fitsAt(Math.ceil(hi*10)/10);corrected=true;
+   }}
+   if(corrected){const valid=moving.every(original=>O().gangwayPreview(layout,trial(original),settings).every(inside));if(valid)guides.length=0;else{dx=originalDelta.dx;dy=originalDelta.dy;}}
+  }
   return {dx,dy,guides};
  }
  function validate(layout,plan,settings,geometry){
