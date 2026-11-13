@@ -221,6 +221,16 @@
     }return joins;
   }
   function rowEndAccess(g,width){const r=groupRect(g);return g.rotated?[{end:'start',x:r.x,y:r.y-width,w:r.w,h:width},{end:'end',x:r.x,y:r.y+r.h,w:r.w,h:width}]:[{end:'start',x:r.x-width,y:r.y,w:width,h:r.h},{end:'end',x:r.x+r.w,y:r.y,w:width,h:r.h}];}
+  function manualWallAccess(g,placed,env,settings){
+    const r=groupRect(g),w=settings.gangwayWidth,c=settings.floorPalletClearance||0;
+    const sides=[{side:'left',x:r.x-w,y:r.y,w,h:r.h},{side:'right',x:r.x+r.w,y:r.y,w,h:r.h},{side:'bottom',x:r.x,y:r.y-w,w:r.w,h:w},{side:'top',x:r.x,y:r.y+r.h,w:r.w,h:w}];
+    return sides.filter(a=>g.wallSide!==a.side&&!placed.some(other=>{if(other.id===g.id)return false;const b=groupRect(other),vertical=a.side==='left'||a.side==='right',gap=a.side==='left'?r.x-b.x-b.w:a.side==='right'?b.x-r.x-r.w:a.side==='bottom'?r.y-b.y-b.h:b.y-r.y-r.h;return gap>=-E&&gap<=c+E&&(vertical?b.y<=r.y+E&&b.y+b.h>=r.y+r.h-E:b.x<=r.x+E&&b.x+b.w>=r.x+r.w-E);}));
+  }
+  function gangwayPreview(layout,g,settings){
+    const env=layout.env;if(layout.version!==2||!env?.boundary)return [];
+    return manualWallAccess(g,layout.groups,env,settings).map(a=>({side:a.side,points:cornersForPreview(a,g.frame||env.frame),valid:fits(a,env.boundary)&&!collide(a,env.blocked),width:settings.gangwayWidth}));
+  }
+  function cornersForPreview(r,frame){return L.corners(r).map(p=>frame?toWorld(p,frame):p);}
   function terminalAccess(g,placed,env,settings){
     if(g.kind!=='ground'||!g.manualRow||g.wallSide)return [];
     const joins=rowJoins(g,placed,settings.floorPalletClearance||0);return rowEndAccess(g,settings.gangwayWidth).filter(a=>!joins[a.end]);
@@ -250,8 +260,8 @@
     const r=groupRect(g),joins=rowJoins(g,placed,settings.floorPalletClearance||0),continuation=joins.start||joins.end,access=placementAccess(g,placed,env,settings);
     if(env.requireGroundPairs&&g.kind==='ground'&&!g.paired&&!g.manualRow&&!continuation){const b=env.wallBox||env.box,c=(env.wallClearance||0)+(env.analysis?(env.optionsObstacleClearance||0):0),touch=g.wallSide==='left'?Math.abs(r.x-b.minX-c)<E:g.wallSide==='right'?Math.abs(r.x+r.w-b.maxX+c)<E:g.wallSide==='bottom'?Math.abs(r.y-b.minY-c)<E:g.wallSide==='top'?Math.abs(r.y+r.h-b.maxY+c)<E:false;if(!env.allowWallStorage||!touch)return 'Single ground rows must stay against an approved wall. Interior ground storage must stay back-to-back.';}
     if(!fits(r,env.zone))return 'Storage crosses the storage zone, boundary or mandatory clearance.';
-    for(const a of terminalAccess(g,placed,env,settings))if(!fits(a,env.boundary)){
-      let low=0,high=settings.gangwayWidth;for(let i=0;i<20;i++){const width=(low+high)/2,strip=rowEndAccess(g,width).find(v=>v.end===a.end);if(fits(strip,env.boundary))low=width;else high=width;}
+    for(const a of (g.kind==='ground'&&g.manualRow?manualWallAccess(g,placed,env,settings):terminalAccess(g,placed,env,settings)))if(!fits(a,env.boundary)){
+      let low=0,high=settings.gangwayWidth;for(let i=0;i<20;i++){const width=(low+high)/2,strip=a.side?manualWallAccess(g,placed,env,{...settings,gangwayWidth:width}).find(v=>v.side===a.side):rowEndAccess(g,width).find(v=>v.end===a.end);if(strip&&fits(strip,env.boundary))low=width;else high=width;}
       return 'Forklift clearance to the warehouse wall at the ground row end is '+Math.floor(low)+' mm; required '+settings.gangwayWidth+' mm. Move the row inward or join it to a compatible storage row.';
     }
     if(collide(r,env.baseAccess)&&(!continuation||collide(r,env.existingAccess||[])||env.doors?.length))return 'Storage blocks a circulation route.';
@@ -453,5 +463,5 @@
     if(rotated!==!!group.rotated)throw new Error('Use the other orientation candidate to rotate rack blocks while preserving their accessible faces.');
     const [lx,ly]=toLocal([x,y],group.frame),trial={...group,x:lx,y:ly},error=placementError(trial,layout.groups,layout.env,settings);if(error)throw new Error(error);Object.assign(group,trial);if(!layout.groups.includes(group)){layout.groups.push(group);layout.unplaced=layout.unplaced.filter(g=>g.id!==id);}Object.assign(layout,validate(layout,plan,settings));return layout;
   }
-  scope.LogEnOptimizer=Object.freeze({optimize,recommend,validate,move,compactGround,placedObjects,groundMarkings,shortage,toWorld,toLocal,geometry:Object.freeze({path,points,area,union,diff,intersect,offset,fits}),buildingAngle});
+  scope.LogEnOptimizer=Object.freeze({optimize,recommend,validate,move,compactGround,placedObjects,gangwayPreview,groundMarkings,shortage,toWorld,toLocal,geometry:Object.freeze({path,points,area,union,diff,intersect,offset,fits}),buildingAngle});
 })(globalThis);
