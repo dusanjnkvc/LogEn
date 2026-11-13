@@ -197,7 +197,7 @@
     const right={x:z.maxX-g,y:z.minY,w:g,h:Math.max(0,z.maxY-z.minY)},bottom={x:z.minX,y:z.minY,w:Math.max(0,z.maxX-z.minX),h:g},routes=[env.spine,right,bottom].filter(v=>v.w>0&&v.h>0).map(rect);
     if(options.racksAroundWalls)routes.push(rect({x:z.minX,y:z.maxY-g,w:Math.max(0,z.maxX-z.minX),h:g}));
     for(const d of env.doors){const r=d.bounds,cx=r.x+r.w/2,cy=Math.max(z.minY,Math.min(z.maxY-g,r.y+r.h/2-g/2));routes.push(rect({x:Math.min(z.minX,cx),y:cy,w:Math.max(z.minX+g,cx)-Math.min(z.minX,cx),h:g}));}
-    env.baseAccess=union(routes);env.errors=[];
+    env.baseAccess=union([...routes,...(env.existingAccess||[])]);env.errors=[];
     if(z.maxX-z.minX<2*g||z.maxY-z.minY<g||area(diff(env.baseAccess,env.boundary))>E||area(intersect(env.baseAccess,env.blocked))>E)env.errors.push({pn:'Circulation',message:'The wall racks leave insufficient connected access or a route crosses blocked geometry.'});
   }
   function groupRect(g){return {x:g.x,y:g.y,w:g.rotated?g.h:g.w,h:g.rotated?g.w:g.h};}
@@ -273,7 +273,13 @@
       let low=0,high=settings.gangwayWidth;for(let i=0;i<20;i++){const width=(low+high)/2,strip=a.side?manualWallAccess(g,placed,env,{...settings,gangwayWidth:width}).find(v=>v.side===a.side):rowEndAccess(g,width).find(v=>v.end===a.end);if(strip&&fits(strip,env.boundary))low=width;else high=width;}
       return 'Forklift clearance to the warehouse wall at the ground row end is '+Math.floor(low)+' mm; required '+settings.gangwayWidth+' mm. Move the row inward or join it to a compatible storage row.';
     }
-    if(collide(r,env.baseAccess)&&(!continuation||collide(r,env.existingAccess||[])||env.doors?.length))return 'Storage blocks a circulation route.';
+    // Drawing aisles and door connections stay fixed. Generated circulation is
+    // a planning choice; manual rows may reroute it through their validated access.
+    if(collide(r,env.existingAccess||[]))return 'Storage blocks a drawing-defined circulation route.';
+    const z=env.inner||env.box,width=settings.gangwayWidth,spineX=env.spine?.x??z.minX;
+    const doorConnections=(env.doors||[]).map(d=>{const b=d.bounds,cx=b.x+b.w/2,cy=Math.max(z.minY,Math.min(z.maxY-width,b.y+b.h/2-width/2));return rect({x:Math.min(spineX,cx),y:cy,w:Math.max(spineX+width,cx)-Math.min(spineX,cx),h:width});});
+    if(collide(r,env.doorAccess||doorConnections))return 'Storage blocks a reserved door access route.';
+    if(!g.manualRow&&collide(r,env.baseAccess)&&(!continuation||env.doors?.length))return 'Storage blocks a circulation route.';
     for(const a of access)if(!fits(a,env.boundary)||collide(a,env.blocked))return 'A full-width access gangway is obstructed or leaves the warehouse.';
     for(const other of placed){if(other.id===g.id)continue;const fixed=cachedPlacement(other,env,settings.gangwayWidth),rr=fixed.r;// Ground may continue beside racks; actual storage/access collisions below decide validity.
       if(core.overlaps(r,rr)||access.some(a=>core.overlaps(a,rr))||placementAccess(other,placed.concat(g),env,settings).some(a=>core.overlaps(a,r))){const gapX=Math.max(r.x-rr.x-rr.w,rr.x-r.x-r.w),gapY=Math.max(r.y-rr.y-rr.h,rr.y-r.y-r.h),gap=Math.max(gapX,gapY);return 'Storage or its required accessible face overlaps another storage block.'+(gap>0?' Forklift clearance is '+Math.round(gap)+' mm; required '+settings.gangwayWidth+' mm at this accessible face.':'');}

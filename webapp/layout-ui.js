@@ -279,7 +279,7 @@
       if(delta&&layout&&manualSelection.size){event.preventDefault();ensureHistory();history.checkpoint();const step=event.altKey?1:event.shiftKey?100:10;M.translate(layout,[...manualSelection],delta[0]*step,delta[1]*step);refreshManual();}
     });
     svg.addEventListener('keydown',event=>{const node=event.target.closest('[data-storage]');if(node&&(event.key==='Enter'||event.key===' ')){ensureHistory();history.checkpoint();const id=M.split(layout,node.dataset.object);manualSelection=new Set([id]);selectStorage(id,node.dataset.object);event.preventDefault();}});
-    dialog.addEventListener('close',()=>{generationJob?.cancel();clearInterval(generationTimer);document.removeEventListener('fullscreenchange',syncDrawingFullscreen);if(document.fullscreenElement===drawingPane)document.exitFullscreen().catch(()=>{});dialog.remove();},{once:true});document.body.append(dialog);showWalls();showReserved();showReport();showProperties();draw();dialog.showModal();if(layout)showShortage();return dialog;
+    dialog.addEventListener('close',()=>{generationJob?.cancel();clearInterval(generationTimer);document.removeEventListener('fullscreenchange',syncDrawingFullscreen);if(document.fullscreenElement===drawingPane)document.exitFullscreen().catch(()=>{});dialog.remove();},{once:true});document.body.append(dialog);if(layout&&!dirty)checkManual();showWalls();showReserved();showReport();showProperties();draw();dialog.showModal();if(layout)showShortage();return dialog;
   }
   scope.LogEnLayoutUI=Object.freeze({open});
 })(globalThis);
